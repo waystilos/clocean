@@ -12,6 +12,16 @@ The user interface strictly replicates the **Figma Design System** (`Clocean - A
 
 ---
 
+## 📚 Documentation Index
+
+* 🏛️ **[System Architecture](docs/ARCHITECTURE.md)**: Deep dive into the 4 architectural layers, Hono API, Durable Objects, and WebSocket hibernation.
+* 🚀 **[One-Click Deployment Guide](docs/ONE_CLICK_DEPLOY.md)**: Step-by-step instructions for 1-click deploys and Cloudflare Access setup for 50 free users.
+* 🗄️ **[R2 JSON Database Guide](docs/R2_DATABASE.md)**: JSON schemas, optimistic concurrency control via HTTP ETags, and streaming file uploads.
+* 🤖 **[AI Agents & Contributor Guide](AGENTS.md)**: Engineering constraints, coding patterns, and operational rules for AI and human developers.
+* ☁️ **[Pulumi Zero Trust IaC](infra/README.md)**: Optional TypeScript IaC program to automate Cloudflare Zero Trust Access policies.
+
+---
+
 ## 🏛️ Architecture Overview
 
 ```
