@@ -223,6 +223,43 @@ app.post("/api/workspaces/:wsId/members", async (c) => {
   return c.json(updated);
 });
 
+app.put("/api/workspaces/:wsId/members/:email/role", async (c) => {
+  const wsId = c.req.param("wsId");
+  if (!isValidId(wsId)) return c.json({ error: "Invalid workspace ID" }, 400);
+
+  const targetEmail = decodeURIComponent(c.req.param("email")).trim();
+  if (!targetEmail || !targetEmail.includes("@")) {
+    return c.json({ error: "Invalid target email" }, 400);
+  }
+
+  const requesterEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const currentMembers = await db.getWorkspaceMembers(wsId);
+  const requester = currentMembers.find(
+    (m) => m.email.toLowerCase() === requesterEmail.toLowerCase()
+  );
+
+  // Must be owner or admin to change roles
+  if (requester && requester.role !== "owner" && requester.role !== "admin") {
+    return c.json({ error: "Only workspace owners and admins can update member roles" }, 403);
+  }
+  if (!requester && wsId !== "default") {
+    return c.json({ error: "Only workspace owners and admins can update member roles" }, 403);
+  }
+
+  const body = await c.req.json<{ role: "admin" | "member" }>();
+  if (body.role !== "admin" && body.role !== "member") {
+    return c.json({ error: "Role must be 'admin' or 'member'" }, 400);
+  }
+
+  const result = await db.updateWorkspaceMemberRole(wsId, targetEmail, body.role);
+  if (!result.success) {
+    return c.json({ error: result.error || "Failed to update member role" }, 400);
+  }
+
+  return c.json(result.members);
+});
+
 // Workspace Tree Endpoints
 app.get("/api/tree", async (c) => {
   const ws = getWorkspaceId(c);

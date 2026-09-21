@@ -280,20 +280,54 @@ export class R2Database {
     // Also register workspace in user's workspaces
     const userWsList = await this.getUserWorkspaces(email);
     const wsMeta = await this.getWorkspaceMetadata(wsId);
-    if (!userWsList.some((w) => w.id === wsId)) {
+    const existingEntry = userWsList.find((w) => w.id === wsId);
+    if (existingEntry) {
+      existingEntry.role = role;
+    } else {
       userWsList.push({
         id: wsId,
         name: wsMeta?.name || "Team Workspace",
         icon: wsMeta?.icon || "📁",
         role,
       });
+    }
+    await this.putJson(`workspaces/registry/users/${encodeURIComponent(email)}.json`, {
+      email,
+      workspaces: userWsList,
+    });
+
+    return member;
+  }
+
+  async updateWorkspaceMemberRole(
+    wsId: string,
+    email: string,
+    newRole: "admin" | "member"
+  ): Promise<{ success: boolean; error?: string; members: WorkspaceMember[] }> {
+    const members = await this.getWorkspaceMembers(wsId);
+    const member = members.find((m) => m.email.toLowerCase() === email.toLowerCase().trim());
+    if (!member) {
+      return { success: false, error: "Member not found in workspace", members };
+    }
+    if (member.role === "owner") {
+      return { success: false, error: "Cannot change the workspace owner's role", members };
+    }
+
+    member.role = newRole;
+    await this.putJson(`workspaces/${wsId}/members.json`, { workspaceId: wsId, members });
+
+    // Update user's personal registered workspaces entry
+    const userWsList = await this.getUserWorkspaces(email);
+    const existing = userWsList.find((w) => w.id === wsId);
+    if (existing) {
+      existing.role = newRole;
       await this.putJson(`workspaces/registry/users/${encodeURIComponent(email)}.json`, {
         email,
         workspaces: userWsList,
       });
     }
 
-    return member;
+    return { success: true, members };
   }
 
   // Seed initial data matching the exact Figma designs if R2 is fresh

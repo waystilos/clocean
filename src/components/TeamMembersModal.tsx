@@ -20,6 +20,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
   const [isInviting, setIsInviting] = useState(false);
+  const [updatingMemberEmail, setUpdatingMemberEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -97,6 +98,39 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
     }
   };
 
+  const handleRoleChange = async (memberEmail: string, newRole: "admin" | "member") => {
+    setUpdatingMemberEmail(memberEmail);
+    setError(null);
+    setSuccessMsg(null);
+
+    try {
+      const res = await fetch(
+        `/api/workspaces/${workspace.id}/members/${encodeURIComponent(memberEmail)}/role?user=${encodeURIComponent(currentUser.email)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: newRole }),
+        }
+      );
+
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as any;
+        throw new Error(data.error || "Failed to update member role");
+      }
+
+      const updatedMembers: any = await res.json();
+      setMembers(Array.isArray(updatedMembers) ? updatedMembers : updatedMembers?.members || []);
+      setSuccessMsg(
+        `Updated ${memberEmail}'s role to ${newRole === "admin" ? "Admin" : "Member (Non-admin)"}!`
+      );
+      setTimeout(() => setSuccessMsg(null), 3500);
+    } catch (err: any) {
+      setError(err.message || "Failed to update member role");
+    } finally {
+      setUpdatingMemberEmail(null);
+    }
+  };
+
   const isPrivileged = workspace.role === "owner" || workspace.role === "admin";
 
   return (
@@ -118,7 +152,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
         className="animate-fade-in"
         style={{
           width: "100%",
-          maxWidth: "560px",
+          maxWidth: "600px",
           backgroundColor: "var(--bg-surface)",
           border: "1px solid var(--border-subtle)",
           borderRadius: "var(--radius-lg)",
@@ -436,8 +470,9 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      {member.role === "owner" && (
+                    {/* Member Role Display & Management */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      {member.role === "owner" ? (
                         <span
                           style={{
                             display: "flex",
@@ -454,8 +489,44 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
                           <ShieldCheck size={12} />
                           Owner
                         </span>
-                      )}
-                      {member.role === "admin" && (
+                      ) : isPrivileged && member.email !== currentUser.email ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <select
+                            value={member.role}
+                            disabled={updatingMemberEmail === member.email}
+                            onChange={(e) =>
+                              handleRoleChange(member.email, e.target.value as "admin" | "member")
+                            }
+                            style={{
+                              backgroundColor:
+                                member.role === "admin"
+                                  ? "var(--bg-nav-active)"
+                                  : "var(--bg-surface)",
+                              border: "1px solid var(--border-subtle)",
+                              borderRadius: "var(--radius-sm)",
+                              color:
+                                member.role === "admin"
+                                  ? "var(--accent)"
+                                  : "var(--text-secondary)",
+                              fontSize: "12px",
+                              fontWeight: 500,
+                              padding: "4px 8px",
+                              cursor: "pointer",
+                              outline: "none",
+                              transition: "all 0.15s ease",
+                            }}
+                            aria-label={`Role for ${member.email}`}
+                          >
+                            <option value="admin">Admin</option>
+                            <option value="member">Member (Non-admin)</option>
+                          </select>
+                          {updatingMemberEmail === member.email && (
+                            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                              Saving...
+                            </span>
+                          )}
+                        </div>
+                      ) : (
                         <span
                           style={{
                             display: "flex",
@@ -464,26 +535,19 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
                             fontSize: "11px",
                             padding: "3px 8px",
                             borderRadius: "10px",
-                            backgroundColor: "var(--bg-nav-active)",
-                            color: "var(--text-primary)",
-                            fontWeight: 500,
+                            backgroundColor:
+                              member.role === "admin"
+                                ? "var(--bg-nav-active)"
+                                : "var(--bg-surface)",
+                            color:
+                              member.role === "admin"
+                                ? "var(--accent)"
+                                : "var(--text-secondary)",
+                            fontWeight: member.role === "admin" ? 600 : 400,
                           }}
                         >
-                          <Shield size={12} />
-                          Admin
-                        </span>
-                      )}
-                      {member.role === "member" && (
-                        <span
-                          style={{
-                            fontSize: "11px",
-                            padding: "3px 8px",
-                            borderRadius: "10px",
-                            backgroundColor: "var(--bg-surface)",
-                            color: "var(--text-secondary)",
-                          }}
-                        >
-                          Member
+                          {member.role === "admin" ? <Shield size={12} /> : null}
+                          {member.role === "admin" ? "Admin" : "Member"}
                         </span>
                       )}
                     </div>

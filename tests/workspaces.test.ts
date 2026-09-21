@@ -123,6 +123,84 @@ describe("Clocean Organizations & Team Workspaces Test Suite", () => {
       const data = await res.json() as any;
       expect(data.error).toContain("Only workspace owners and admins can invite members");
     });
+
+    it("should allow workspace owner to demote an admin to non-admin (member)", async () => {
+      const res = await fetch(
+        `${BASE_URL}/api/workspaces/${createdWsId}/members/${encodeURIComponent(testInvitee)}/role?user=elena`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "member" }),
+        }
+      );
+
+      expect(res.status).toBe(200);
+      const members = await res.json() as any[];
+      const target = members.find((m) => m.email === testInvitee);
+      expect(target).toBeDefined();
+      expect(target.role).toBe("member");
+
+      // Verify invitee's workspace list reflects demotion
+      const wsRes = await fetch(`${BASE_URL}/api/workspaces?user=marcus`);
+      const userWorkspaces = await wsRes.json() as any[];
+      const userWs = userWorkspaces.find((w) => w.id === createdWsId);
+      expect(userWs).toBeDefined();
+      expect(userWs.role).toBe("member");
+    });
+
+    it("should allow workspace owner to promote a non-admin back to admin", async () => {
+      const res = await fetch(
+        `${BASE_URL}/api/workspaces/${createdWsId}/members/${encodeURIComponent(testInvitee)}/role?user=elena`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "admin" }),
+        }
+      );
+
+      expect(res.status).toBe(200);
+      const members = await res.json() as any[];
+      const target = members.find((m) => m.email === testInvitee);
+      expect(target).toBeDefined();
+      expect(target.role).toBe("admin");
+
+      // Verify invitee's workspace list reflects promotion
+      const wsRes = await fetch(`${BASE_URL}/api/workspaces?user=marcus`);
+      const userWorkspaces = await wsRes.json() as any[];
+      const userWs = userWorkspaces.find((w) => w.id === createdWsId);
+      expect(userWs).toBeDefined();
+      expect(userWs.role).toBe("admin");
+    });
+
+    it("should reject changing owner's role with 400 Bad Request", async () => {
+      const res = await fetch(
+        `${BASE_URL}/api/workspaces/${createdWsId}/members/${encodeURIComponent(testOwner)}/role?user=elena`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "member" }),
+        }
+      );
+
+      expect(res.status).toBe(400);
+      const data = await res.json() as any;
+      expect(data.error).toContain("Cannot change the workspace owner's role");
+    });
+
+    it("should reject role update from unauthorized non-admin with 403 Forbidden", async () => {
+      const res = await fetch(
+        `${BASE_URL}/api/workspaces/${createdWsId}/members/${encodeURIComponent(testInvitee)}/role?user=sofia`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "admin" }),
+        }
+      );
+
+      expect(res.status).toBe(403);
+      const data = await res.json() as any;
+      expect(data.error).toContain("Only workspace owners and admins can update member roles");
+    });
   });
 
   // 4. Strict Multi-Tenant Data Isolation
