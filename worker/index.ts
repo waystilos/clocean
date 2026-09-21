@@ -354,9 +354,10 @@ app.get("/api/collab/:docId", async (c) => {
   const stub = c.env.DOC_SESSION.get(id);
 
   const url = new URL(c.req.url);
+  const queryName = url.searchParams.get("name");
   url.searchParams.set("docId", docId);
   url.searchParams.set("email", user.email);
-  url.searchParams.set("name", user.name);
+  url.searchParams.set("name", queryName || user.name);
   url.searchParams.set("avatar", user.avatar);
 
   const request = new Request(url.toString(), c.req.raw);

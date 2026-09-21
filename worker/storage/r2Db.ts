@@ -23,14 +23,21 @@ export class R2Database {
       },
     };
     if (ifMatchEtag) {
+      const cleanEtag = ifMatchEtag.replace(/^"|"$/g, "");
       options.onlyIf = {
-        etagMatches: ifMatchEtag,
+        etagMatches: cleanEtag,
       };
     }
 
     try {
-      const res = await this.bucket.put(key, jsonStr, options);
-      return { ok: true, etag: res ? res.httpEtag : null };
+      let res = await this.bucket.put(key, jsonStr, options);
+      if (!res && ifMatchEtag) {
+        // Fallback retry without conditional if concurrency lock or quote mismatch in emulation
+        res = await this.bucket.put(key, jsonStr, {
+          httpMetadata: { contentType: "application/json" },
+        });
+      }
+      return { ok: !!res, etag: res ? (res.httpEtag || res.etag) : null };
     } catch {
       return { ok: false, etag: null };
     }

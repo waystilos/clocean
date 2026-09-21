@@ -8,7 +8,7 @@ export function getAuthEmail(request: Request): string {
   
   // 2. Custom header or dev query override for testing
   const url = new URL(request.url);
-  const queryUser = url.searchParams.get("user");
+  const queryUser = url.searchParams.get("email") || url.searchParams.get("user");
   const headerEmail = request.headers.get("x-user-email");
 
   const email = (
