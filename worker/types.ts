@@ -78,6 +78,14 @@ export interface ActivitiesData {
   activities: ActivityItem[];
 }
 
+export interface UserProfile {
+  email: string;
+  name: string;
+  avatar: string;
+  bio?: string;
+  updatedAt: string;
+}
+
 export interface Env {
   CLOCEAN_STORAGE: R2Bucket;
   DOC_SESSION: DurableObjectNamespace;

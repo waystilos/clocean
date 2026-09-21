@@ -249,6 +249,7 @@ export const App: React.FC = () => {
         currentUser={currentUser}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        onUpdateProfile={(profile) => setCurrentUser(profile)}
       />
 
       <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />

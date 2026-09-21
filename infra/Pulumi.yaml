@@ -1,0 +1,3 @@
+name: clocean-infra
+runtime: nodejs
+description: Cloudflare Zero Trust Access & R2 Bucket Infrastructure via Pulumi

@@ -1,4 +1,4 @@
-import { WorkspaceTree, DocContent, TasksData, PhotosData, ActivitiesData } from "../types.ts";
+import { WorkspaceTree, DocContent, TasksData, PhotosData, ActivitiesData, UserProfile } from "../types.ts";
 
 export class R2Database {
   constructor(private bucket: R2Bucket) {}
@@ -38,6 +38,31 @@ export class R2Database {
 
   async deleteKey(key: string): Promise<void> {
     await this.bucket.delete(key);
+  }
+
+  async getUserProfile(email: string): Promise<UserProfile> {
+    const key = `workspaces/default/users/${encodeURIComponent(email)}.json`;
+    const res = await this.getJson<UserProfile>(key);
+    if (res.data) return res.data;
+
+    const defaultName =
+      email === "alex@clocean.co"
+        ? "Alex Sterling"
+        : email.split("@")[0].replace(".", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+    const profile: UserProfile = {
+      email,
+      name: defaultName,
+      avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(email)}`,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.putJson(key, profile);
+    return profile;
+  }
+
+  async putUserProfile(profile: UserProfile): Promise<void> {
+    const key = `workspaces/default/users/${encodeURIComponent(profile.email)}.json`;
+    await this.putJson(key, profile);
   }
 
   // Seed initial data matching the exact Figma designs if R2 is fresh

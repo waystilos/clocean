@@ -8,6 +8,7 @@ interface SettingsModalProps {
   currentUser: UserProfile;
   theme: "dark" | "light";
   onToggleTheme: () => void;
+  onUpdateProfile: (profile: UserProfile) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -16,12 +17,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   currentUser,
   theme,
   onToggleTheme,
+  onUpdateProfile,
 }) => {
   const [activeTab, setActiveTab] = useState<"profile" | "storage" | "access" | "appearance">(
     "profile"
   );
+  const [name, setName] = useState(currentUser.name);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    setName(currentUser.name);
+  }, [currentUser.name]);
 
   if (!isOpen) return null;
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+
+      const res = await fetch(`/api/user/avatar?user=${encodeURIComponent(currentUser.email)}`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Failed to upload avatar");
+      const updatedProfile: UserProfile = await res.json();
+      onUpdateProfile(updatedProfile);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to upload photo to Cloudflare R2.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/user/profile?user=${encodeURIComponent(currentUser.email)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error("Failed to update profile");
+      const updatedProfile: UserProfile = await res.json();
+      onUpdateProfile(updatedProfile);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save profile changes.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div
@@ -165,32 +224,103 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Right Content */}
           <div style={{ flex: 1, padding: "24px 32px" }}>
             {activeTab === "profile" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                  <img
-                    src={currentUser.avatar}
-                    alt={currentUser.name}
-                    style={{
-                      width: "60px",
-                      height: "60px",
-                      borderRadius: "50%",
-                      objectFit: "cover",
-                      border: "2px solid var(--border-subtle)",
-                    }}
-                  />
-                  <div>
-                    <h3 className="font-serif" style={{ fontSize: "17px", fontWeight: 600 }}>
-                      {currentUser.name}
-                    </h3>
-                    <p style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
-                      {currentUser.email}
-                    </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
+                {/* Avatar Section */}
+                <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+                  <div style={{ position: "relative" }}>
+                    <img
+                      src={currentUser.avatar}
+                      alt={currentUser.name}
+                      style={{
+                        width: "72px",
+                        height: "72px",
+                        borderRadius: "50%",
+                        objectFit: "cover",
+                        border: "2px solid var(--accent)",
+                        boxShadow: "var(--shadow-sm)",
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={handleAvatarFileChange}
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploading}
+                      className="btn-primary"
+                      style={{ fontSize: "12px", padding: "6px 14px", alignSelf: "flex-start" }}
+                    >
+                      {isUploading ? "Uploading to R2..." : "Upload Profile Photo"}
+                    </button>
+                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                      JPG, PNG, or WebP stored directly in Cloudflare R2
+                    </span>
                   </div>
                 </div>
 
-                <div style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                  Authenticated via Cloudflare Access JWT. User credentials and sessions are
-                  cryptographically signed at Cloudflare's edge.
+                {/* Display Name Input */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)" }}>
+                    Display Name
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Your Full Name"
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid var(--border-subtle)",
+                      background: "var(--bg-primary)",
+                      color: "var(--text-primary)",
+                      fontSize: "14px",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+
+                {/* Email Account */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)" }}>
+                    Email Account (Cloudflare Access)
+                  </label>
+                  <input
+                    type="text"
+                    disabled
+                    value={currentUser.email}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid var(--border-subtle)",
+                      background: "var(--bg-surface)",
+                      color: "var(--text-muted)",
+                      fontSize: "14px",
+                      cursor: "not-allowed",
+                    }}
+                  />
+                </div>
+
+                {/* Save Button */}
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "4px" }}>
+                  <button
+                    onClick={handleSaveProfile}
+                    disabled={isSaving}
+                    className="btn-primary"
+                    style={{ padding: "8px 18px" }}
+                  >
+                    {isSaving ? "Saving..." : "Save Changes"}
+                  </button>
+                  {saveSuccess && (
+                    <span style={{ fontSize: "12px", color: "var(--accent-text)", display: "flex", alignItems: "center", gap: "4px" }}>
+                      <Check size={14} /> Profile updated in R2!
+                    </span>
+                  )}
                 </div>
               </div>
             )}

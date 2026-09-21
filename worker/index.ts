@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { Env, WorkspaceTree, TreeNode, DocContent, TasksData, PhotosData, ActivitiesData } from "./types.ts";
 import { R2Database } from "./storage/r2Db.ts";
-import { getAuthUser } from "./auth/cfAccess.ts";
+import { getAuthEmail } from "./auth/cfAccess.ts";
 import { DocSessionDO } from "./durable_objects/DocSessionDO.ts";
 
 export { DocSessionDO };
@@ -19,10 +19,60 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
-// Auth / Profile Endpoint
-app.get("/api/me", (c) => {
-  const user = getAuthUser(c.req.raw);
-  return c.json(user);
+// Auth & Real User Profile Endpoints (Backed by R2)
+app.get("/api/me", async (c) => {
+  const email = getAuthEmail(c.req.raw);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const profile = await db.getUserProfile(email);
+  return c.json(profile);
+});
+
+app.put("/api/user/profile", async (c) => {
+  const email = getAuthEmail(c.req.raw);
+  const body = await c.req.json<{ name?: string; bio?: string }>();
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const profile = await db.getUserProfile(email);
+  if (body.name) profile.name = body.name;
+  if (body.bio !== undefined) profile.bio = body.bio;
+  profile.updatedAt = new Date().toISOString();
+  await db.putUserProfile(profile);
+  return c.json(profile);
+});
+
+app.post("/api/user/avatar", async (c) => {
+  const email = getAuthEmail(c.req.raw);
+  const body = await c.req.parseBody();
+  const file = body["avatar"] as File | undefined;
+  if (!file) return c.json({ error: "No avatar image provided" }, 400);
+
+  const avatarKey = `workspaces/default/avatars/${encodeURIComponent(email)}.png`;
+  await c.env.CLOCEAN_STORAGE.put(avatarKey, file.stream(), {
+    httpMetadata: { contentType: file.type || "image/png" },
+  });
+
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const profile = await db.getUserProfile(email);
+  profile.avatar = `/api/user/avatar/${encodeURIComponent(email)}?t=${Date.now()}`;
+  profile.updatedAt = new Date().toISOString();
+  await db.putUserProfile(profile);
+
+  return c.json(profile);
+});
+
+app.get("/api/user/avatar/:email", async (c) => {
+  const email = c.req.param("email");
+  const avatarKey = `workspaces/default/avatars/${encodeURIComponent(email)}.png`;
+  const object = await c.env.CLOCEAN_STORAGE.get(avatarKey);
+  if (!object) {
+    return c.redirect(
+      `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(email)}`
+    );
+  }
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("Cache-Control", "public, max-age=86400");
+  const hasBody = "body" in object && object.body;
+  return new Response(hasBody ? object.body : null, { headers, status: hasBody ? 200 : 304 });
 });
 
 // Workspace Tree Endpoints
@@ -191,8 +241,25 @@ app.post("/api/upload", async (c) => {
     await db.putJson("workspaces/default/tree.json", data);
   }
 
+  // If image, also record in photos gallery in R2
+  if (file.type && file.type.startsWith("image/")) {
+    const photosRes = await db.getJson<PhotosData>("workspaces/default/photos.json");
+    if (photosRes.data) {
+      photosRes.data.photos.unshift({
+        id: fileId,
+        name: filename.replace(/\.[^/.]+$/, ""),
+        url: `/api/files/${fileId}/${encodeURIComponent(filename)}`,
+        size: file.size,
+        album: "Uploads",
+        uploadedAt: "Just now",
+      });
+      await db.putJson("workspaces/default/photos.json", photosRes.data);
+    }
+  }
+
   // Also record in activity log
-  const user = getAuthUser(c.req.raw);
+  const email = getAuthEmail(c.req.raw);
+  const user = await db.getUserProfile(email);
   const actRes = await db.getJson<ActivitiesData>("workspaces/default/activity.json");
   if (actRes.data) {
     actRes.data.activities.unshift({
@@ -278,7 +345,9 @@ app.get("/api/activity", async (c) => {
 // Durable Object Real-Time Multi-Editing WebSocket Route
 app.get("/api/collab/:docId", async (c) => {
   const docId = c.req.param("docId");
-  const user = getAuthUser(c.req.raw);
+  const email = getAuthEmail(c.req.raw);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const user = await db.getUserProfile(email);
 
   // Route to Durable Object named by docId
   const id = c.env.DOC_SESSION.idFromName(docId);
