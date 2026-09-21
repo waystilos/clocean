@@ -9,6 +9,8 @@ import { PhotosView } from "./views/PhotosView.tsx";
 import { SearchModal } from "./components/SearchModal.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { FilePreviewModal } from "./components/FilePreviewModal.tsx";
+import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal.tsx";
+import { TeamMembersModal } from "./components/TeamMembersModal.tsx";
 import {
   ViewMode,
   TreeNode,
@@ -17,6 +19,7 @@ import {
   ActivityItem,
   UserProfile,
   DocAttachment,
+  UserWorkspaceReference,
 } from "./types.ts";
 
 export const App: React.FC = () => {
@@ -29,6 +32,19 @@ export const App: React.FC = () => {
     avatar:
       "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
   });
+
+  // Workspaces / Organizations state
+  const [workspaces, setWorkspaces] = useState<UserWorkspaceReference[]>([
+    { id: "default", name: "Clocean Main", icon: "🌊", role: "owner" },
+  ]);
+  const [currentWorkspace, setCurrentWorkspace] = useState<UserWorkspaceReference>({
+    id: "default",
+    name: "Clocean Main",
+    icon: "🌊",
+    role: "owner",
+  });
+  const [isCreateWsOpen, setIsCreateWsOpen] = useState(false);
+  const [isTeamMembersOpen, setIsTeamMembersOpen] = useState(false);
 
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
@@ -43,14 +59,40 @@ export const App: React.FC = () => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
-  // Load initial data from Worker API (backed by Cloudflare R2)
+  // Load user's workspaces
+  const loadWorkspaces = async () => {
+    try {
+      const res = await fetch(`/api/workspaces?user=${encodeURIComponent(currentUser.email)}`);
+      if (res.ok) {
+        const data: UserWorkspaceReference[] = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setWorkspaces(data);
+          const found = data.find((w) => w.id === currentWorkspace.id);
+          if (found) {
+            setCurrentWorkspace(found);
+          } else {
+            setCurrentWorkspace(data[0]);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load workspaces:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadWorkspaces();
+  }, [currentUser.email]);
+
+  // Load initial data from Worker API (backed by Cloudflare R2 for the active workspace)
   const refreshData = async () => {
     try {
+      const headers = { "x-workspace-id": currentWorkspace.id };
       const [treeRes, tasksRes, photosRes, actRes, userRes] = await Promise.all([
-        fetch("/api/tree").then((r) => r.json() as Promise<{ nodes?: TreeNode[] }>),
-        fetch("/api/tasks").then((r) => r.json() as Promise<TaskItem[]>),
-        fetch("/api/photos").then((r) => r.json() as Promise<PhotoItem[]>),
-        fetch("/api/activity").then((r) => r.json() as Promise<ActivityItem[]>),
+        fetch("/api/tree", { headers }).then((r) => r.json() as Promise<{ nodes?: TreeNode[] }>),
+        fetch("/api/tasks", { headers }).then((r) => r.json() as Promise<TaskItem[]>),
+        fetch("/api/photos", { headers }).then((r) => r.json() as Promise<PhotoItem[]>),
+        fetch("/api/activity", { headers }).then((r) => r.json() as Promise<ActivityItem[]>),
         fetch(`/api/me?user=${currentUser.email.split("@")[0]}`).then((r) => r.json() as Promise<UserProfile>),
       ]);
 
@@ -66,7 +108,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     refreshData();
-  }, [currentUser.email]);
+  }, [currentUser.email, currentWorkspace.id]);
 
   const handleToggleTheme = () => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
@@ -92,6 +134,7 @@ export const App: React.FC = () => {
 
     const res = await fetch("/api/upload", {
       method: "POST",
+      headers: { "x-workspace-id": currentWorkspace.id },
       body: formData,
     });
 
@@ -100,7 +143,10 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteFile = async (fileId: string) => {
-    await fetch(`/api/tree/node/${fileId}`, { method: "DELETE" });
+    await fetch(`/api/tree/node/${fileId}`, {
+      method: "DELETE",
+      headers: { "x-workspace-id": currentWorkspace.id },
+    });
     setTree((prev) => prev.filter((n) => n.id !== fileId));
   };
 
@@ -108,7 +154,10 @@ export const App: React.FC = () => {
     setTasks(newTasks);
     await fetch("/api/tasks", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-workspace-id": currentWorkspace.id,
+      },
       body: JSON.stringify(newTasks),
     });
   };
@@ -140,6 +189,11 @@ export const App: React.FC = () => {
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onSwitchUser={handleSwitchUser}
+        workspaces={workspaces}
+        currentWorkspace={currentWorkspace}
+        onSelectWorkspace={(ws) => setCurrentWorkspace(ws)}
+        onOpenCreateWorkspace={() => setIsCreateWsOpen(true)}
+        onOpenTeamMembers={() => setIsTeamMembersOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -175,6 +229,7 @@ export const App: React.FC = () => {
             <EditorView
               docId={activeDocId}
               currentUser={currentUser}
+              workspaceId={currentWorkspace.id}
               onOpenFilePreview={(att) => setPreviewFile(att)}
             />
           )}
@@ -250,6 +305,23 @@ export const App: React.FC = () => {
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onUpdateProfile={(profile) => setCurrentUser(profile)}
+      />
+
+      <CreateWorkspaceModal
+        isOpen={isCreateWsOpen}
+        onClose={() => setIsCreateWsOpen(false)}
+        onCreated={(newWs) => {
+          setWorkspaces((prev) => [...prev, newWs]);
+          setCurrentWorkspace(newWs);
+        }}
+        currentUser={currentUser}
+      />
+
+      <TeamMembersModal
+        isOpen={isTeamMembersOpen}
+        onClose={() => setIsTeamMembersOpen(false)}
+        workspace={currentWorkspace}
+        currentUser={currentUser}
       />
 
       <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />

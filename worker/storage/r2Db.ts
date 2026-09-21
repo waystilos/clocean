@@ -1,4 +1,16 @@
-import { WorkspaceTree, DocContent, TasksData, PhotosData, ActivitiesData, UserProfile } from "../types.ts";
+import {
+  WorkspaceTree,
+  DocContent,
+  TasksData,
+  PhotosData,
+  ActivitiesData,
+  UserProfile,
+  WorkspaceMetadata,
+  WorkspaceMember,
+  WorkspaceMembersData,
+  UserWorkspaceReference,
+  UserWorkspacesData,
+} from "../types.ts";
 
 export class R2Database {
   constructor(private bucket: R2Bucket) {}
@@ -70,6 +82,218 @@ export class R2Database {
   async putUserProfile(profile: UserProfile): Promise<void> {
     const key = `workspaces/default/users/${encodeURIComponent(profile.email)}.json`;
     await this.putJson(key, profile);
+  }
+
+  // --- Organization & Team Workspaces ---
+  async getUserWorkspaces(email: string): Promise<UserWorkspaceReference[]> {
+    const key = `workspaces/registry/users/${encodeURIComponent(email)}.json`;
+    const res = await this.getJson<UserWorkspacesData>(key);
+    if (res.data && res.data.workspaces && res.data.workspaces.length > 0) {
+      return res.data.workspaces;
+    }
+
+    // Default workspace if none exists for this user
+    const defaultWorkspaces: UserWorkspaceReference[] = [
+      { id: "default", name: "Clocean Main", icon: "🌊", role: "owner" },
+    ];
+    await this.putJson(key, { email, workspaces: defaultWorkspaces });
+    return defaultWorkspaces;
+  }
+
+  async getWorkspaceMetadata(wsId: string): Promise<WorkspaceMetadata | null> {
+    const key = `workspaces/${wsId}/workspace.json`;
+    const res = await this.getJson<WorkspaceMetadata>(key);
+    if (res.data) return res.data;
+
+    if (wsId === "default") {
+      const now = new Date().toISOString();
+      const meta: WorkspaceMetadata = {
+        id: "default",
+        name: "Clocean Main",
+        icon: "🌊",
+        ownerEmail: "alex@clocean.co",
+        createdAt: now,
+        updatedAt: now,
+      };
+      await this.putJson(key, meta);
+      return meta;
+    }
+    return null;
+  }
+
+  async createWorkspace(
+    name: string,
+    icon: string,
+    ownerEmail: string,
+    ownerName: string
+  ): Promise<WorkspaceMetadata> {
+    const id = `ws-${crypto.randomUUID().slice(0, 8)}`;
+    const now = new Date().toISOString();
+
+    const meta: WorkspaceMetadata = {
+      id,
+      name,
+      icon: icon || "📁",
+      ownerEmail,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.putJson(`workspaces/${id}/workspace.json`, meta);
+
+    // Initial Member (Owner)
+    const membersData: WorkspaceMembersData = {
+      workspaceId: id,
+      members: [
+        {
+          email: ownerEmail,
+          name: ownerName,
+          role: "owner",
+          avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(ownerEmail)}`,
+          joinedAt: now,
+        },
+      ],
+    };
+    await this.putJson(`workspaces/${id}/members.json`, membersData);
+
+    // Initial Tree for this workspace
+    const initialTree: WorkspaceTree = {
+      workspaceId: id,
+      updatedAt: now,
+      nodes: [
+        {
+          id: `doc-welcome-${id}`,
+          name: `Welcome to ${name}`,
+          type: "doc",
+          parentId: null,
+          updatedAt: "Just now",
+          createdAt: now,
+          tags: ["#welcome", "#team"],
+        },
+      ],
+    };
+    await this.putJson(`workspaces/${id}/tree.json`, initialTree);
+
+    // Initial Doc Content
+    const docData: DocContent = {
+      id: `doc-welcome-${id}`,
+      title: `Welcome to ${name}`,
+      tags: ["#welcome", "#team"],
+      content: `# Welcome to ${name}\n\nThis is your team's collaborative workspace in Clocean.\n- [ ] Invite team members\n- [ ] Create shared documents\n- [ ] Upload team assets`,
+      updatedAt: now,
+      attachments: [],
+    };
+    await this.putJson(`workspaces/${id}/docs/doc-welcome-${id}/content.json`, docData);
+
+    // Initial empty Tasks, Photos, and Activity
+    await this.putJson(`workspaces/${id}/tasks.json`, { tasks: [], updatedAt: now });
+    await this.putJson(`workspaces/${id}/photos.json`, { photos: [], updatedAt: now });
+    await this.putJson(`workspaces/${id}/activity.json`, {
+      activities: [
+        {
+          id: `act-${crypto.randomUUID()}`,
+          title: `Created workspace "${name}"`,
+          type: "doc",
+          timestamp: "Just now",
+          user: ownerName,
+        },
+      ],
+    });
+
+    // Add to user's registered workspaces
+    const userWsList = await this.getUserWorkspaces(ownerEmail);
+    if (!userWsList.some((w) => w.id === id)) {
+      userWsList.push({ id, name, icon: icon || "📁", role: "owner" });
+      await this.putJson(`workspaces/registry/users/${encodeURIComponent(ownerEmail)}.json`, {
+        email: ownerEmail,
+        workspaces: userWsList,
+      });
+    }
+
+    return meta;
+  }
+
+  async getWorkspaceMembers(wsId: string): Promise<WorkspaceMember[]> {
+    const key = `workspaces/${wsId}/members.json`;
+    const res = await this.getJson<WorkspaceMembersData>(key);
+    if (res.data && res.data.members) return res.data.members;
+
+    if (wsId === "default") {
+      const defaultMembers: WorkspaceMember[] = [
+        {
+          email: "alex@clocean.co",
+          name: "Alex Sterling",
+          role: "owner",
+          avatar: "https://api.dicebear.com/7.x/initials/svg?seed=alex@clocean.co",
+          joinedAt: new Date().toISOString(),
+        },
+        {
+          email: "marcus@clocean.co",
+          name: "Marcus Vance",
+          role: "member",
+          avatar: "https://api.dicebear.com/7.x/initials/svg?seed=marcus@clocean.co",
+          joinedAt: new Date().toISOString(),
+        },
+        {
+          email: "elena@clocean.co",
+          name: "Elena Rostova",
+          role: "member",
+          avatar: "https://api.dicebear.com/7.x/initials/svg?seed=elena@clocean.co",
+          joinedAt: new Date().toISOString(),
+        },
+        {
+          email: "sofia@clocean.co",
+          name: "Sofia Chen",
+          role: "member",
+          avatar: "https://api.dicebear.com/7.x/initials/svg?seed=sofia@clocean.co",
+          joinedAt: new Date().toISOString(),
+        },
+      ];
+      await this.putJson(key, { workspaceId: "default", members: defaultMembers });
+      return defaultMembers;
+    }
+
+    return [];
+  }
+
+  async addWorkspaceMember(
+    wsId: string,
+    email: string,
+    name: string,
+    role: "admin" | "member" = "member"
+  ): Promise<WorkspaceMember> {
+    const members = await this.getWorkspaceMembers(wsId);
+    let member = members.find((m) => m.email.toLowerCase() === email.toLowerCase());
+    if (member) {
+      member.role = role;
+    } else {
+      member = {
+        email: email.toLowerCase().trim(),
+        name: name || email.split("@")[0],
+        role,
+        avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(email)}`,
+        joinedAt: new Date().toISOString(),
+      };
+      members.push(member);
+    }
+    await this.putJson(`workspaces/${wsId}/members.json`, { workspaceId: wsId, members });
+
+    // Also register workspace in user's workspaces
+    const userWsList = await this.getUserWorkspaces(email);
+    const wsMeta = await this.getWorkspaceMetadata(wsId);
+    if (!userWsList.some((w) => w.id === wsId)) {
+      userWsList.push({
+        id: wsId,
+        name: wsMeta?.name || "Team Workspace",
+        icon: wsMeta?.icon || "📁",
+        role,
+      });
+      await this.putJson(`workspaces/registry/users/${encodeURIComponent(email)}.json`, {
+        email,
+        workspaces: userWsList,
+      });
+    }
+
+    return member;
   }
 
   // Seed initial data matching the exact Figma designs if R2 is fresh

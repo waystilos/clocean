@@ -63,11 +63,19 @@ app.use(
       if (isAllowedOrigin(origin, c.req.url, c.env)) return origin;
       return null;
     },
-    allowHeaders: ["Content-Type", "Authorization", "x-user-email", "Range", "If-Match"],
+    allowHeaders: ["Content-Type", "Authorization", "x-user-email", "x-workspace-id", "Range", "If-Match"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
   })
 );
+
+// Helper: Extract active workspace ID from header or query (defaulting to "default")
+export function getWorkspaceId(c: any): string {
+  const headerWs = c.req.header("x-workspace-id");
+  const queryWs = c.req.query("ws");
+  const ws = headerWs || queryWs || "default";
+  return isValidId(ws) ? ws : "default";
+}
 
 // Middleware: Auto-seed R2 database on first run and enforce auth in production
 app.use("/api/*", async (c, next) => {
@@ -149,22 +157,90 @@ app.get("/api/user/avatar/:email", async (c) => {
   return new Response(hasBody ? object.body : null, { headers, status: hasBody ? 200 : 304 });
 });
 
+// --- Organization & Team Workspace Endpoints ---
+app.get("/api/workspaces", async (c) => {
+  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const workspaces = await db.getUserWorkspaces(email);
+  return c.json(workspaces);
+});
+
+app.post("/api/workspaces", async (c) => {
+  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const body = await c.req.json<{ name: string; icon?: string }>();
+  if (!body.name || !body.name.trim()) {
+    return c.json({ error: "Workspace name is required" }, 400);
+  }
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const profile = await db.getUserProfile(email);
+  const meta = await db.createWorkspace(
+    body.name.trim().slice(0, 60),
+    body.icon || "📁",
+    email,
+    profile.name
+  );
+  return c.json({ ...meta, role: "owner" }, 201);
+});
+
+app.get("/api/workspaces/:wsId/members", async (c) => {
+  const wsId = c.req.param("wsId");
+  if (!isValidId(wsId)) return c.json({ error: "Invalid workspace ID" }, 400);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const members = await db.getWorkspaceMembers(wsId);
+  return c.json(members);
+});
+
+app.post("/api/workspaces/:wsId/members", async (c) => {
+  const wsId = c.req.param("wsId");
+  if (!isValidId(wsId)) return c.json({ error: "Invalid workspace ID" }, 400);
+  const requesterEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const currentMembers = await db.getWorkspaceMembers(wsId);
+  const requester = currentMembers.find(
+    (m) => m.email.toLowerCase() === requesterEmail.toLowerCase()
+  );
+
+  if (requester && requester.role !== "owner" && requester.role !== "admin") {
+    return c.json({ error: "Only workspace owners and admins can invite members" }, 403);
+  }
+  if (!requester && wsId !== "default") {
+    return c.json({ error: "Only workspace owners and admins can invite members" }, 403);
+  }
+
+  const body = await c.req.json<{ email: string; name?: string; role?: "admin" | "member" }>();
+  if (!body.email || !body.email.includes("@")) {
+    return c.json({ error: "Valid email is required" }, 400);
+  }
+
+  await db.addWorkspaceMember(
+    wsId,
+    body.email,
+    body.name || body.email.split("@")[0],
+    body.role || "member"
+  );
+  const updated = await db.getWorkspaceMembers(wsId);
+  return c.json(updated);
+});
+
 // Workspace Tree Endpoints
 app.get("/api/tree", async (c) => {
+  const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data } = await db.getJson<WorkspaceTree>("workspaces/default/tree.json");
-  return c.json(data || { workspaceId: "default", nodes: [], updatedAt: new Date().toISOString() });
+  const { data } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
+  return c.json(data || { workspaceId: ws, nodes: [], updatedAt: new Date().toISOString() });
 });
 
 app.post("/api/tree/node", async (c) => {
+  const ws = getWorkspaceId(c);
   const body = await c.req.json<Partial<TreeNode>>();
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data, etag } = await db.getJson<WorkspaceTree>("workspaces/default/tree.json");
+  const { data, etag } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
   if (!data) return c.json({ error: "Tree not found" }, 404);
 
   const newNode: TreeNode = {
     id: body.id || `node-${crypto.randomUUID()}`,
-    name: body.name || "Untitled",
+    name: body.name ? sanitizeFilename(body.name) : "Untitled",
     type: body.type || "doc",
     parentId: body.parentId || null,
     size: body.size || 0,
@@ -187,20 +263,21 @@ app.post("/api/tree/node", async (c) => {
       updatedAt: new Date().toISOString(),
       attachments: [],
     };
-    await db.putJson(`workspaces/default/docs/${newNode.id}/content.json`, docData);
+    await db.putJson(`workspaces/${ws}/docs/${newNode.id}/content.json`, docData);
   }
 
-  await db.putJson("workspaces/default/tree.json", data, etag || undefined);
+  await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
   return c.json(newNode);
 });
 
 app.put("/api/tree/node/:id", async (c) => {
   const id = c.req.param("id");
   if (!isValidId(id)) return c.json({ error: "Invalid node ID parameter" }, 400);
+  const ws = getWorkspaceId(c);
 
   const body = await c.req.json<Partial<TreeNode>>();
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data, etag } = await db.getJson<WorkspaceTree>("workspaces/default/tree.json");
+  const { data, etag } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
   if (!data) return c.json({ error: "Tree not found" }, 404);
 
   const node = data.nodes.find((n) => n.id === id);
@@ -211,22 +288,23 @@ app.put("/api/tree/node/:id", async (c) => {
   if (body.tags) node.tags = body.tags;
   node.updatedAt = "Just now";
 
-  await db.putJson("workspaces/default/tree.json", data, etag || undefined);
+  await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
   return c.json(node);
 });
 
 app.delete("/api/tree/node/:id", async (c) => {
   const id = c.req.param("id");
   if (!isValidId(id)) return c.json({ error: "Invalid node ID parameter" }, 400);
+  const ws = getWorkspaceId(c);
 
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data, etag } = await db.getJson<WorkspaceTree>("workspaces/default/tree.json");
+  const { data, etag } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
   if (!data) return c.json({ error: "Tree not found" }, 404);
 
   data.nodes = data.nodes.filter((n) => n.id !== id);
   data.updatedAt = new Date().toISOString();
 
-  await db.putJson("workspaces/default/tree.json", data, etag || undefined);
+  await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
   return c.json({ success: true, deletedId: id });
 });
 
@@ -234,9 +312,10 @@ app.delete("/api/tree/node/:id", async (c) => {
 app.get("/api/docs/:id", async (c) => {
   const id = c.req.param("id");
   if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
+  const ws = getWorkspaceId(c);
 
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data } = await db.getJson<DocContent>(`workspaces/default/docs/${id}/content.json`);
+  const { data } = await db.getJson<DocContent>(`workspaces/${ws}/docs/${id}/content.json`);
   if (!data) {
     // If not found, return empty template
     return c.json({
@@ -254,10 +333,11 @@ app.get("/api/docs/:id", async (c) => {
 app.put("/api/docs/:id", async (c) => {
   const id = c.req.param("id");
   if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
+  const ws = getWorkspaceId(c);
 
   const body = await c.req.json<Partial<DocContent>>();
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const existing = (await db.getJson<DocContent>(`workspaces/default/docs/${id}/content.json`)).data;
+  const existing = (await db.getJson<DocContent>(`workspaces/${ws}/docs/${id}/content.json`)).data;
 
   const rawTitle = body.title ?? existing?.title ?? "Untitled";
   const safeTitle = sanitizeFilename(rawTitle).slice(0, 200);
@@ -271,16 +351,16 @@ app.put("/api/docs/:id", async (c) => {
     attachments: body.attachments ?? existing?.attachments ?? [],
   };
 
-  await db.putJson(`workspaces/default/docs/${id}/content.json`, updatedDoc);
+  await db.putJson(`workspaces/${ws}/docs/${id}/content.json`, updatedDoc);
 
   // Sync title in tree
-  const treeRes = await db.getJson<WorkspaceTree>("workspaces/default/tree.json");
+  const treeRes = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
   if (treeRes.data) {
     const node = treeRes.data.nodes.find((n) => n.id === id);
     if (node && node.name !== updatedDoc.title) {
       node.name = updatedDoc.title;
       node.updatedAt = "Just now";
-      await db.putJson("workspaces/default/tree.json", treeRes.data);
+      await db.putJson(`workspaces/${ws}/tree.json`, treeRes.data);
     }
   }
 
@@ -300,10 +380,11 @@ app.post("/api/upload", async (c) => {
     return c.json({ error: "File exceeds maximum 100MB limit" }, 413);
   }
 
+  const ws = getWorkspaceId(c);
   const fileId = `file-${crypto.randomUUID()}`;
   // Security: Sanitize filename to prevent R2 path traversal
   const filename = sanitizeFilename(file.name || "uploaded_file");
-  const r2Key = `workspaces/default/files/${fileId}/${filename}`;
+  const r2Key = `workspaces/${ws}/files/${fileId}/${filename}`;
 
   // Stream file directly to R2 bucket
   await c.env.CLOCEAN_STORAGE.put(r2Key, file.stream(), {
@@ -314,7 +395,7 @@ app.post("/api/upload", async (c) => {
 
   // Record node in tree
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data } = await db.getJson<WorkspaceTree>("workspaces/default/tree.json");
+  const { data } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
   const newNode: TreeNode = {
     id: fileId,
     name: filename,
@@ -329,12 +410,12 @@ app.post("/api/upload", async (c) => {
 
   if (data) {
     data.nodes.unshift(newNode);
-    await db.putJson("workspaces/default/tree.json", data);
+    await db.putJson(`workspaces/${ws}/tree.json`, data);
   }
 
   // If image, also record in photos gallery in R2
   if (file.type && file.type.startsWith("image/")) {
-    const photosRes = await db.getJson<PhotosData>("workspaces/default/photos.json");
+    const photosRes = await db.getJson<PhotosData>(`workspaces/${ws}/photos.json`);
     if (photosRes.data) {
       photosRes.data.photos.unshift({
         id: fileId,
@@ -344,14 +425,14 @@ app.post("/api/upload", async (c) => {
         album: "Uploads",
         uploadedAt: "Just now",
       });
-      await db.putJson("workspaces/default/photos.json", photosRes.data);
+      await db.putJson(`workspaces/${ws}/photos.json`, photosRes.data);
     }
   }
 
   // Also record in activity log
   const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
   const user = await db.getUserProfile(email);
-  const actRes = await db.getJson<ActivitiesData>("workspaces/default/activity.json");
+  const actRes = await db.getJson<ActivitiesData>(`workspaces/${ws}/activity.json`);
   if (actRes.data) {
     actRes.data.activities.unshift({
       id: `act-${crypto.randomUUID()}`,
@@ -360,7 +441,7 @@ app.post("/api/upload", async (c) => {
       timestamp: "Just now",
       user: user.name,
     });
-    await db.putJson("workspaces/default/activity.json", actRes.data);
+    await db.putJson(`workspaces/${ws}/activity.json`, actRes.data);
   }
 
   return c.json({
@@ -381,13 +462,22 @@ app.get("/api/files/:id/:filename", async (c) => {
     return c.json({ error: "Invalid file ID parameter" }, 400);
   }
 
+  const ws = getWorkspaceId(c);
   const safeFilename = sanitizeFilename(decodeURIComponent(filename));
-  const r2Key = `workspaces/default/files/${id}/${safeFilename}`;
+  const r2Key = `workspaces/${ws}/files/${id}/${safeFilename}`;
 
-  const object = await c.env.CLOCEAN_STORAGE.get(r2Key, {
+  let object = await c.env.CLOCEAN_STORAGE.get(r2Key, {
     range: c.req.raw.headers,
     onlyIf: c.req.raw.headers,
   });
+
+  if (!object && ws !== "default") {
+    // Fallback check default workspace if file was originally there
+    object = await c.env.CLOCEAN_STORAGE.get(`workspaces/default/files/${id}/${safeFilename}`, {
+      range: c.req.raw.headers,
+      onlyIf: c.req.raw.headers,
+    });
+  }
 
   if (!object) {
     // If not found in custom files, check if it is a sample file placeholder
@@ -412,24 +502,26 @@ app.get("/api/files/:id/:filename", async (c) => {
   const dispositionType = isInlineSafe ? "inline" : "attachment";
   headers.set("Content-Disposition", `${dispositionType}; filename="${safeFilename.replace(/["\r\n\\]/g, "")}"`);
 
-  const hasBody = "body" in object && object.body;
-  return new Response(hasBody ? object.body : null, {
+  const bodyStream = "body" in object ? (object as R2ObjectBody).body : null;
+  return new Response(bodyStream, {
     headers,
-    status: hasBody ? 200 : 304,
+    status: bodyStream ? 200 : 304,
   });
 });
 
 // Kanban Tasks
 app.get("/api/tasks", async (c) => {
+  const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data } = await db.getJson<TasksData>("workspaces/default/tasks.json");
+  const { data } = await db.getJson<TasksData>(`workspaces/${ws}/tasks.json`);
   return c.json(data?.tasks || []);
 });
 
 app.put("/api/tasks", async (c) => {
+  const ws = getWorkspaceId(c);
   const tasks = await c.req.json<any[]>();
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  await db.putJson("workspaces/default/tasks.json", {
+  await db.putJson(`workspaces/${ws}/tasks.json`, {
     tasks,
     updatedAt: new Date().toISOString(),
   });
@@ -438,15 +530,17 @@ app.put("/api/tasks", async (c) => {
 
 // Photos Gallery
 app.get("/api/photos", async (c) => {
+  const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data } = await db.getJson<PhotosData>("workspaces/default/photos.json");
+  const { data } = await db.getJson<PhotosData>(`workspaces/${ws}/photos.json`);
   return c.json(data?.photos || []);
 });
 
 // Activity Feed
 app.get("/api/activity", async (c) => {
+  const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data } = await db.getJson<ActivitiesData>("workspaces/default/activity.json");
+  const { data } = await db.getJson<ActivitiesData>(`workspaces/${ws}/activity.json`);
   return c.json(data?.activities || []);
 });
 
@@ -465,16 +559,19 @@ app.get("/api/collab/:docId", async (c) => {
     return c.text("Forbidden: Cross-Site WebSocket Hijacking blocked", 403);
   }
 
+  const ws = getWorkspaceId(c);
   const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const user = await db.getUserProfile(email);
 
-  // Route to Durable Object named by docId
-  const id = c.env.DOC_SESSION.idFromName(docId);
+  // Route to Durable Object named by workspaceId:docId
+  const roomId = `${ws}:${docId}`;
+  const id = c.env.DOC_SESSION.idFromName(roomId);
   const stub = c.env.DOC_SESSION.get(id);
 
   const url = new URL(c.req.url);
   const queryName = url.searchParams.get("name");
+  url.searchParams.set("workspaceId", ws);
   url.searchParams.set("docId", docId);
   url.searchParams.set("email", user.email);
   url.searchParams.set("name", queryName ? sanitizeFilename(queryName).slice(0, 60) : user.name);

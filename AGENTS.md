@@ -73,6 +73,8 @@ clocean/
 │   │   ├── Header.tsx         # Contextual header with breadcrumbs & collaborator avatars
 │   │   ├── SearchModal.tsx    # Global Ctrl+K workspace search modal
 │   │   ├── SettingsModal.tsx  # Settings dialog with real R2 avatar upload
+│   │   ├── CreateWorkspaceModal.tsx # Team organization creation modal
+│   │   ├── TeamMembersModal.tsx # Team roster management & invitation modal
 │   │   └── FilePreviewModal.tsx # PDF & Image viewer for R2 files
 │   └── views/
 │       ├── DashboardView.tsx  # Figma v2-dashboard greeting & recent activity
@@ -98,14 +100,17 @@ clocean/
 
 | Key Pattern | Purpose | Concurrency |
 | :--- | :--- | :--- |
-| `workspaces/default/tree.json` | File & document hierarchy index | Optimistic locking via `If-Match` ETags |
-| `workspaces/default/docs/{id}/content.json` | Document body, blocks, attachments | Debounced write from Durable Object |
-| `workspaces/default/tasks.json` | Sprint Kanban tasks & assignees | Direct JSON write |
-| `workspaces/default/photos.json` | Photo gallery registry | Direct JSON write |
-| `workspaces/default/activity.json` | Activity changelog | Appended on upload / edits |
+| `workspaces/registry/users/{email}.json` | User workspace list & assigned roles | Direct JSON write |
+| `workspaces/{wsId}/meta.json` | Organization metadata & ownership | Direct JSON write |
+| `workspaces/{wsId}/members.json` | Team members roster & roles | Direct JSON write |
+| `workspaces/{wsId}/tree.json` | File & document hierarchy index | Optimistic locking via `If-Match` ETags |
+| `workspaces/{wsId}/docs/{id}/content.json` | Document body, blocks, attachments | Debounced write from Durable Object |
+| `workspaces/{wsId}/tasks.json` | Sprint Kanban tasks & assignees | Direct JSON write |
+| `workspaces/{wsId}/photos.json` | Photo gallery registry | Direct JSON write |
+| `workspaces/{wsId}/activity.json` | Activity changelog | Appended on upload / edits |
 | `workspaces/default/users/{email}.json` | User profiles & display names | Direct JSON write |
 | `workspaces/default/avatars/{email}.png` | User profile avatar pictures | Direct binary image stream |
-| `workspaces/default/files/{id}/{name}` | Uploaded files (PDFs, ZIPs, photos) | Byte-range streaming with Content-Type |
+| `workspaces/{wsId}/files/{id}/{name}` | Uploaded files (PDFs, ZIPs, photos) | Byte-range streaming with Content-Type |
 
 ---
 

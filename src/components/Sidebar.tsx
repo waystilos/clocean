@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Home,
   ListCheck,
@@ -11,8 +11,12 @@ import {
   Sun,
   Moon,
   Users,
+  ChevronsUpDown,
+  Plus,
+  Check,
+  UserPlus,
 } from "lucide-react";
-import { ViewMode, UserProfile } from "../types.ts";
+import { ViewMode, UserProfile, UserWorkspaceReference } from "../types.ts";
 
 interface SidebarProps {
   currentView: ViewMode;
@@ -21,6 +25,11 @@ interface SidebarProps {
   theme: "dark" | "light";
   onToggleTheme: () => void;
   onSwitchUser: (email: string) => void;
+  workspaces?: UserWorkspaceReference[];
+  currentWorkspace?: UserWorkspaceReference;
+  onSelectWorkspace?: (workspace: UserWorkspaceReference) => void;
+  onOpenCreateWorkspace?: () => void;
+  onOpenTeamMembers?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -30,7 +39,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
   theme,
   onToggleTheme,
   onSwitchUser,
+  workspaces = [],
+  currentWorkspace = { id: "default", name: "Clocean Main", icon: "🌊", role: "owner" },
+  onSelectWorkspace,
+  onOpenCreateWorkspace,
+  onOpenTeamMembers,
 }) => {
+  const [isWsDropdownOpen, setIsWsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsWsDropdownOpen(false);
+      }
+    };
+    if (isWsDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isWsDropdownOpen]);
+
   const navItems: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
     { id: "home", label: "Home", icon: <Home size={18} /> },
     { id: "tasks", label: "Tasks", icon: <ListCheck size={18} /> },
@@ -56,34 +88,211 @@ export const Sidebar: React.FC<SidebarProps> = ({
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
-        padding: "24px 16px",
+        padding: "20px 16px",
         userSelect: "none",
+        position: "relative",
       }}
     >
       {/* Top Section */}
       <div>
-        {/* Brand */}
-        <div
-          onClick={() => onSelectView("home")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            padding: "0 8px 24px 8px",
-            cursor: "pointer",
-          }}
-        >
-          <span
-            className="font-serif"
+        {/* Notion-style Workspace Switcher */}
+        <div style={{ position: "relative", marginBottom: "16px" }} ref={dropdownRef}>
+          <button
+            onClick={() => setIsWsDropdownOpen((prev) => !prev)}
             style={{
-              fontSize: "22px",
-              fontWeight: 600,
-              letterSpacing: "-0.02em",
-              color: "var(--text-primary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              width: "100%",
+              padding: "8px 10px",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid transparent",
+              background: isWsDropdownOpen ? "var(--bg-nav-active)" : "transparent",
+              cursor: "pointer",
+              transition: "all 0.15s ease",
             }}
+            className="workspace-switcher-btn"
           >
-            clocean
-          </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+              <div
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "6px",
+                  backgroundColor: "var(--bg-surface)",
+                  border: "1px solid var(--border-subtle)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "16px",
+                  flexShrink: 0,
+                }}
+              >
+                {currentWorkspace.icon || "🌊"}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", textAlign: "left", minWidth: 0 }}>
+                <span
+                  style={{
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    color: "var(--text-primary)",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {currentWorkspace.name}
+                </span>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--text-muted)",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {currentWorkspace.role}
+                </span>
+              </div>
+            </div>
+            <ChevronsUpDown size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+          </button>
+
+          {/* Workspace Dropdown Menu */}
+          {isWsDropdownOpen && (
+            <div
+              className="animate-fade-in"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 4px)",
+                left: 0,
+                right: 0,
+                backgroundColor: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-md)",
+                boxShadow: "0 10px 25px rgba(0, 0, 0, 0.25)",
+                zIndex: 100,
+                padding: "6px",
+                minWidth: "220px",
+              }}
+            >
+              <div
+                style={{
+                  padding: "6px 8px 8px 8px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Workspaces
+              </div>
+
+              {/* Workspace List */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxHeight: "200px", overflowY: "auto" }}>
+                {workspaces.map((ws) => {
+                  const isSelected = ws.id === currentWorkspace.id;
+                  return (
+                    <button
+                      key={ws.id}
+                      onClick={() => {
+                        onSelectWorkspace?.(ws);
+                        setIsWsDropdownOpen(false);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "6px 8px",
+                        borderRadius: "var(--radius-sm)",
+                        border: "none",
+                        background: isSelected ? "var(--bg-nav-active)" : "transparent",
+                        cursor: "pointer",
+                        width: "100%",
+                        textAlign: "left",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+                        <span style={{ fontSize: "16px", flexShrink: 0 }}>{ws.icon || "🌊"}</span>
+                        <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                          <span
+                            style={{
+                              fontSize: "13px",
+                              fontWeight: isSelected ? 600 : 400,
+                              color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {ws.name}
+                          </span>
+                          <span style={{ fontSize: "10px", color: "var(--text-muted)", textTransform: "capitalize" }}>
+                            {ws.role}
+                          </span>
+                        </div>
+                      </div>
+                      {isSelected && <Check size={14} style={{ color: "var(--accent)", flexShrink: 0 }} />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ height: "1px", backgroundColor: "var(--border-subtle)", margin: "6px 0" }} />
+
+              {/* Actions */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                <button
+                  onClick={() => {
+                    setIsWsDropdownOpen(false);
+                    onOpenTeamMembers?.();
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "6px 8px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--text-secondary)",
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    width: "100%",
+                    textAlign: "left",
+                  }}
+                >
+                  <Users size={14} />
+                  <span>Team Members</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setIsWsDropdownOpen(false);
+                    onOpenCreateWorkspace?.();
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "6px 8px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--accent)",
+                    fontSize: "12px",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    width: "100%",
+                    textAlign: "left",
+                  }}
+                >
+                  <Plus size={14} />
+                  <span>Create Workspace</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Primary Navigation */}

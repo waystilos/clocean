@@ -18,6 +18,7 @@ import { DocContent, DocAttachment, UserProfile } from "../types.ts";
 interface EditorViewProps {
   docId: string;
   currentUser: UserProfile;
+  workspaceId?: string;
   onUpdateAttachments?: () => void;
   onOpenFilePreview?: (attachment: DocAttachment) => void;
 }
@@ -39,6 +40,7 @@ interface RemoteCursor {
 export const EditorView: React.FC<EditorViewProps> = ({
   docId,
   currentUser,
+  workspaceId = "default",
   onOpenFilePreview,
 }) => {
   const [doc, setDoc] = useState<DocContent | null>(null);
@@ -56,7 +58,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   // Load initial document from API
   useEffect(() => {
-    fetch(`/api/docs/${docId}`)
+    fetch(`/api/docs/${docId}`, {
+      headers: { "x-workspace-id": workspaceId },
+    })
       .then((res) => res.json())
       .then((raw) => {
         const data = raw as DocContent;
@@ -67,7 +71,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         setAttachments(data.attachments || []);
       })
       .catch((err) => console.error("Error loading document:", err));
-  }, [docId]);
+  }, [docId, workspaceId]);
 
   // Connect to Cloudflare Durable Object WebSocket for real-time multiplayer editing
   useEffect(() => {
@@ -76,7 +80,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
       currentUser.email
     )}&name=${encodeURIComponent(currentUser.name)}&avatar=${encodeURIComponent(
       currentUser.avatar
-    )}`;
+    )}&ws=${encodeURIComponent(workspaceId)}`;
 
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
@@ -130,7 +134,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     return () => {
       ws.close();
     };
-  }, [docId, currentUser]);
+  }, [docId, currentUser, workspaceId]);
 
   // Send edits to peers & Durable Object
   const handleContentChange = (newContent: string) => {
@@ -153,7 +157,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
     const timeout = setTimeout(() => {
       fetch(`/api/docs/${docId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-workspace-id": workspaceId,
+        },
         body: JSON.stringify({ title, content: newContent, tags, attachments }),
       }).then(() => setIsSaving(false));
     }, 1500);
@@ -574,7 +581,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
               setAttachments(updated);
               fetch(`/api/docs/${docId}`, {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-workspace-id": workspaceId,
+                },
                 body: JSON.stringify({ title, content, tags, attachments: updated }),
               });
             }

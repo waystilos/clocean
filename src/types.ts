@@ -65,3 +65,27 @@ export interface UserProfile {
   email: string;
   avatar: string;
 }
+
+export interface WorkspaceMetadata {
+  id: string;
+  name: string;
+  icon: string;
+  ownerEmail: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceMember {
+  email: string;
+  name: string;
+  role: "owner" | "admin" | "member";
+  avatar: string;
+  joinedAt: string;
+}
+
+export interface UserWorkspaceReference {
+  id: string;
+  name: string;
+  icon: string;
+  role: "owner" | "admin" | "member";
+}

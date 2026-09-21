@@ -18,6 +18,7 @@ const COLLAB_COLORS = [
 ];
 
 export class DocSessionDO {
+  private workspaceId: string = "default";
   private docId: string = "";
   private content: string = "";
   private title: string = "";
@@ -30,6 +31,7 @@ export class DocSessionDO {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    this.workspaceId = url.searchParams.get("workspaceId") || "default";
     this.docId = url.searchParams.get("docId") || "default";
 
     // Handle WebSocket upgrade
@@ -63,7 +65,7 @@ export class DocSessionDO {
   private async loadFromR2(): Promise<void> {
     try {
       const r2Object = await this.env.CLOCEAN_STORAGE.get(
-        `workspaces/default/docs/${this.docId}/content.json`
+        `workspaces/${this.workspaceId}/docs/${this.docId}/content.json`
       );
       if (r2Object) {
         const text = await r2Object.text();
@@ -90,7 +92,7 @@ export class DocSessionDO {
         attachments: this.attachments,
       };
       await this.env.CLOCEAN_STORAGE.put(
-        `workspaces/default/docs/${this.docId}/content.json`,
+        `workspaces/${this.workspaceId}/docs/${this.docId}/content.json`,
         JSON.stringify(payload, null, 2),
         {
           httpMetadata: { contentType: "application/json" },

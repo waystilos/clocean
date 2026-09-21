@@ -93,11 +93,17 @@ Cloudflare R2 provides:
 
 #### Key Schema Structure
 ```text
-workspaces/default/
-├── tree.json                          # Full file & folder hierarchy
-├── tasks.json                         # Kanban sprint tasks
-├── photos.json                        # Photos gallery index
-├── activity.json                      # Workspace changelog
+workspaces/registry/
+└── users/
+    └── {email}.json                   # User's registered organizations & assigned roles
+
+workspaces/{workspaceId}/              # Multi-tenant partitioned team root (e.g. 'default', 'ws-design')
+├── meta.json                          # Organization metadata (name, icon, owner, timestamps)
+├── members.json                       # Team roster (emails, display names, avatars, roles: owner/admin/member)
+├── tree.json                          # File & folder hierarchy isolated to this organization
+├── tasks.json                         # Kanban sprint tasks isolated to this organization
+├── photos.json                        # Photos gallery index isolated to this organization
+├── activity.json                      # Organization-specific activity changelog
 ├── users/
 │   └── {email}.json                   # User profile, display name, preferences
 ├── avatars/
@@ -118,6 +124,39 @@ await bucket.put(key, jsonString, {
 });
 ```
 If another process updated `tree.json` in the meantime, the write fails safely rather than overwriting changes.
+
+---
+
+### Layer 5: Multi-Tenant Organizations & Team Workspaces
+
+Clocean supports Notion-style team organizations with zero database overhead. Users can belong to multiple workspaces, switch seamlessly between them, create new team workspaces, and invite teammates with role-based access.
+
+```mermaid
+graph TD
+    Client([Collaborator Client]) -->|x-workspace-id: ws-design-alpha| Edge[Hono Edge Router]
+
+    subgraph Multi-Tenant R2 Storage
+        Edge -->|Roster & Role Checks| MembersDoc[(workspaces/{wsId}/members.json)]
+        Edge -->|Organization 1 Data| OrgA[(workspaces/ws-design-alpha/...)]
+        Edge -->|Default Organization Data| OrgDefault[(workspaces/default/...)]
+        Edge -->|User Workspace Directory| UserRegistry[(workspaces/registry/users/{email}.json)]
+    end
+
+    subgraph Real-Time Multi-Tenant Isolation
+        Client -->|wss://.../api/collab/:docId?ws=ws-design-alpha| DO_A[Durable Object Room<br/>ws-design-alpha:doc-1]
+        OtherPeer([Peer in Default Team]) -->|wss://.../api/collab/:docId?ws=default| DO_Default[Durable Object Room<br/>default:doc-1]
+    end
+```
+
+#### Multi-Tenancy Principles
+1. **Zero Database Multi-Tenancy**: All workspace partitions live as key prefixes in the R2 bucket (`workspaces/{workspaceId}/...`). Creating a team requires zero migration scripts, zero table alterations, and zero additional cloud costs.
+2. **Strict Cryptographic Isolation**: Document IDs are identical across teams without conflict because every request is partitioned by `workspaceId`. A document in Team A is inaccessible to Team B.
+3. **Isolated Real-Time Durable Object Rooms**: Collab room IDs are scoped as `${workspaceId}:${docId}`. WebSocket broadcasts and in-memory operational transforms never cross organization boundaries.
+4. **Role-Based Access Control**:
+   - **`owner`**: Created the workspace; can manage team members, invite new colleagues, and delete content.
+   - **`admin`**: Can invite new teammates and manage workspace settings.
+   - **`member`**: Can view, edit, upload, and collaborate in real time.
+
 
 ---
 
