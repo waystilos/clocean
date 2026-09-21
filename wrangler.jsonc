@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "clocean",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-02-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "r2_buckets": [
+    {
+      "binding": "CLOCEAN_STORAGE",
+      "bucket_name": "clocean-storage"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DOC_SESSION",
+        "class_name": "DocSessionDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["DocSessionDO"]
+    }
+  ]
+}
