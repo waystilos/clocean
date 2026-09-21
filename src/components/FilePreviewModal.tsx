@@ -123,6 +123,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
             <iframe
               src={fileUrl}
               title={file.name}
+              sandbox="allow-scripts"
               style={{
                 width: "100%",
                 height: "65vh",

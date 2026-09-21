@@ -27,5 +27,8 @@
       "tag": "v1",
       "new_classes": ["DocSessionDO"]
     }
-  ]
+  ],
+  "vars": {
+    "ENVIRONMENT": "development"
+  }
 }

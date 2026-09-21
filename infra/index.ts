@@ -26,9 +26,9 @@ export const accessApp = new cloudflare.AccessApplication("clocean-app", {
   autoRedirectToIdentity: false,
   corsHeaders: [
     {
-      allowAllHeaders: true,
-      allowAllMethods: true,
-      allowAllOrigins: true,
+      allowedHeaders: ["Content-Type", "Authorization", "x-user-email", "Range", "If-Match"],
+      allowedMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowedOrigins: [`https://${domain}`],
       allowCredentials: true,
       maxAge: 86400,
     },

@@ -2,18 +2,81 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { Env, WorkspaceTree, TreeNode, DocContent, TasksData, PhotosData, ActivitiesData } from "./types.ts";
 import { R2Database } from "./storage/r2Db.ts";
-import { getAuthEmail } from "./auth/cfAccess.ts";
+import { getAuthEmail, requireAuth } from "./auth/cfAccess.ts";
 import { DocSessionDO } from "./durable_objects/DocSessionDO.ts";
 
 export { DocSessionDO };
 
+// Security Utility: Sanitize filename to prevent R2 path traversal and header injection
+export function sanitizeFilename(filename: string): string {
+  const basename = filename.replace(/\\/g, "/").split("/").pop() || "unnamed_file";
+  const sanitized = basename
+    .replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g, "_")
+    .replace(/\.\.+/g, ".")
+    .replace(/["'\r\n]/g, "")
+    .trim();
+  return sanitized || "unnamed_file";
+}
+
+// Security Utility: Enforce safe identifier format for IDs and document slugs
+export function isValidId(id: string): boolean {
+  return typeof id === "string" && /^[a-zA-Z0-9_\-\.]+$/.test(id) && !id.includes("..");
+}
+
+// Security Utility: Validate Origin header during WebSocket handshake to prevent CSWSH
+export function isAllowedOrigin(originHeader: string | null | undefined, requestUrl: string, env?: Env): boolean {
+  if (!originHeader) return true; // Direct non-browser requests or same-site
+  try {
+    const reqHost = new URL(requestUrl).host;
+    const originUrl = new URL(originHeader);
+
+    // Match exact host or loopback development
+    if (originUrl.host === reqHost) return true;
+    if (originUrl.hostname === "localhost" || originUrl.hostname === "127.0.0.1") return true;
+
+    // Check configured allowed origins
+    if (env?.ALLOWED_ORIGINS) {
+      const allowed = env.ALLOWED_ORIGINS.split(",").map((o) => o.trim());
+      if (allowed.includes(originHeader) || allowed.includes(originUrl.origin)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// Safe extensions allowed for inline rendering (all other formats forced to attachment)
+const SAFE_INLINE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf", ".txt"];
+const ALLOWED_AVATAR_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
+
 const app = new Hono<{ Bindings: Env }>();
 
-// Enable CORS for local Vite dev server
-app.use("*", cors());
+// Hardened CORS: dynamically validate origin and allow credentials
+app.use(
+  "*",
+  cors({
+    origin: (origin, c) => {
+      if (!origin) return "*";
+      if (isAllowedOrigin(origin, c.req.url, c.env)) return origin;
+      return null;
+    },
+    allowHeaders: ["Content-Type", "Authorization", "x-user-email", "Range", "If-Match"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true,
+  })
+);
 
-// Middleware: Auto-seed R2 database on first run
+// Middleware: Auto-seed R2 database on first run and enforce auth in production
 app.use("/api/*", async (c, next) => {
+  // Enforce Cloudflare Zero Trust authentication in production
+  const authRes = requireAuth(c.req.raw, c.env);
+  if (authRes instanceof Response) {
+    return authRes;
+  }
+
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   await db.ensureSeeded();
   await next();
@@ -21,29 +84,39 @@ app.use("/api/*", async (c, next) => {
 
 // Auth & Real User Profile Endpoints (Backed by R2)
 app.get("/api/me", async (c) => {
-  const email = getAuthEmail(c.req.raw);
+  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const profile = await db.getUserProfile(email);
   return c.json(profile);
 });
 
 app.put("/api/user/profile", async (c) => {
-  const email = getAuthEmail(c.req.raw);
+  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
   const body = await c.req.json<{ name?: string; bio?: string }>();
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const profile = await db.getUserProfile(email);
-  if (body.name) profile.name = body.name;
-  if (body.bio !== undefined) profile.bio = body.bio;
+  if (body.name) profile.name = body.name.slice(0, 100);
+  if (body.bio !== undefined) profile.bio = body.bio.slice(0, 500);
   profile.updatedAt = new Date().toISOString();
   await db.putUserProfile(profile);
   return c.json(profile);
 });
 
 app.post("/api/user/avatar", async (c) => {
-  const email = getAuthEmail(c.req.raw);
+  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
   const body = await c.req.parseBody();
   const file = body["avatar"] as File | undefined;
   if (!file) return c.json({ error: "No avatar image provided" }, 400);
+
+  // Validate avatar file size (max 5 MB)
+  if (file.size > MAX_AVATAR_SIZE) {
+    return c.json({ error: "Avatar file exceeds maximum 5MB limit" }, 413);
+  }
+
+  // Validate avatar MIME type
+  if (file.type && !ALLOWED_AVATAR_MIMES.includes(file.type)) {
+    return c.json({ error: "Invalid image format. Allowed: PNG, JPEG, WEBP, GIF" }, 400);
+  }
 
   const avatarKey = `workspaces/default/avatars/${encodeURIComponent(email)}.png`;
   await c.env.CLOCEAN_STORAGE.put(avatarKey, file.stream(), {
@@ -71,6 +144,7 @@ app.get("/api/user/avatar/:email", async (c) => {
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set("Cache-Control", "public, max-age=86400");
+  headers.set("X-Content-Type-Options", "nosniff");
   const hasBody = "body" in object && object.body;
   return new Response(hasBody ? object.body : null, { headers, status: hasBody ? 200 : 304 });
 });
@@ -122,6 +196,8 @@ app.post("/api/tree/node", async (c) => {
 
 app.put("/api/tree/node/:id", async (c) => {
   const id = c.req.param("id");
+  if (!isValidId(id)) return c.json({ error: "Invalid node ID parameter" }, 400);
+
   const body = await c.req.json<Partial<TreeNode>>();
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const { data, etag } = await db.getJson<WorkspaceTree>("workspaces/default/tree.json");
@@ -130,7 +206,7 @@ app.put("/api/tree/node/:id", async (c) => {
   const node = data.nodes.find((n) => n.id === id);
   if (!node) return c.json({ error: "Node not found" }, 404);
 
-  if (body.name) node.name = body.name;
+  if (body.name) node.name = sanitizeFilename(body.name);
   if (body.parentId !== undefined) node.parentId = body.parentId;
   if (body.tags) node.tags = body.tags;
   node.updatedAt = "Just now";
@@ -141,6 +217,8 @@ app.put("/api/tree/node/:id", async (c) => {
 
 app.delete("/api/tree/node/:id", async (c) => {
   const id = c.req.param("id");
+  if (!isValidId(id)) return c.json({ error: "Invalid node ID parameter" }, 400);
+
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const { data, etag } = await db.getJson<WorkspaceTree>("workspaces/default/tree.json");
   if (!data) return c.json({ error: "Tree not found" }, 404);
@@ -155,6 +233,8 @@ app.delete("/api/tree/node/:id", async (c) => {
 // Document Content Endpoints
 app.get("/api/docs/:id", async (c) => {
   const id = c.req.param("id");
+  if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
+
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const { data } = await db.getJson<DocContent>(`workspaces/default/docs/${id}/content.json`);
   if (!data) {
@@ -173,15 +253,20 @@ app.get("/api/docs/:id", async (c) => {
 
 app.put("/api/docs/:id", async (c) => {
   const id = c.req.param("id");
+  if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
+
   const body = await c.req.json<Partial<DocContent>>();
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const existing = (await db.getJson<DocContent>(`workspaces/default/docs/${id}/content.json`)).data;
 
+  const rawTitle = body.title ?? existing?.title ?? "Untitled";
+  const safeTitle = sanitizeFilename(rawTitle).slice(0, 200);
+
   const updatedDoc: DocContent = {
     id,
-    title: body.title ?? existing?.title ?? "Untitled",
+    title: safeTitle,
     tags: body.tags ?? existing?.tags ?? [],
-    content: body.content ?? existing?.content ?? "",
+    content: (body.content ?? existing?.content ?? "").slice(0, 5 * 1024 * 1024), // Max 5 MB markdown
     updatedAt: new Date().toISOString(),
     attachments: body.attachments ?? existing?.attachments ?? [],
   };
@@ -210,8 +295,14 @@ app.post("/api/upload", async (c) => {
     return c.json({ error: "No file provided in form data" }, 400);
   }
 
+  // Security: Enforce maximum file upload size (100 MB)
+  if (file.size > MAX_FILE_SIZE) {
+    return c.json({ error: "File exceeds maximum 100MB limit" }, 413);
+  }
+
   const fileId = `file-${crypto.randomUUID()}`;
-  const filename = file.name || "uploaded_file";
+  // Security: Sanitize filename to prevent R2 path traversal
+  const filename = sanitizeFilename(file.name || "uploaded_file");
   const r2Key = `workspaces/default/files/${fileId}/${filename}`;
 
   // Stream file directly to R2 bucket
@@ -258,7 +349,7 @@ app.post("/api/upload", async (c) => {
   }
 
   // Also record in activity log
-  const email = getAuthEmail(c.req.raw);
+  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
   const user = await db.getUserProfile(email);
   const actRes = await db.getJson<ActivitiesData>("workspaces/default/activity.json");
   if (actRes.data) {
@@ -281,10 +372,17 @@ app.post("/api/upload", async (c) => {
   });
 });
 
-// Stream file from R2
+// Stream file from R2 with XSS sandboxing & security headers
 app.get("/api/files/:id/:filename", async (c) => {
   const { id, filename } = c.req.param();
-  const r2Key = `workspaces/default/files/${id}/${decodeURIComponent(filename)}`;
+
+  // Security: Validate file ID and sanitize filename
+  if (!isValidId(id)) {
+    return c.json({ error: "Invalid file ID parameter" }, 400);
+  }
+
+  const safeFilename = sanitizeFilename(decodeURIComponent(filename));
+  const r2Key = `workspaces/default/files/${id}/${safeFilename}`;
 
   const object = await c.env.CLOCEAN_STORAGE.get(r2Key, {
     range: c.req.raw.headers,
@@ -295,14 +393,24 @@ app.get("/api/files/:id/:filename", async (c) => {
     // If not found in custom files, check if it is a sample file placeholder
     return c.text("File content available in R2 storage.", 200, {
       "Content-Type": "text/plain",
-      "Content-Disposition": `inline; filename="${filename}"`,
+      "Content-Disposition": `inline; filename="${safeFilename}"`,
     });
   }
 
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
-  headers.set("Content-Disposition", `inline; filename="${filename}"`);
+
+  // Security Headers: Prevent stored XSS and MIME sniffing
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Content-Security-Policy", "sandbox; default-src 'none';");
+  headers.set("X-Frame-Options", "SAMEORIGIN");
+
+  // Only allow inline disposition for safe non-executable formats (images & PDF)
+  const ext = safeFilename.toLowerCase().slice(safeFilename.lastIndexOf("."));
+  const isInlineSafe = SAFE_INLINE_EXTENSIONS.includes(ext);
+  const dispositionType = isInlineSafe ? "inline" : "attachment";
+  headers.set("Content-Disposition", `${dispositionType}; filename="${safeFilename.replace(/["\r\n\\]/g, "")}"`);
 
   const hasBody = "body" in object && object.body;
   return new Response(hasBody ? object.body : null, {
@@ -342,10 +450,22 @@ app.get("/api/activity", async (c) => {
   return c.json(data?.activities || []);
 });
 
-// Durable Object Real-Time Multi-Editing WebSocket Route
+// Durable Object Real-Time Multi-Editing WebSocket Route (Hardened with CSWSH protection)
 app.get("/api/collab/:docId", async (c) => {
   const docId = c.req.param("docId");
-  const email = getAuthEmail(c.req.raw);
+
+  // Security: Validate document ID
+  if (!isValidId(docId)) {
+    return c.text("Invalid document ID", 400);
+  }
+
+  // Security: Cross-Site WebSocket Hijacking (CSWSH) protection
+  const origin = c.req.header("origin");
+  if (!isAllowedOrigin(origin, c.req.url, c.env)) {
+    return c.text("Forbidden: Cross-Site WebSocket Hijacking blocked", 403);
+  }
+
+  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const user = await db.getUserProfile(email);
 
@@ -357,7 +477,7 @@ app.get("/api/collab/:docId", async (c) => {
   const queryName = url.searchParams.get("name");
   url.searchParams.set("docId", docId);
   url.searchParams.set("email", user.email);
-  url.searchParams.set("name", queryName || user.name);
+  url.searchParams.set("name", queryName ? sanitizeFilename(queryName).slice(0, 60) : user.name);
   url.searchParams.set("avatar", user.avatar);
 
   const request = new Request(url.toString(), c.req.raw);

@@ -153,17 +153,31 @@ export class DocSessionDO {
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     if (typeof message !== "string") return;
 
+    // Security: Message size limit (512 KB) to prevent DO memory exhaustion
+    if (message.length > 512 * 1024) {
+      ws.send(JSON.stringify({ type: "error", message: "Payload exceeds 512KB limit" }));
+      return;
+    }
+
     try {
       const data = JSON.parse(message);
       const senderMeta = ws.deserializeAttachment() as ConnectedClient | null;
 
       switch (data.type) {
         case "edit": {
-          // Update in-memory state
-          if (typeof data.content === "string") this.content = data.content;
-          if (typeof data.title === "string") this.title = data.title;
-          if (Array.isArray(data.tags)) this.tags = data.tags;
-          if (Array.isArray(data.attachments)) this.attachments = data.attachments;
+          // Security: Cap document content at 5 MB and title at 200 chars
+          if (typeof data.content === "string") {
+            this.content = data.content.slice(0, 5 * 1024 * 1024);
+          }
+          if (typeof data.title === "string") {
+            this.title = data.title.slice(0, 200);
+          }
+          if (Array.isArray(data.tags)) {
+            this.tags = data.tags.filter((t: any) => typeof t === "string").slice(0, 20);
+          }
+          if (Array.isArray(data.attachments)) {
+            this.attachments = data.attachments.slice(0, 50);
+          }
           this.dirty = true;
 
           // Broadcast edit delta to all other connected peers

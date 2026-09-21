@@ -90,4 +90,7 @@ export interface Env {
   CLOCEAN_STORAGE: R2Bucket;
   DOC_SESSION: DurableObjectNamespace;
   ASSETS?: Fetcher;
+  ENVIRONMENT?: string;
+  CF_ACCESS_AUD?: string;
+  ALLOWED_ORIGINS?: string;
 }

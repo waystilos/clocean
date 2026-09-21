@@ -121,6 +121,132 @@ If another process updated `tree.json` in the meantime, the write fails safely r
 
 ---
 
+## 🛡️ Security Architecture & Threat Defenses
+
+Clocean implements an enterprise-grade defense-in-depth model engineered specifically for the serverless edge, preventing user impersonation, data leaks, path traversal attacks, and cross-site hijacking.
+
+```mermaid
+graph LR
+    subgraph Inbound Threat Vectors
+        Attacker1[Unauthenticated Attacker] -->|Spoofed Headers / Query Overrides| AuthGuard{Zero Trust Guard}
+        Attacker2[Malicious Site evil.com] -->|Cross-Site WebSocket Request| WSGuard{CSWSH Origin Guard}
+        Attacker3[Path Traversal Payload] -->|../../tree.json in Filename / ID| Sanitizer{R2 Path Guard}
+        Attacker4[Stored XSS Payload] -->|HTML / SVG with Script| CSPGuard{File Sandbox Guard}
+    end
+
+    subgraph Defense & Enforcement
+        AuthGuard -->|Prod: Missing Zero Trust Token| R401[401 Unauthorized]
+        AuthGuard -->|Valid Cf-Access Token| WorkerCore[Authorized API Core]
+        WSGuard -->|Origin != Host / Allowed| R403[403 Forbidden]
+        WSGuard -->|Trusted Origin| DO[Durable Object Room]
+        Sanitizer -->|Sanitized to Basename| R2Safe[Safe R2 Key Isolation]
+        CSPGuard -->|Forced Attachment + CSP| SafeStream[Sandboxed Stream]
+    end
+```
+
+---
+
+### 1. Zero Trust Edge Authentication & Environment Gating
+* **Threat Addressed**: Unauthorized access, account impersonation via spoofed headers or dev parameters.
+* **Defense Mechanism**:
+  * In **Production** (`ENVIRONMENT = "production"`), dev query parameters (`?email=`, `?user=`) and custom testing headers (`x-user-email`) are unconditionally stripped.
+  * Requests must originate through Cloudflare Zero Trust with a valid `Cf-Access-Authenticated-User-Email` and `Cf-Access-Jwt-Assertion` cryptographic token.
+  * Unauthenticated requests in production receive an immediate `401 Unauthorized` without querying R2.
+  * In **Local Development / Open Source Testing** (`ENVIRONMENT != "production"`), local mock fallbacks are automatically enabled so open-source contributors can run and test multiplayer features with zero initial Cloudflare Access configuration.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Browser / API Client
+    participant Worker as Cloudflare Worker (cfAccess.ts)
+    participant Access as Cloudflare Zero Trust
+    participant R2 as Cloudflare R2
+
+    Client->>Worker: HTTP Request /api/*
+    alt Production Environment
+        Worker->>Worker: Check Cf-Access-Authenticated-User-Email
+        alt Header Missing or Invalid
+            Worker-->>Client: 401 Unauthorized (Access Denied)
+        else Valid Token Present
+            Worker->>R2: Fetch / Update User Data
+            R2-->>Worker: Data
+            Worker-->>Client: 200 OK
+        end
+    else Development / Testing Environment
+        Worker->>Worker: Allow local query ?email= / ?user= / default mock
+        Worker->>R2: Fetch / Update User Data
+        Worker-->>Client: 200 OK
+    end
+```
+
+---
+
+### 2. R2 Path Traversal & Internal Database Isolation
+* **Threat Addressed**: Key manipulation via directory traversal (`../../tree.json`), overwriting root database indices.
+* **Defense Mechanism**:
+  * All file names are passed through `sanitizeFilename()` before forming R2 keys:
+    * Traversal prefixes (`/`, `\`, `..`) are stripped down to the safe base filename.
+    * Illegal filesystem and URI characters (`\x00-\x1f`, `<`, `>`, `:`, `"`, `|`, `?`, `*`) are sanitized to `_`.
+    * Quotes and newline characters (`\r`, `\n`) are removed to prevent HTTP response header injection.
+  * All URL parameters (`:id`, `:docId`) are validated against `^[a-zA-Z0-9_\-\.]+$` to guarantee they cannot escape their designated key namespace.
+
+```mermaid
+flowchart TD
+    RawInput["Client Input: ../../etc/passwd or ../../tree.json"] --> SplitBasename["Split by / and \\ -> Extract Basename"]
+    SplitBasename --> StripDots["Replace multiple dots (..) and control chars"]
+    StripDots --> RemoveQuotes["Strip quotes and CRLF injection characters"]
+    RemoveQuotes --> SafeKey["Safe Key: workspaces/default/files/{uuid}/tree.json"]
+    SafeKey --> R2Write["Isolated Write in Cloudflare R2"]
+```
+
+---
+
+### 3. Cross-Site WebSocket Hijacking (CSWSH) Defense
+* **Threat Addressed**: Malicious third-party websites connecting to `wss://clocean.yourdomain.com/api/collab/:docId` using the victim's ambient browser cookies to read or tamper with live documents.
+* **Defense Mechanism**:
+  * During the WebSocket upgrade handshake on `/api/collab/:docId`, `isAllowedOrigin()` verifies the incoming `Origin` header against the request `Host` and any configured `ALLOWED_ORIGINS`.
+  * Untrusted cross-site origins are rejected with `403 Forbidden` before establishing a Durable Object session.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Victim as Victim Browser (Logged into Clocean)
+    participant Evil as Attacker Website (evil.com)
+    participant Worker as Clocean Edge Worker (/api/collab/:docId)
+    participant DO as Durable Object (DocSessionDO)
+
+    Evil->>Victim: Injects WebSocket script wss://clocean.example.com
+    Victim->>Worker: GET /api/collab/doc-manifesto (Origin: https://evil.com)
+    Worker->>Worker: isAllowedOrigin("https://evil.com")
+    Note over Worker: Origin 'evil.com' does not match Host 'clocean.example.com'
+    Worker-->>Victim: 403 Forbidden (CSWSH Blocked)
+    Note over Evil: Connection terminated. Zero document data leaked.
+```
+
+---
+
+### 4. Stored XSS Prevention & File Streaming Sandbox
+* **Threat Addressed**: Uploading malicious HTML, SVG, or scripts that execute within the application's domain context.
+* **Defense Mechanism**:
+  * Streamed file endpoints attach defense-in-depth security headers:
+    * `Content-Security-Policy: sandbox; default-src 'none';`: Strips scripting capabilities from rendered files.
+    * `X-Content-Type-Options: nosniff`: Prevents MIME-confusion attacks.
+    * `X-Frame-Options: SAMEORIGIN`: Prevents clickjacking.
+  * **Safe Format Gating**: Only safe non-executable image formats (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`) and `.pdf` may be served with `Content-Disposition: inline`. All active or executable formats (HTML, SVG, XML, JS, etc.) are forced to `Content-Disposition: attachment`, preventing arbitrary script execution.
+  * Embedded preview `<iframe>` components explicitly declare `sandbox="allow-scripts"` to isolate rendered documents from parent cookies and `localStorage`.
+
+```mermaid
+graph TD
+    FileReq["GET /api/files/:id/:filename"] --> ExtCheck{"Is extension safe image or PDF?"}
+    ExtCheck -->|Yes (.png, .jpg, .pdf)| Inline["Content-Disposition: inline"]
+    ExtCheck -->|No (.html, .svg, .xml, .exe)| Attach["Content-Disposition: attachment (Forced Download)"]
+    Inline --> AddHeaders["Attach Security Headers:<br/>nosniff<br/>CSP: sandbox<br/>X-Frame-Options: SAMEORIGIN"]
+    Attach --> AddHeaders
+    AddHeaders --> Response["Secure Sandboxed Response Stream"]
+```
+
+---
+
 ## ⚡ Performance Characteristics
 * **Edge Proximity**: Cloudflare Workers run across 330+ cities worldwide within ~50ms of 95% of the world's population.
 * **Cold Starts**: Cloudflare V8 isolates start in **< 5ms**, eliminating the multi-second cold start delays common in Docker / Lambda architectures.
