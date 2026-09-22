@@ -77,6 +77,7 @@ export const App: React.FC = () => {
   const [isTeamMembersOpen, setIsTeamMembersOpen] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<{ id: string; name: string; icon: string; ownerName: string } | null>(null);
   const [notifications, setNotifications] = useState<MentionNotification[]>([]);
+  const [accessRequired, setAccessRequired] = useState(false);
 
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
@@ -171,6 +172,14 @@ export const App: React.FC = () => {
               window.history.replaceState({}, "", window.location.pathname);
             }
           } else {
+            setAccessRequired(Boolean(data.accessRequired));
+            if (data.accessRequired) {
+              setCurrentUser(null);
+              setWorkspaces([]);
+              localStorage.removeItem("clocean_user");
+              localStorage.removeItem("clocean_workspaces");
+              localStorage.removeItem("clocean_session_token");
+            }
             if (!currentUser) {
               setCurrentUser(null);
               localStorage.removeItem("clocean_user");
@@ -520,6 +529,7 @@ export const App: React.FC = () => {
         }}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        accessRequired={accessRequired}
       />
     );
   }

@@ -11,12 +11,12 @@ Because it runs on Cloudflare's serverless edge and R2 has zero egress fees, you
 ## What's Inside
 
 - **Collaborative Document Editor**: Write documents with rich markdown, interactive checklists, code blocks, and linked attachments. Multi-user editing is powered by Cloudflare Durable Objects over WebSockets with live cursor tracking.
-- **Notion-Style Workspace & Doc Invites**: Share a workspace or document with a link (`?join=workspaceId` or `?join=ws&doc=docId`). Teammates already logged in can join with one click, while new teammates verify their email with a 6-digit OTP code and get added to the team roster automatically.
+- **Notion-Style Workspace & Doc Invites**: Share a workspace or document with a link (`?join=workspaceId` or `?join=ws&doc=docId`). Teammates authenticate through the Cloudflare Access protected application before joining.
 - **Sprint Tasks & Deadlines**: Kanban board (`To Do`, `In Progress`, `Done`) and table view with assignees, tags, and calendar due dates. Includes an edge worker routine that flags upcoming deadlines within 48 hours and sends email alerts.
 - **Cloudflare Drive & Photo Moodboards**: Upload PDFs, design specs, and images directly to R2. Images are indexed into moodboard albums with in-app previews and no bandwidth egress charges.
 - **Custom Profile Avatars**: Upload profile photos directly to R2 with instant client preview and edge-cached streaming.
 - **Zero-Database Architecture**: Every piece of data is stored in R2. Writes to tree structures use R2 HTTP ETags (`If-Match`) for optimistic concurrency control so edits never overwrite each other silently.
-- **Dual Authentication**: Works out of the box with 6-digit email OTPs and cryptographically signed HMAC session tokens. In production behind Cloudflare Zero Trust, it automatically reads `Cf-Access-Authenticated-User-Email` headers (free for up to 50 users).
+- **Authentication**: Production uses cryptographically verified Cloudflare Access JWTs. Local development keeps mock identity and OTP helpers for testing; production email signup is disabled, so no transactional email service is required.
 - **Design**: Built with a warm parchment aesthetic, using Spectral for serif typography and Schibsted Grotesk for the interface.
 
 ---
@@ -74,7 +74,7 @@ In a second terminal, start Vite:
 ```bash
 pnpm dev
 ```
-Open `http://localhost:3000`. You'll be prompted to complete a quick workspace setup and verify your email.
+Open `http://localhost:3000`. Local development uses mock identity and OTP helpers, so no email provider is required.
 
 To test multi-user collaboration locally, open a second browser window in incognito mode or visit with a different email.
 
@@ -112,12 +112,12 @@ pnpm deploy
 ```
 This builds the React frontend (`pnpm build`) and deploys both the worker and static assets with `wrangler deploy`.
 
-### Step 3: (Optional) Set up Cloudflare Zero Trust
-If you want corporate SSO (Google Workspace, GitHub, Okta) or domain-wide access control:
+### Step 3: Set up Cloudflare Zero Trust
+Production requires Cloudflare Access. If you want corporate SSO (Google Workspace, GitHub, Okta) or domain-wide access control:
 1. Go to your Cloudflare Dashboard > **Zero Trust** > **Access** > **Applications**.
 2. Add an application for your domain (e.g. `clocean.yourcompany.com`).
 3. Set your access policies (e.g., allow emails ending in `@yourcompany.com`).
-4. Clocean automatically detects Cloudflare Access headers in production.
+4. Clocean verifies the Access JWT and uses the authenticated Access identity in production. Protect a custom domain or the exact Worker hostname with the Access application before inviting users.
 
 For automated Zero Trust provisioning via code, check out [`infra/`](infra/README.md) for a ready-to-use TypeScript Pulumi configuration.
 

@@ -39,7 +39,7 @@ Run the one-step build & deploy command:
 pnpm deploy
 ```
 
-Before deploying, configure production authentication. The checked-in Wrangler configuration defaults to `ENVIRONMENT=production` so a deployment cannot accidentally enable local identity overrides:
+Before deploying, configure production authentication. Production uses Cloudflare Access rather than email OTP signup. The checked-in Wrangler configuration defaults to `ENVIRONMENT=production` so a deployment cannot accidentally enable local identity overrides:
 
 ```bash
 npx wrangler secret put SESSION_SECRET
@@ -47,7 +47,7 @@ npx wrangler secret put CF_ACCESS_AUD
 npx wrangler secret put CF_ACCESS_TEAM_DOMAIN
 ```
 
-Set `ALLOWED_ORIGINS` and `APP_URL` to the exact HTTPS application origin in the Cloudflare dashboard or Wrangler environment configuration. The Worker rejects requests when production Access JWT verification is not fully configured.
+Set `ALLOWED_ORIGINS` and `APP_URL` to the exact HTTPS application origin in the Cloudflare dashboard or Wrangler environment configuration. The Worker rejects requests when production Access JWT verification is not fully configured. Email service configuration is optional for outbound notifications and is not required for authentication.
 
 
 Wrangler will:
@@ -80,6 +80,8 @@ To protect your Clocean instance so only you and your team can log in:
 
 ### How Authentication Works:
 Once configured, Cloudflare Access intercepts requests before they hit your Worker. Clocean independently verifies the accompanying `Cf-Access-Jwt-Assertion` against Cloudflare's public JWKS and only then uses the email claim. The email header alone is never trusted in production.
+
+Production email verification signup is disabled. Users must open the Access-protected application URL and authenticate through the configured identity provider. Local development retains mock identity and OTP helpers for testing without an email service.
 
 ---
 

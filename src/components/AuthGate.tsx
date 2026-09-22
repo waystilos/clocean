@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from "react";
-import { Layers, ArrowRight, Mail, KeyRound, ArrowLeft, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Layers, ArrowRight, Mail, KeyRound, ArrowLeft, RefreshCw, CheckCircle2, ShieldCheck } from "lucide-react";
 import { UserProfile, UserWorkspaceReference } from "../types.ts";
 
 interface AuthGateProps {
   onAuthenticated: (user: UserProfile, workspace: UserWorkspaceReference, token?: string) => void;
   theme?: "dark" | "light";
   onToggleTheme?: () => void;
+  accessRequired?: boolean;
 }
 
-export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
+export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated, accessRequired = false }) => {
   const [step, setStep] = useState<"details" | "verify">("details");
   const [mode, setMode] = useState<"signin" | "setup" | "join">("setup");
   const [email, setEmail] = useState("");
@@ -27,6 +28,18 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
     memberCount: number;
     ownerName: string;
   } | null>(null);
+
+  if (accessRequired) {
+    return (
+      <div style={{ minHeight: "100vh", width: "100vw", backgroundColor: "var(--bg-primary)", color: "var(--text-primary)", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: "24px", boxSizing: "border-box" }}>
+        <div style={{ width: "100%", maxWidth: 460, backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-lg)", padding: "40px 32px", boxShadow: "var(--shadow-md)", textAlign: "center" }}>
+          <div style={{ width: 48, height: 48, margin: "0 auto 20px", borderRadius: 14, backgroundColor: "var(--accent-light)", color: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center" }}><ShieldCheck size={26} /></div>
+          <h1 className="font-serif" style={{ fontSize: 28, marginBottom: 12 }}>Cloudflare Access required</h1>
+          <p style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>This production workspace uses Cloudflare Access for passwordless sign-in. Open the Access protected application URL and authenticate with your approved identity provider.</p>
+        </div>
+      </div>
+    );
+  }
 
   // Check for ?join= or ?invite= URL parameters on boot
   useEffect(() => {

@@ -272,7 +272,7 @@ app.use("/api/*", async (c, next) => {
 app.get("/api/me", async (c) => {
   const email = await getAuthEmail(c.req.raw, c.env);
   if (!email) {
-    return c.json({ authenticated: false, setupRequired: true }, 200);
+    return c.json({ authenticated: false, accessRequired: c.env.ENVIRONMENT === "production" }, 200);
   }
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const profile = await db.getUserProfile(email);
@@ -282,6 +282,9 @@ app.get("/api/me", async (c) => {
 
 // 1. Send 6-digit Verification Code via Email (OTP)
 app.post("/api/auth/send-otp", async (c) => {
+  if (c.env.ENVIRONMENT === "production") {
+    return c.json({ error: "Email verification signup is disabled in production. Protect the deployment with Cloudflare Access and sign in through your Access application." }, 410);
+  }
   const json = await c.req.json().catch(() => null);
   const parsed = SendOtpSchema.safeParse(json);
   if (!parsed.success) {
@@ -410,6 +413,9 @@ app.post("/api/auth/send-otp", async (c) => {
 
 // 2. Verify 6-digit Code & Issue Signed Session Token
 app.post("/api/auth/verify-otp", async (c) => {
+  if (c.env.ENVIRONMENT === "production") {
+    return c.json({ error: "Email verification signup is disabled in production. Sign in through Cloudflare Access." }, 410);
+  }
   const json = await c.req.json().catch(() => null);
   const parsed = VerifyOtpSchema.safeParse(json);
   if (!parsed.success) {
@@ -520,12 +526,12 @@ app.post("/api/auth/login", async (c) => {
   }
   const email = parsed.data.email.toLowerCase().trim();
 
-  // In production, direct passwordless login without OTP or Zero Trust is strictly forbidden
+  // In production, identity comes from the Cloudflare Access protected application.
   if (c.env.ENVIRONMENT === "production") {
     return c.json(
       {
-        error: "Direct passwordless login is disabled in production. Please use /api/auth/send-otp to verify your email.",
-        otpRequired: true,
+        error: "Direct passwordless login is disabled in production. Sign in through the Cloudflare Access protected application.",
+        accessRequired: true,
       },
       403
     );
@@ -548,19 +554,13 @@ app.post("/api/setup", async (c) => {
     return c.json({ error: "Invalid setup payload", details: parsed.error.issues }, 400);
   }
 
-  // In production, direct setup without OTP verification is strictly forbidden
-  if (c.env.ENVIRONMENT === "production") {
-    return c.json(
-      {
-        error: "Direct setup is disabled in production. Please verify your email via /api/auth/send-otp with purpose='setup'.",
-        otpRequired: true,
-      },
-      403
-    );
-  }
-
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const cleanEmail = parsed.data.email.toLowerCase().trim();
+  if (c.env.ENVIRONMENT === "production") {
+    const accessEmail = await getAuthEmail(c.req.raw, c.env);
+    if (!accessEmail) return c.json({ error: "Cloudflare Access authentication is required" }, 401);
+    if (accessEmail !== cleanEmail) return c.json({ error: "The setup email must match the authenticated Cloudflare Access identity" }, 403);
+  }
   const existing = await db.getUserProfileIfExists(cleanEmail);
   if (existing) {
     return c.json(
