@@ -17,7 +17,8 @@ Because it runs on Cloudflare's serverless edge and R2 has zero egress fees, you
 - **Cloudflare Drive & Media**: Upload PDFs, design specs, text files, and images directly to R2. Documents owns the file and media experience, with authenticated previews and no bandwidth egress charges.
 - **Custom Profile Avatars**: Upload profile photos directly to R2 with instant client preview and edge-cached streaming.
 - **Zero-Database Architecture**: Every piece of data is stored in R2. Writes to tree structures use R2 HTTP ETags (`If-Match`) for optimistic concurrency control so edits never overwrite each other silently.
-- **Authentication**: Production uses cryptographically verified Cloudflare Access JWTs. Local development keeps mock identity and OTP helpers for testing; production email signup is disabled, so no transactional email service is required.
+- **Authentication**: Production uses cryptographically verified Cloudflare Access JWTs and workspace membership checks. Local development keeps mock identity and OTP helpers for testing; production email signup is disabled, so no transactional email service is required.
+- **Security**: R2 previews are fetched through authenticated API requests, workspace-scoped, rendered from temporary blob URLs, and protected by a restrictive CSP. File responses are sandboxed and unsafe formats remain downloads.
 - **Design**: Built with a warm parchment aesthetic, using Spectral for serif typography and Schibsted Grotesk for the interface.
 
 ---
@@ -89,13 +90,13 @@ The test suite runs with Vitest and tests the full edge API, authentication, R2 
 pnpm test
 ```
 
-This runs 12 test suites (126 tests) covering:
+This runs the Vitest integration and security suites covering:
 - Document CRUD and revision history
 - R2 byte-range file streaming
-- Notion-style invite links and OTP verification
+- Local-only invite links and OTP verification
 - Avatar uploads and edge image streaming
 - Durable Object WebSockets and room isolation
-- Enterprise security (path traversal sanitization, CSWSH protection, XSS defense headers)
+- Security boundaries (Access JWT validation, workspace authorization, path traversal sanitization, CSWSH protection, XSS defense headers, and authenticated file previews)
 
 ---
 
@@ -137,9 +138,9 @@ clocean/
 │   ├── schemas.ts             # Zod validation schemas
 │   ├── storage/r2Db.ts        # R2 JSON database abstraction with ETags
 │   ├── durable_objects/       # DocSessionDO for multiplayer editing
-│   ├── auth/                  # Email OTP, session HMAC, and Cloudflare Access
+│   ├── auth/                  # Local OTP, session HMAC, and Cloudflare Access
 │   └── notifications/         # Email notifications & deadline scanner
-├── tests/                     # 12 Vitest suites (126 integration tests)
+├── tests/                     # Vitest integration and security suites
 ├── docs/                      # Architectural deep dives
 │   ├── ARCHITECTURE.md        # Edge layers, WebSockets, and data flow
 │   ├── R2_DATABASE.md         # R2 JSON database schema and concurrency

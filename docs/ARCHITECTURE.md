@@ -37,8 +37,8 @@ Clocean uses Cloudflare Access as the production authentication boundary:
 
 1. **Local Development OTP & Cryptographic Session Tokens**:
    * Local development can sign in or register with an email address.
-   * The worker issues a secure, time-limited 6-digit numeric OTP code (`POST /api/auth/send-otp`). The hash is stored in R2 (`workspaces/registry/otp/{email}.json`) with a per-user salt to prevent replay and brute-force attacks (rate-limited, max 5 attempts, expires in 10 minutes).
-   * Upon verification (`POST /api/auth/verify-otp`), the server signs an HMAC-SHA256 session token (`Authorization: Bearer <token>`) providing stateless, edge-verified sessions.
+   * The worker issues a secure, time-limited 6-digit numeric OTP code (`POST /api/auth/send-otp`). The hash is stored in R2 (`workspaces/registry/otp/{email}.json`) with a per-user salt to prevent replay and brute-force attacks (rate-limited, max 5 attempts, expires in 10 minutes). This flow is available only outside production.
+   * Upon verification (`POST /api/auth/verify-otp`), the server signs an HMAC-SHA256 session token (`Authorization: Bearer <token>`) providing stateless, edge-verified sessions. Production deployments reject this flow and require Cloudflare Access.
 2. **Cloudflare Zero Trust / Access (Production)**:
    * Sits in front of the application domain (`clocean.yourcompany.com`).
    * Supports Google Workspace, GitHub, Microsoft 365, Okta, or Cloudflare Access OTP.
@@ -65,8 +65,8 @@ Clocean uses Cloudflare Access as the production authentication boundary:
 #### 1. REST API (`worker/index.ts`)
 Powered by [Hono](https://hono.dev/), a lightweight, edge-optimized routing framework with sub-millisecond route matching.
 * `GET /api/me`: Returns user profile, active workspaces, and authentication status.
-* `POST /api/auth/send-otp`: Dispatches a 6-digit verification code for login, setup, or workspace joining.
-* `POST /api/auth/verify-otp`: Validates the OTP code, issues session token, and provisions profile.
+* `POST /api/auth/send-otp`: Local-development-only 6-digit verification helper.
+* `POST /api/auth/verify-otp`: Local-development-only OTP validation and session helper.
 * `GET /api/workspaces/:wsId/invite-info`: Unauthenticated endpoint returning public workspace name, icon, and member count for Notion-style share links.
 * `POST /api/workspaces/:wsId/join`: Authenticated endpoint that completes a previously issued invitation; knowing a workspace ID alone is insufficient.
 * `GET /api/workspaces/:wsId/members`: Lists the authenticated workspace roster.
@@ -228,8 +228,8 @@ graph TD
     VisitorCheck -->|Yes (Has Valid Session)| OneClickJoin["Prompt 1-Click Join<br/>POST /api/workspaces/:wsId/join"]
     VisitorCheck -->|No (First-Time Visitor)| FetchPublicInfo["Fetch Public Workspace Info<br/>GET /api/workspaces/:wsId/invite-info"]
     FetchPublicInfo --> Banner["Render Team Welcome Banner<br/>'Join Acme • Invited by Alice'"]
-    Banner --> RequestOtp["Enter Email -> Send 6-Digit OTP<br/>POST /api/auth/send-otp"]
-    RequestOtp --> VerifyOtp["Verify OTP -> Auto-Add to Roster<br/>POST /api/auth/verify-otp"]
+    Banner --> RequestOtp["Local development only: Send 6-Digit OTP<br/>POST /api/auth/send-otp"]
+    RequestOtp --> VerifyOtp["Local development only: Verify OTP<br/>POST /api/auth/verify-otp"]
     VerifyOtp --> EnterDoc["Redirect Directly to Shared Document"]
     OneClickJoin --> EnterDoc
 ```
@@ -239,9 +239,9 @@ graph TD
    - Document Invite: `https://clocean.example.com/?join=ws-marketing&doc=doc-q4-strategy`
 2. **Public Invite Metadata Endpoint (`GET /api/workspaces/:wsId/invite-info`)**:
    - Unauthenticated visitors fetch public workspace name, icon, member count, and owner name without exposing internal documents, trees, or membership emails.
-3. **New User Onboarding via Email OTP**:
-   - The user inputs their email address and receives a 6-digit numeric OTP.
-   - Verifying the code creates their user profile and automatically calls `addWorkspaceMember`, granting instant access and redirecting to the target document.
+3. **New User Onboarding**:
+   - In production, the user authenticates through the Cloudflare Access application and must be included in the workspace roster.
+   - In local development, the email OTP helper creates the profile and can add the user to the workspace for testing.
 4. **1-Click Join for Existing Users**:
    - Teammates already authenticated receive a non-intrusive prompt: *"You've been invited to join Acme. [Join Workspace]"*.
    - A single click registers them in the workspace roster and activates the workspace in their organization switcher.
