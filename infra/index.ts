@@ -9,12 +9,17 @@ const allowedEmails = config.getObject<string[]>("allowedEmails") || [];
 const allowedEmailDomains = config.getObject<string[]>("allowedEmailDomains") || ["clocean.co"];
 const zoneId = config.get("zoneId"); // Optional: if managing DNS CNAME through Pulumi
 
-// 1. Provision Cloudflare R2 Bucket for Clocean (Database & File Storage)
-export const storageBucket = new cloudflare.R2Bucket("clocean-storage", {
-  accountId: accountId,
-  name: "clocean-storage",
-  location: "WNAM", // Western North America or APAC/EEUR
-});
+// 1. Cloudflare R2 Bucket for Clocean (Database & File Storage)
+// When pre-provisioned via `pnpm setup:r2`, Pulumi references it directly without conflicting.
+// Set `pulumi config set createR2Bucket true` if you want Pulumi to manage creating it fresh.
+const createR2Bucket = config.getBoolean("createR2Bucket") ?? false;
+export const storageBucket = createR2Bucket
+  ? new cloudflare.R2Bucket("clocean-storage", {
+      accountId: accountId,
+      name: "clocean-storage",
+      location: "WNAM",
+    })
+  : null;
 
 // 2. Provision Cloudflare Zero Trust Access Application (Free for up to 50 active users)
 export const accessApp = new cloudflare.AccessApplication("clocean-app", {
@@ -84,7 +89,7 @@ if (zoneId) {
 }
 
 // Stack Exports
-export const r2BucketName = storageBucket.name;
+export const r2BucketName = storageBucket ? storageBucket.name : "clocean-storage";
 export const appAudienceTag = accessApp.aud;
 export const appDomain = accessApp.domain;
 export const ciClientId = serviceToken.clientId;
