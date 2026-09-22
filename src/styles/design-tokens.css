@@ -244,6 +244,9 @@ body {
   .database-heading { align-items: stretch !important; flex-direction: column; }
   .database-create, .database-actions { flex-wrap: wrap; }
   .database-create input, .database-actions input { min-width: 0; flex: 1 1 140px; }
+  .database-create { width: 100%; }
+  .database-create > div { width: 100%; }
+  .database-create .btn-primary { white-space: nowrap; }
   .database-layout { display: flex !important; flex-direction: column; gap: 14px !important; }
   .notes-workspace { display: flex !important; flex-direction: column; }
   .notes-workspace > aside { border-right: 0 !important; border-bottom: 1px solid var(--border-subtle); max-height: 260px; overflow-y: auto; }
@@ -266,6 +269,7 @@ body {
   .database-actions label { flex: 1 1 100%; }
   .database-actions label input { width: 100%; }
   .database-actions .btn-primary { min-height: 40px; }
+  .database-empty-state { padding: 32px 18px !important; }
 }
 
 .btn-icon {
