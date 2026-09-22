@@ -107,6 +107,18 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
 const app = new Hono<{ Bindings: Env; Variables: { requesterEmail: string } }>();
 
+function applySecurityHeaders(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  headers.set("Cross-Origin-Resource-Policy", "same-origin");
+  headers.set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' ws: wss:;");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 // Hardened CORS: dynamically validate origin and allow credentials
 app.use(
   "*",
@@ -124,15 +136,7 @@ app.use(
 
 app.use("*", async (c, next) => {
   await next();
-  const headers = new Headers(c.res.headers);
-  headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  c.res = new Response(c.res.body, {
-    status: c.res.status,
-    statusText: c.res.statusText,
-    headers,
-  });
+  c.res = applySecurityHeaders(c.res);
 });
 
 // Helper: Extract active workspace ID from header or query (defaulting to "default")
@@ -1892,9 +1896,9 @@ app.get("/api/collab/:docId", async (c) => {
 // Static Assets fallback for Cloudflare Pages / Workers static assets
 app.get("*", async (c) => {
   if (c.env.ASSETS) {
-    return c.env.ASSETS.fetch(c.req.raw);
+    return applySecurityHeaders(await c.env.ASSETS.fetch(c.req.raw));
   }
-  return c.text("Clocean API Gateway Active", 200);
+  return applySecurityHeaders(c.text("Clocean API Gateway Active", 200));
 });
 
 export default app;
