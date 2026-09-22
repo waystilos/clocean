@@ -155,6 +155,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
   // Task Detail Modal state
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TaskItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [newCommentText, setNewCommentText] = useState("");
   const [isPostingComment, setIsPostingComment] = useState(false);
@@ -326,8 +328,12 @@ export const TasksView: React.FC<TasksViewProps> = ({
     }
   };
 
+  const requestDeleteTask = (task: TaskItem) => {
+    setDeleteTarget(task);
+  };
+
   const handleDeleteTask = async (taskId: string) => {
-    if (!window.confirm("Delete this work item? This cannot be undone.")) return;
+    setIsDeleting(true);
     try {
       const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}?boardId=${encodeURIComponent(activeBoardId)}`, {
         method: "DELETE",
@@ -337,8 +343,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
       if (!response.ok) throw new Error(data.error || "Could not delete work item");
       onLoadTasks?.(tasks.filter((task) => task.id !== taskId), activeBoardId);
       setSelectedTask(null);
+      setDeleteTarget(null);
     } catch (error: unknown) {
       setBoardError(error instanceof Error ? error.message : "Could not delete work item");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -797,10 +806,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
                       </td>
                       <td style={{ padding: "12px 16px", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                         <button
-                          onClick={() => handleDeleteTask(t.id)}
+                          onClick={() => requestDeleteTask(t)}
                           className="btn-icon"
-                          style={{ width: "26px", height: "26px", color: "var(--text-muted)" }}
-                          title="Delete Task"
+                          style={{ width: "30px", height: "30px", color: "var(--text-muted)" }}
+                          title="Delete work item"
+                          aria-label={`Delete ${t.title}`}
                         >
                           <Trash2 size={13} />
                         </button>
@@ -1107,6 +1117,31 @@ export const TasksView: React.FC<TasksViewProps> = ({
                             style={{ width: "100%", height: "100%", objectFit: "cover" }}
                           />
                         </div>
+                      </div>
+
+                      <div
+                        className="task-card-actions"
+                        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", minHeight: "28px" }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTask(task)}
+                          className="btn-secondary"
+                          style={{ padding: "5px 9px", fontSize: "11px" }}
+                        >
+                          Open details
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => requestDeleteTask(task)}
+                          className="btn-icon"
+                          style={{ width: "28px", height: "28px", color: "var(--text-muted)" }}
+                          title="Delete work item"
+                          aria-label={`Delete ${task.title}`}
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     </div>
                   );
@@ -1753,11 +1788,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
               }}
             >
               <button
-                onClick={() => handleDeleteTask(selectedTask.id)}
-                className="btn-icon"
-                style={{ color: "#ef4444", gap: "4px", fontSize: "12px", width: "auto", padding: "4px 8px" }}
+                onClick={() => requestDeleteTask(selectedTask)}
+                className="btn-secondary"
+                style={{ color: "#ef4444", borderColor: "rgba(239, 68, 68, 0.35)", gap: "6px", fontSize: "12px", padding: "7px 10px" }}
               >
-                <Trash2 size={14} /> Delete
+                <Trash2 size={14} /> Delete work item
               </button>
 
               <div style={{ display: "flex", gap: "8px" }}>
@@ -1768,6 +1803,58 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   Save Changes
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div
+          role="presentation"
+          onClick={() => !isDeleting && setDeleteTarget(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            backgroundColor: "rgba(0, 0, 0, 0.55)",
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-task-title"
+            aria-describedby="delete-task-description"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              padding: "22px",
+              backgroundColor: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "var(--shadow-lg)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+              <div style={{ display: "grid", placeItems: "center", width: "34px", height: "34px", flexShrink: 0, borderRadius: "50%", color: "#dc2626", backgroundColor: "rgba(239, 68, 68, 0.12)" }}>
+                <Trash2 size={17} />
+              </div>
+              <div>
+                <h2 id="delete-task-title" style={{ margin: 0, fontSize: "16px", fontWeight: 600, color: "var(--text-primary)" }}>Delete work item?</h2>
+                <p id="delete-task-description" style={{ margin: "7px 0 0", fontSize: "13px", lineHeight: 1.5, color: "var(--text-secondary)" }}>
+                  “{deleteTarget.title}” and its discussion will be permanently removed.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "22px" }}>
+              <button type="button" onClick={() => setDeleteTarget(null)} className="btn-secondary" disabled={isDeleting}>Cancel</button>
+              <button type="button" onClick={() => void handleDeleteTask(deleteTarget.id)} className="btn-primary" disabled={isDeleting} style={{ backgroundColor: "#dc2626", borderColor: "#dc2626" }}>
+                {isDeleting ? "Deleting…" : "Delete work item"}
+              </button>
             </div>
           </div>
         </div>
