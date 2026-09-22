@@ -23,6 +23,7 @@ import {
 import { ViewMode, UserProfile, UserWorkspaceReference, TreeNode } from "../types.ts";
 
 interface SidebarProps {
+  className?: string;
   currentView: ViewMode;
   onSelectView: (view: ViewMode) => void;
   currentUser: UserProfile;
@@ -39,6 +40,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
+  className,
   currentView,
   onSelectView,
   currentUser,
@@ -104,6 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
+      className={className}
       style={{
         width: "var(--sidebar-width)",
         minWidth: "var(--sidebar-width)",

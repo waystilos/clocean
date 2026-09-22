@@ -25,7 +25,7 @@ import {
   MentionNotification,
 } from "./types.ts";
 import { MarkdownRenderer } from "./components/MarkdownRenderer.tsx";
-import { Layers, Sun, Moon, FileText, Users } from "lucide-react";
+import { Layers, Sun, Moon, FileText, Users, Home, ListCheck, Table2 } from "lucide-react";
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewMode>("home");
@@ -519,9 +519,10 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div style={{ display: "flex", width: "100vw", height: "100vh", overflow: "hidden" }}>
+    <div className="clocean-shell" style={{ display: "flex", width: "100vw", height: "100vh", overflow: "hidden" }}>
       {/* Figma Sidebar */}
       <Sidebar
+        className="clocean-sidebar"
         currentView={currentView}
         onSelectView={(v) => setCurrentView(v)}
         currentUser={currentUser}
@@ -536,6 +537,12 @@ export const App: React.FC = () => {
         onSelectDoc={handleNavigateDoc}
         onSignOut={handleSignOut}
       />
+      <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
+        <button className={currentView === "home" ? "active" : ""} onClick={() => setCurrentView("home")}><Home size={18} /><span>Home</span></button>
+        <button className={currentView === "tasks" ? "active" : ""} onClick={() => setCurrentView("tasks")}><ListCheck size={18} /><span>Tasks</span></button>
+        <button className={currentView === "databases" ? "active" : ""} onClick={() => setCurrentView("databases")}><Table2 size={18} /><span>Data</span></button>
+        <button className={currentView === "notes" ? "active" : ""} onClick={() => setCurrentView("notes")}><FileText size={18} /><span>Notes</span></button>
+      </nav>
 
       {/* Main Content Area */}
       <div
