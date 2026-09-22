@@ -115,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     >
       {/* Top Section */}
       <div>
-        {/* Notion-style Workspace Switcher */}
+        {/* Workspace Switcher */}
         <div style={{ position: "relative", marginBottom: "16px" }} ref={dropdownRef}>
           <button
             onClick={() => setIsWsDropdownOpen((prev) => !prev)}

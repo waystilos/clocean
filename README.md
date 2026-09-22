@@ -1,12 +1,11 @@
-# Clocean — Notion + Google Drive Platform on Cloudflare
+# Clocean
+
+A serene, high-performance unified workspace combining collaborative block document authoring, integrated file management, sprint planning, and team moodboards—engineered on Cloudflare's serverless edge with zero external database hosting fees.
 
 > [!IMPORTANT]
 > **Work in Progress (WIP)**: Clocean is currently under active development and undergoing testing. One-click deploy will be enabled once full production readiness is finalized.
 
-**Clocean** is a unified workspace combining rich block document editing (Notion-style) with asset storage and file management (Google Drive-style), built specifically for Cloudflare's serverless edge ecosystem.
-
-
-By replacing traditional relational or NoSQL databases with **Cloudflare R2 as both the file store and the JSON database**, Clocean operates at virtually **$0/month in database costs** with **zero egress fees**.
+**Clocean** is a unified workspace engineered specifically for Cloudflare's serverless edge ecosystem. By replacing traditional relational or NoSQL databases with **Cloudflare R2 as both the file store and the JSON database**, Clocean operates at virtually **$0/month in database costs** with **zero egress fees**.
 
 Real-time multiplayer document editing is powered by **Cloudflare Durable Objects with WebSockets**, while user identity and access control are handled seamlessly by **Cloudflare Zero Trust / Access** (free for up to 50 active team members).
 
@@ -60,13 +59,13 @@ The user interface strictly replicates the **Figma Design System** (`Clocean - A
 
 ## Key Features
 
-### 1. Notion-Style Document Editor
+### 1. Collaborative Document Editor
 * **Live Multiplayer Multi-Editing**: Multiple teammates can type, edit, and select text simultaneously. Connected users display real-time colored cursor carets and name tags.
 * **Interactive Checklists**: Checkboxes with instant state toggling.
 * **Floating Formatting Toolbar**: Quick headings (`H1`), bold, italic, links, embedded photos, checklists, and bulleted lists.
 * **Document Attachments Sidebar**: Direct association between written documentation and files stored in Cloudflare R2 (e.g. `moodboard.png`, `brand_v2.pdf`).
 
-### 2. Google Drive-Style Cloudflare Storage
+### 2. High-Performance File Management & Storage
 * **Zero Egress Fees**: Store large files (PDFs, ZIPs, photos, videos, spreadsheets) in Cloudflare R2 without bandwidth charges.
 * **Drag-and-Drop Uploader**: Direct streaming multipart upload to R2.
 * **Table & Grid Views**: Displays file names, file sizes, last modified times, and quick action menus.

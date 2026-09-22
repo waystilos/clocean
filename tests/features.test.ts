@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 
 const BASE_URL = "http://127.0.0.1:8787";
 
-describe("Clocean Notion Features Integration Suite", () => {
+describe("Clocean Core Features Integration Suite", () => {
   const testDocId = `feat-doc-${Date.now()}`;
 
   // 1. Document Page Icon, Cover, and Content Updates

@@ -1,6 +1,6 @@
 # Clocean System Architecture
 
-This document provides an in-depth technical analysis of **Clocean's** architecture, explaining how Notion-style collaborative document editing and Google Drive-style file management are accomplished with **zero traditional database costs** using Cloudflare's serverless edge infrastructure.
+This document provides an in-depth technical analysis of **Clocean's** architecture, explaining how collaborative document authoring, high-performance file management, and real-time edge synchronization are accomplished with **zero traditional database costs** using Cloudflare's serverless edge infrastructure.
 
 ---
 
@@ -129,7 +129,7 @@ If another process updated `tree.json` in the meantime, the write fails safely r
 
 ### Layer 5: Multi-Tenant Organizations & Team Workspaces
 
-Clocean supports Notion-style team organizations with zero database overhead. Users can belong to multiple workspaces, switch seamlessly between them, create new team workspaces, and invite teammates with role-based access.
+Clocean supports multi-tenant team organizations with zero database overhead. Users can belong to multiple workspaces, switch seamlessly between them, create new team workspaces, and invite teammates with role-based access.
 
 ```mermaid
 graph TD

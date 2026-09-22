@@ -160,7 +160,7 @@ const STARTER_TEMPLATES = [
     title: "Sprint Planning",
     icon: "target",
     tags: ["#sprint", "#planning"],
-    content: `# Sprint 15 Planning & Goals\n\n> [!IMPORTANT]\n> **Sprint Theme**: Feature parity with Notion (Slash Menu, Multi-View Kanban/Table, Public Sharing).\n\n## Sprint Objectives\n1. Release Notion-style Slash command menu for fluid document authoring.\n2. Add Table View alongside Kanban board in Tasks view.\n3. Complete Red-Team security verification of all edge routes.\n\n## Workstream Breakdown\n| Workstream | Owner | Estimated Days | Risk Level |\n| :--- | :--- | :---: | ---: |\n| Document Engine | @Elena | 3 days | Low |\n| Kanban & Table Multi-View | @Marcus | 2 days | Low |\n| Edge Auth & Public Sharing | @Alex | 2 days | Medium |\n\n## Identified Risks & Mitigations\n> [!WARNING]\n> Public document sharing must strictly isolate internal workspace metadata, preventing ID enumeration or member leakage.\n`,
+    content: `# Sprint 15 Planning & Goals\n\n> [!IMPORTANT]\n> **Sprint Theme**: Core Workspace Enhancements (Slash Menu, Multi-View Kanban/Table, Public Sharing).\n\n## Sprint Objectives\n1. Release fluid Slash command menu for rich document authoring.\n2. Add Table View alongside Kanban board in Tasks view.\n3. Complete Red-Team security verification of all edge routes.\n\n## Workstream Breakdown\n| Workstream | Owner | Estimated Days | Risk Level |\n| :--- | :--- | :---: | ---: |\n| Document Engine | @Elena | 3 days | Low |\n| Kanban & Table Multi-View | @Marcus | 2 days | Low |\n| Edge Auth & Public Sharing | @Alex | 2 days | Medium |\n\n## Identified Risks & Mitigations\n> [!WARNING]\n> Public document sharing must strictly isolate internal workspace metadata, preventing ID enumeration or member leakage.\n`,
   },
   {
     id: "wiki",
@@ -1221,7 +1221,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             <button
               onClick={() => setIsTemplatePickerOpen(true)}
               className="btn-icon"
-              title="Notion Starter Templates"
+              title="Starter Templates"
               style={{
                 width: "auto",
                 padding: "3px 8px",
@@ -1354,7 +1354,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
           }}
         />
 
-        {/* If document is completely empty, offer Notion-style 1-click starter template cards */}
+        {/* If document is completely empty, offer 1-click starter template cards */}
         {content.trim().length === 0 && (
           <div
             style={{
@@ -2329,7 +2329,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <Sparkles size={18} color="var(--accent)" />
                 <h3 style={{ fontSize: "16px", fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>
-                  Notion Starter Templates
+                  Starter Templates
                 </h3>
               </div>
               <button onClick={() => setIsTemplatePickerOpen(false)} className="btn-icon">

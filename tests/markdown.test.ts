@@ -10,7 +10,7 @@ describe("MarkdownRenderer & Table Engine", () => {
 | Milestone | Assignee | Status |
 | :--- | :---: | ---: |
 | Cloudflare R2 Database | @Alex | Complete |
-| Notion Kanban Board | @Marcus | Complete |
+| Interactive Kanban Board | @Marcus | Complete |
 | Markdown Table Engine | @Elena | In Progress |
 `;
 
@@ -24,7 +24,7 @@ describe("MarkdownRenderer & Table Engine", () => {
     expect(html).toContain("Status");
     expect(html).toContain("Cloudflare R2 Database");
     expect(html).toContain("Complete");
-    expect(html).toContain("Notion Kanban Board");
+    expect(html).toContain("Interactive Kanban Board");
     expect(html).toContain("Markdown Table Engine");
   });
 

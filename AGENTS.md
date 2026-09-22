@@ -6,7 +6,7 @@ Welcome to **Clocean**! This file serves as the definitive reference and operati
 
 ## What is Clocean?
 
-**Clocean** is a unified, high-performance workspace combining **Notion-style block document editing** with **Google Drive-style file management**, engineered specifically for the **Cloudflare serverless edge ecosystem** (Workers, Pages, R2, and Durable Objects).
+**Clocean** is a unified, high-performance workspace combining **collaborative block document authoring**, **integrated file management**, and **real-time edge collaboration**, engineered specifically for the **Cloudflare serverless edge ecosystem** (Workers, Pages, R2, and Durable Objects).
 
 ---
 
@@ -78,8 +78,8 @@ clocean/
 │   │   └── FilePreviewModal.tsx # PDF & Image viewer for R2 files
 │   └── views/
 │       ├── DashboardView.tsx  # Figma v2-dashboard greeting & recent activity
-│       ├── EditorView.tsx     # Real-time multi-editing Notion-style block editor
-│       ├── DocumentsView.tsx  # Google Drive-style file manager with R2 streaming
+│       ├── EditorView.tsx     # Real-time multi-editing collaborative block editor
+│       ├── DocumentsView.tsx  # High-performance file manager with R2 streaming
 │       ├── TasksView.tsx      # Kanban sprint board (To Do, In Progress, Done)
 │       └── PhotosView.tsx     # 4-column moodboard photo gallery with lightbox
 │
