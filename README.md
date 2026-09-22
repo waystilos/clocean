@@ -114,6 +114,11 @@ The user interface strictly replicates the **Figma Design System** (`Clocean - A
    pnpm deploy
    ```
 
+### Infrastructure as Code with Pulumi (Optional)
+For automated provisioning of Cloudflare Zero Trust Access, team policies, and the R2 storage bucket, use the TypeScript Pulumi program in [`infra/`](infra/README.md):
+* Zero-setup local state: `pnpm infra:login:local` (or `pulumi login --local`)
+* Zero-cost Cloudflare R2 state backend: `pnpm infra:login:r2`
+
 Your application will be live globally on Cloudflare Workers and Pages!
 
 ---

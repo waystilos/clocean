@@ -4,8 +4,9 @@
   "private": true,
   "packageManager": "pnpm@10.29.1",
   "scripts": {
-
-    "build": "tsc"
+    "build": "tsc",
+    "login:local": "pulumi login --local",
+    "login:r2": "bash ../scripts/pulumi-r2-login.sh"
   },
   "dependencies": {
     "@pulumi/cloudflare": "^5.49.0",

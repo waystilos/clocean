@@ -29,13 +29,44 @@ pnpm install
 ```
 
 
-### 2. Configure Cloudflare Credentials
+### 2. Choose Your Pulumi State Backend
+
+Pulumi requires a state backend to store infrastructure state. You can save state in Cloudflare R2 (zero external fees) or locally on your machine.
+
+#### Option A: Local Backend (Zero Setup, No Cloud Account Required)
+Stores state directly on your local machine in `~/.pulumi/`:
+```bash
+pnpm login:local
+# Or directly:
+pulumi login --local
+```
+
+#### Option B: Cloudflare R2 Backend (Recommended for Teams, $0 Costs)
+Stores state in Cloudflare R2 using R2's S3-compatible API:
+1. Create an R2 API Token in **Cloudflare Dashboard > R2 > Manage R2 API Tokens** with **Object Read & Write** permissions.
+2. Export your credentials in your terminal:
+```bash
+export CLOUDFLARE_ACCOUNT_ID="your-cloudflare-account-id"
+export AWS_ACCESS_KEY_ID="your-r2-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-r2-secret-access-key"
+export PULUMI_CONFIG_PASSPHRASE="your-encryption-passphrase"
+```
+3. Run the automated login script:
+```bash
+pnpm login:r2
+# Or directly via Pulumi:
+pulumi login "s3://clocean-pulumi-state?endpoint=${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com&region=auto"
+```
+
+---
+
+### 3. Configure Cloudflare API Credentials
 Ensure your Cloudflare API token is exported in your environment:
 ```bash
 export CLOUDFLARE_API_TOKEN="your-cloudflare-api-token"
 ```
 
-### 3. Initialize Pulumi Stack & Set Config
+### 4. Initialize Pulumi Stack & Set Config
 ```bash
 # Create or select a stack (e.g., prod or dev)
 pulumi stack init prod
@@ -56,12 +87,12 @@ pulumi config set --path allowedEmails '["alex@yourcompany.com", "marcus@yourcom
 # pulumi config set zoneId "your-zone-id"
 ```
 
-### 4. Deploy
+### 5. Deploy Infrastructure
 ```bash
 pulumi up
 ```
 
-### 5. Stack Outputs
+### 6. Stack Outputs
 Upon successful deployment, Pulumi outputs:
 * `r2BucketName`: The provisioned R2 bucket name (`clocean-storage`).
 * `appAudienceTag`: The Application Audience tag (AUD) used to cryptographically verify Access JWTs.

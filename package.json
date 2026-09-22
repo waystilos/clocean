@@ -9,6 +9,8 @@
     "worker:dev": "wrangler dev",
     "worker:deploy": "wrangler deploy",
     "deploy": "pnpm build && wrangler deploy",
+    "infra:login:local": "pulumi login --local",
+    "infra:login:r2": "bash scripts/pulumi-r2-login.sh",
     "preview": "vite preview",
     "test": "vitest run --fileParallelism=false"
   },

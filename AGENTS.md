@@ -60,7 +60,8 @@ clocean/
 │   └── README.md              # Pulumi usage instructions
 │
 ├── scripts/
-│   └── setup-r2.sh            # Automated Cloudflare R2 bucket provisioner
+│   ├── setup-r2.sh            # Automated Cloudflare R2 bucket provisioner
+│   └── pulumi-r2-login.sh     # Cloudflare R2 Pulumi state backend login helper
 │
 ├── src/                       # React 19 Single Page Application
 │   ├── main.tsx               # App entry point
