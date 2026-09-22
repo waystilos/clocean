@@ -1780,6 +1780,30 @@ app.post("/api/task-boards", async (c) => {
   return c.json(board, 201);
 });
 
+app.patch("/api/task-boards/:boardId", async (c) => {
+  const boardId = c.req.param("boardId");
+  const json = await c.req.json().catch(() => null) as { name?: unknown } | null;
+  const name = typeof json?.name === "string" ? json.name.trim().slice(0, 100) : "";
+  if (!isValidId(boardId) || boardId === "default" || !name) return c.json({ error: "A valid non-default board name is required" }, 400);
+  const ws = getWorkspaceId(c);
+  const email = getRequesterEmail(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const members = await db.getWorkspaceMembers(ws);
+  const requester = members.find((member) => member.email.toLowerCase() === email.toLowerCase());
+  if (!requester || (requester.role !== "owner" && requester.role !== "admin")) {
+    return c.json({ error: "Only workspace owners and admins can rename task boards" }, 403);
+  }
+  const key = `workspaces/${ws}/task-boards.json`;
+  const current = await db.getJson<{ boards: TaskBoard[] }>(key);
+  const board = current.data?.boards?.find((item) => item.id === boardId);
+  if (!board) return c.json({ error: "Task board not found" }, 404);
+  const updatedBoard = { ...board, name, updatedAt: new Date().toISOString() };
+  const boards = current.data!.boards.map((item) => item.id === boardId ? updatedBoard : item);
+  const write = await db.putJson(key, { boards }, current.etag || undefined);
+  if (!write.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
+  return c.json(updatedBoard);
+});
+
 app.delete("/api/task-boards/:boardId", async (c) => {
   const boardId = c.req.param("boardId");
   if (!isValidId(boardId) || boardId === "default") return c.json({ error: "The default board cannot be removed" }, 400);

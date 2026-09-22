@@ -383,6 +383,14 @@ describe("Clocean R2 Edge REST API & Database Tests", () => {
       const board = await createRes.json() as { id: string; name: string };
       expect(board.id).toMatch(/^board-/);
 
+      const renameRes = await fetch(`${BASE_URL}/api/task-boards/${encodeURIComponent(board.id)}?user=alex%40clocean.co`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Renamed QA board" }),
+      });
+      expect(renameRes.status).toBe(200);
+      expect((await renameRes.json() as { name: string }).name).toBe("Renamed QA board");
+
       const task = {
         id: `task-board-${Date.now()}`,
         title: "Board isolation check",
