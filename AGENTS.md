@@ -108,6 +108,9 @@ clocean/
 | `workspaces/{wsId}/tasks.json` | Sprint Kanban tasks & assignees | Direct JSON write |
 | `workspaces/{wsId}/photos.json` | Photo gallery registry | Direct JSON write |
 | `workspaces/{wsId}/activity.json` | Activity changelog | Appended on upload / edits |
+| `workspaces/registry/users/{email}/notifications.json` | User mention notifications & email log | Direct JSON write |
+| `workspaces/{wsId}/notifications/outbox.json` | Workspace email dispatch audit outbox | Direct JSON write |
+| `workspaces/{wsId}/docs/{id}/comments.json` | Document discussion comments & @mentions | Direct JSON write |
 | `workspaces/default/users/{email}.json` | User profiles & display names | Direct JSON write |
 | `workspaces/default/avatars/{email}.png` | User profile avatar pictures | Direct binary image stream |
 | `workspaces/{wsId}/files/{id}/{name}` | Uploaded files (PDFs, ZIPs, photos) | Byte-range streaming with Content-Type |

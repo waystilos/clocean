@@ -330,6 +330,23 @@ export class R2Database {
     return { success: true, members };
   }
 
+  async appendActivity(
+    wsId: string,
+    activity: { title: string; type: "doc" | "file" | "task" | "photo"; user: string }
+  ): Promise<void> {
+    const key = `workspaces/${wsId}/activity.json`;
+    const actRes = await this.getJson<ActivitiesData>(key);
+    const list = actRes.data?.activities || [];
+    list.unshift({
+      id: `act-${crypto.randomUUID()}`,
+      title: activity.title,
+      type: activity.type,
+      timestamp: "Just now",
+      user: activity.user,
+    });
+    await this.putJson(key, { activities: list.slice(0, 50) });
+  }
+
   // Seed initial data matching the exact Figma designs if R2 is fresh
   async ensureSeeded(): Promise<void> {
     const tree = await this.getJson<WorkspaceTree>("workspaces/default/tree.json");

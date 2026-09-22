@@ -120,6 +120,48 @@ export interface UserWorkspacesData {
   workspaces: UserWorkspaceReference[];
 }
 
+export interface DocComment {
+  id: string;
+  docId: string;
+  user: {
+    name: string;
+    email: string;
+    avatar: string;
+  };
+  text: string;
+  mentions: string[];
+  createdAt: string;
+}
+
+export interface DocCommentsData {
+  docId: string;
+  comments: DocComment[];
+}
+
+export interface MentionNotification {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  documentId: string;
+  documentTitle: string;
+  sender: {
+    name: string;
+    email: string;
+    avatar: string;
+  };
+  recipientEmail: string;
+  recipientName: string;
+  contextSnippet: string;
+  timestamp: string;
+  emailStatus: "sent" | "delivered" | "simulated";
+  read: boolean;
+}
+
+export interface UserNotificationsData {
+  email: string;
+  notifications: MentionNotification[];
+}
+
 export interface Env {
   CLOCEAN_STORAGE: R2Bucket;
   DOC_SESSION: DurableObjectNamespace;
@@ -127,4 +169,7 @@ export interface Env {
   ENVIRONMENT?: string;
   CF_ACCESS_AUD?: string;
   ALLOWED_ORIGINS?: string;
+  SEND_EMAIL?: any;
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
 }

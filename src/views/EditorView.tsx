@@ -12,8 +12,14 @@ import {
   Download,
   Plus,
   Trash,
+  AtSign,
+  MessageSquare,
+  Send,
+  Mail,
+  Shield,
+  Check,
 } from "lucide-react";
-import { DocContent, DocAttachment, UserProfile } from "../types.ts";
+import { DocContent, DocAttachment, UserProfile, WorkspaceMember, DocComment } from "../types.ts";
 
 interface EditorViewProps {
   docId: string;
@@ -53,8 +59,22 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
+  // Discussion & Mentions State
+  const [activeTab, setActiveTab] = useState<"attachments" | "discussion">("attachments");
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [comments, setComments] = useState<DocComment[]>([]);
+  const [commentText, setCommentText] = useState("");
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [commentFeedback, setCommentFeedback] = useState<string | null>(null);
+  const [mentionPopup, setMentionPopup] = useState<{
+    visible: boolean;
+    query: string;
+    target: "content" | "comment";
+  }>({ visible: false, query: "", target: "content" });
+
   const socketRef = useRef<WebSocket | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const mentionPopupRef = useRef<HTMLDivElement | null>(null);
 
   // Load initial document from API
   useEffect(() => {
@@ -71,6 +91,32 @@ export const EditorView: React.FC<EditorViewProps> = ({
         setAttachments(data.attachments || []);
       })
       .catch((err) => console.error("Error loading document:", err));
+  }, [docId, workspaceId]);
+
+  // Load workspace members for @ mention autocompletion
+  useEffect(() => {
+    fetch(`/api/workspaces/${workspaceId}/members?user=${encodeURIComponent(currentUser.email)}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: any) => {
+        setMembers(Array.isArray(data) ? data : data?.members || []);
+      })
+      .catch(() => {});
+  }, [workspaceId, currentUser.email]);
+
+  // Load comments
+  const loadComments = () => {
+    fetch(`/api/docs/${docId}/comments`, {
+      headers: { "x-workspace-id": workspaceId },
+    })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (Array.isArray(data)) setComments(data);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadComments();
   }, [docId, workspaceId]);
 
   // Connect to Cloudflare Durable Object WebSocket for real-time multiplayer editing
@@ -136,6 +182,21 @@ export const EditorView: React.FC<EditorViewProps> = ({
     };
   }, [docId, currentUser, workspaceId]);
 
+  // Close mention popup on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (mentionPopupRef.current && !mentionPopupRef.current.contains(e.target as Node)) {
+        setMentionPopup((prev) => ({ ...prev, visible: false }));
+      }
+    };
+    if (mentionPopup.visible) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [mentionPopup.visible]);
+
   // Send edits to peers & Durable Object
   const handleContentChange = (newContent: string) => {
     setContent(newContent);
@@ -155,7 +216,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
     // Save fallback to REST API
     const timeout = setTimeout(() => {
-      fetch(`/api/docs/${docId}`, {
+      fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -166,6 +227,46 @@ export const EditorView: React.FC<EditorViewProps> = ({
     }, 1500);
 
     return () => clearTimeout(timeout);
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    handleContentChange(val);
+
+    // Detect @ symbol for autocompletion
+    const pos = e.target.selectionStart;
+    const textBefore = val.slice(0, pos);
+    const atMatch = textBefore.match(/@([a-zA-Z0-9._ ]*)$/);
+    if (atMatch) {
+      setMentionPopup({
+        visible: true,
+        query: atMatch[1].toLowerCase(),
+        target: "content",
+      });
+    } else {
+      setMentionPopup((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+    }
+  };
+
+  const handleSelectMention = (member: WorkspaceMember) => {
+    if (mentionPopup.target === "content" && textareaRef.current) {
+      const pos = textareaRef.current.selectionStart;
+      const textBefore = content.slice(0, pos);
+      const textAfter = content.slice(pos);
+      const atIndex = textBefore.lastIndexOf("@");
+      if (atIndex !== -1) {
+        const newText = textBefore.slice(0, atIndex) + `@${member.name} ` + textAfter;
+        handleContentChange(newText);
+      }
+    } else if (mentionPopup.target === "comment") {
+      const atIndex = commentText.lastIndexOf("@");
+      if (atIndex !== -1) {
+        setCommentText(commentText.slice(0, atIndex) + `@${member.name} `);
+      } else {
+        setCommentText((prev) => prev + `@${member.name} `);
+      }
+    }
+    setMentionPopup({ visible: false, query: "", target: "content" });
   };
 
   const handleTitleChange = (newTitle: string) => {
@@ -218,6 +319,56 @@ export const EditorView: React.FC<EditorViewProps> = ({
     }
     handleContentChange(lines.join("\n"));
   };
+
+  // Submit comment
+  const handlePostComment = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!commentText.trim()) return;
+
+    setIsSubmittingComment(true);
+    setCommentFeedback(null);
+
+    try {
+      const res = await fetch(
+        `/api/docs/${docId}/comments?user=${encodeURIComponent(currentUser.email)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-workspace-id": workspaceId,
+          },
+          body: JSON.stringify({
+            text: commentText.trim(),
+            documentTitle: title,
+          }),
+        }
+      );
+
+      if (res.ok) {
+        const newComment: DocComment = await res.json();
+        setComments((prev) => [...prev, newComment]);
+        if (newComment.mentions && newComment.mentions.length > 0) {
+          setCommentFeedback(
+            `Email notification dispatched to ${newComment.mentions.join(", ")}!`
+          );
+          setTimeout(() => setCommentFeedback(null), 4000);
+        }
+        setCommentText("");
+      }
+    } catch (err) {
+      console.error("Failed to post comment:", err);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const filteredMembers = members.filter((m) => {
+    if (!mentionPopup.query) return true;
+    return (
+      m.name.toLowerCase().includes(mentionPopup.query) ||
+      m.email.toLowerCase().includes(mentionPopup.query)
+    );
+  });
 
   const lines = content.split("\n");
 
@@ -356,10 +507,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
           <textarea
             ref={textareaRef}
             value={content}
-            onChange={(e) => handleContentChange(e.target.value)}
+            onChange={handleTextareaChange}
             onSelect={handleCursorMove}
             onKeyUp={handleCursorMove}
-            placeholder="Type '/' for commands or start writing your manifesto..."
+            placeholder="Type '/' for commands, '@' to mention a teammate, or start typing..."
             rows={18}
             style={{
               width: "100%",
@@ -399,6 +550,76 @@ export const EditorView: React.FC<EditorViewProps> = ({
               <span>●</span> {rc.user.name} typing
             </div>
           ))}
+
+          {/* Mention Autocomplete Dropdown Popup */}
+          {mentionPopup.visible && filteredMembers.length > 0 && (
+            <div
+              ref={mentionPopupRef}
+              className="animate-fade-in"
+              style={{
+                position: "absolute",
+                top: "60px",
+                left: "20px",
+                width: "280px",
+                backgroundColor: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-md)",
+                boxShadow: "0 12px 28px rgba(0, 0, 0, 0.35)",
+                zIndex: 50,
+                padding: "6px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                  textTransform: "uppercase",
+                  padding: "6px 8px",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Mention Teammate (Email will be sent)
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxHeight: "180px", overflowY: "auto" }}>
+                {filteredMembers.map((m) => (
+                  <button
+                    key={m.email}
+                    onClick={() => handleSelectMention(m)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      padding: "6px 8px",
+                      borderRadius: "var(--radius-sm)",
+                      border: "none",
+                      backgroundColor: "transparent",
+                      color: "var(--text-primary)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      width: "100%",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-nav-active)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                  >
+                    <img
+                      src={m.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(m.email)}`}
+                      alt={m.name}
+                      style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover" }}
+                    />
+                    <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                      <span style={{ fontSize: "13px", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {m.name}
+                      </span>
+                      <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                        {m.email}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Floating Formatting Toolbar (Matching Figma Editor) */}
@@ -450,19 +671,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
               if (url) applyFormat("[", `](${url})`);
             }}
             className="btn-icon"
-            title="Insert Link"
+            title="Link"
           >
             <LinkIcon size={15} />
-          </button>
-          <button
-            onClick={() => {
-              const imgUrl = prompt("Enter Image URL:");
-              if (imgUrl) applyFormat(`\n![Image](${imgUrl})\n`);
-            }}
-            className="btn-icon"
-            title="Embed Image"
-          >
-            <ImageIcon size={15} />
           </button>
           <button
             onClick={() => applyFormat("- [ ] ", "")}
@@ -478,122 +689,312 @@ export const EditorView: React.FC<EditorViewProps> = ({
           >
             <List size={15} />
           </button>
+          <div
+            style={{ width: "1px", height: "18px", backgroundColor: "var(--border-subtle)" }}
+          />
+          {/* Mention Teammate Action */}
+          <button
+            onClick={() => {
+              if (textareaRef.current) {
+                const pos = textareaRef.current.selectionStart;
+                const newContent = content.slice(0, pos) + "@" + content.slice(pos);
+                handleContentChange(newContent);
+                setMentionPopup({ visible: true, query: "", target: "content" });
+                textareaRef.current.focus();
+              }
+            }}
+            className="btn-icon"
+            style={{ color: "var(--accent)" }}
+            title="Mention Teammate (@)"
+          >
+            <AtSign size={15} />
+          </button>
         </div>
       </div>
 
-      {/* Right Sidebar: Attachments (Matching Figma v2-editor) */}
+      {/* Right Sidebar: Attachments & Discussion */}
       <aside
         style={{
-          width: "260px",
-          minWidth: "260px",
+          width: "280px",
+          minWidth: "280px",
           borderLeft: "1px solid var(--border-subtle)",
-          padding: "32px 20px",
+          padding: "24px 16px",
           display: "flex",
           flexDirection: "column",
           gap: "16px",
           backgroundColor: "var(--bg-primary)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h3
-            className="font-serif"
-            style={{ fontSize: "16px", fontWeight: 500, color: "var(--text-primary)" }}
+        {/* Tab Headers */}
+        <div style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "10px", gap: "6px" }}>
+          <button
+            onClick={() => setActiveTab("attachments")}
+            style={{
+              background: "transparent",
+              border: "none",
+              borderBottom: activeTab === "attachments" ? "2px solid var(--accent)" : "2px solid transparent",
+              color: activeTab === "attachments" ? "var(--text-primary)" : "var(--text-secondary)",
+              padding: "4px 8px",
+              fontSize: "13px",
+              fontWeight: activeTab === "attachments" ? 600 : 400,
+              cursor: "pointer",
+            }}
           >
-            Attachments
-          </h3>
-          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-            {attachments.length} files
-          </span>
+            Files ({attachments.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("discussion")}
+            style={{
+              background: "transparent",
+              border: "none",
+              borderBottom: activeTab === "discussion" ? "2px solid var(--accent)" : "2px solid transparent",
+              color: activeTab === "discussion" ? "var(--text-primary)" : "var(--text-secondary)",
+              padding: "4px 8px",
+              fontSize: "13px",
+              fontWeight: activeTab === "discussion" ? 600 : 400,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <MessageSquare size={13} />
+            Discussion ({comments.length})
+          </button>
         </div>
 
-        {/* Attachment Card Pills */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {attachments.map((att) => (
-            <div
-              key={att.id}
-              onClick={() => onOpenFilePreview && onOpenFilePreview(att)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "10px 14px",
-                backgroundColor: "var(--bg-surface)",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "var(--radius-md)",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
+        {/* Tab: Attachments */}
+        {activeTab === "attachments" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {attachments.map((att) => (
+                <div
+                  key={att.id}
+                  onClick={() => onOpenFilePreview && onOpenFilePreview(att)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 12px",
+                    backgroundColor: "var(--bg-surface)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--radius-md)",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--border-focus)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-subtle)")}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {att.name.endsWith(".png") || att.name.endsWith(".jpg") ? (
+                      <ImageIcon size={16} color="var(--accent)" />
+                    ) : (
+                      <FileText size={16} color="var(--accent)" />
+                    )}
+                    <span
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 400,
+                        color: "var(--text-primary)",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {att.name}
+                    </span>
+                  </div>
+                  <a
+                    href={att.url}
+                    download={att.name}
+                    onClick={(e) => e.stopPropagation()}
+                    className="btn-icon"
+                    style={{ width: "24px", height: "24px" }}
+                  >
+                    <Download size={13} />
+                  </a>
+                </div>
+              ))}
+            </div>
+
+            {/* Attach File Button */}
+            <button
+              onClick={() => {
+                const fileName = prompt("Enter attachment name from Drive (e.g. brand_guidelines.pdf):");
+                if (fileName) {
+                  const newAtt: DocAttachment = {
+                    id: `att-${Date.now()}`,
+                    name: fileName,
+                    type: "application/octet-stream",
+                    size: 1048576,
+                    url: `/api/files/sample/${encodeURIComponent(fileName)}`,
+                  };
+                  const updated = [...attachments, newAtt];
+                  setAttachments(updated);
+                  fetch(`/api/docs/${docId}`, {
+                    method: "PUT",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "x-workspace-id": workspaceId,
+                    },
+                    body: JSON.stringify({ title, content, tags, attachments: updated }),
+                  });
+                }
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--border-focus)")}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-subtle)")}
+              className="btn-secondary"
+              style={{ width: "100%", justifyContent: "center", fontSize: "12px" }}
             >
+              <Paperclip size={14} /> Attach from Drive
+            </button>
+          </div>
+        )}
+
+        {/* Tab: Discussion & Mentions */}
+        {activeTab === "discussion" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1, minHeight: 0 }}>
+            {commentFeedback && (
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "10px",
-                  overflow: "hidden",
+                  gap: "6px",
+                  fontSize: "11px",
+                  color: "var(--accent)",
+                  backgroundColor: "rgba(30, 125, 107, 0.15)",
+                  padding: "6px 10px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid rgba(30, 125, 107, 0.3)",
                 }}
               >
-                {att.name.endsWith(".png") || att.name.endsWith(".jpg") ? (
-                  <ImageIcon size={16} color="var(--accent)" />
-                ) : (
-                  <FileText size={16} color="var(--accent)" />
-                )}
-                <span
+                <Check size={12} /> {commentFeedback}
+              </div>
+            )}
+
+            {/* Comments Stream */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "350px", overflowY: "auto" }}>
+              {comments.length === 0 ? (
+                <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "12px", padding: "20px 0" }}>
+                  No comments yet. Mention a teammate with @ to notify them via email!
+                </div>
+              ) : (
+                comments.map((c) => (
+                  <div
+                    key={c.id}
+                    style={{
+                      padding: "8px 10px",
+                      backgroundColor: "var(--bg-surface)",
+                      borderRadius: "var(--radius-sm)",
+                      border: "1px solid var(--border-subtle)",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                      <img
+                        src={c.user.avatar}
+                        alt={c.user.name}
+                        style={{ width: "20px", height: "20px", borderRadius: "50%", objectFit: "cover" }}
+                      />
+                      <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)" }}>
+                        {c.user.name}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "var(--text-primary)", lineHeight: 1.4 }}>
+                      {c.text.split(" ").map((word, idx) => {
+                        if (word.startsWith("@")) {
+                          return (
+                            <span key={idx} style={{ color: "var(--accent)", fontWeight: 600 }}>
+                              {word}{" "}
+                            </span>
+                          );
+                        }
+                        return word + " ";
+                      })}
+                    </div>
+                    {c.mentions && c.mentions.length > 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "4px", fontSize: "10px", color: "var(--accent)" }}>
+                        <Mail size={10} /> Email sent to {c.mentions.join(", ")}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Post Comment Input */}
+            <form onSubmit={handlePostComment} style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
+              <div style={{ position: "relative" }}>
+                <textarea
+                  rows={3}
+                  value={commentText}
+                  onChange={(e) => {
+                    setCommentText(e.target.value);
+                    const pos = e.target.selectionStart;
+                    const textBefore = e.target.value.slice(0, pos);
+                    const atMatch = textBefore.match(/@([a-zA-Z0-9._ ]*)$/);
+                    if (atMatch) {
+                      setMentionPopup({
+                        visible: true,
+                        query: atMatch[1].toLowerCase(),
+                        target: "comment",
+                      });
+                    } else if (mentionPopup.target === "comment") {
+                      setMentionPopup((prev) => ({ ...prev, visible: false }));
+                    }
+                  }}
+                  placeholder="Add a comment... (Type @ to mention)"
                   style={{
-                    fontSize: "13px",
-                    fontWeight: 400,
+                    width: "100%",
+                    padding: "8px",
+                    backgroundColor: "var(--bg-surface)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--radius-sm)",
                     color: "var(--text-primary)",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
+                    fontSize: "12px",
+                    outline: "none",
+                    resize: "none",
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCommentText((prev) => prev + "@");
+                    setMentionPopup({ visible: true, query: "", target: "comment" });
+                  }}
+                  className="btn-icon"
+                  style={{ width: "24px", height: "24px" }}
+                  title="Mention Teammate (@)"
+                >
+                  <AtSign size={13} />
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingComment || !commentText.trim()}
+                  className="btn-primary"
+                  style={{
+                    padding: "4px 12px",
+                    fontSize: "12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    opacity: isSubmittingComment || !commentText.trim() ? 0.6 : 1,
                   }}
                 >
-                  {att.name}
-                </span>
+                  <Send size={12} />
+                  <span>Send</span>
+                </button>
               </div>
-              <a
-                href={att.url}
-                download={att.name}
-                onClick={(e) => e.stopPropagation()}
-                className="btn-icon"
-                style={{ width: "24px", height: "24px" }}
-              >
-                <Download size={13} />
-              </a>
-            </div>
-          ))}
-        </div>
-
-        {/* Attach File Button */}
-        <button
-          onClick={() => {
-            const fileName = prompt("Enter attachment name from Drive (e.g. brand_guidelines.pdf):");
-            if (fileName) {
-              const newAtt: DocAttachment = {
-                id: `att-${Date.now()}`,
-                name: fileName,
-                type: "application/octet-stream",
-                size: 1048576,
-                url: `/api/files/sample/${encodeURIComponent(fileName)}`,
-              };
-              const updated = [...attachments, newAtt];
-              setAttachments(updated);
-              fetch(`/api/docs/${docId}`, {
-                method: "PUT",
-                headers: {
-                  "Content-Type": "application/json",
-                  "x-workspace-id": workspaceId,
-                },
-                body: JSON.stringify({ title, content, tags, attachments: updated }),
-              });
-            }
-          }}
-          className="btn-secondary"
-          style={{ width: "100%", justifyContent: "center" }}
-        >
-          <Paperclip size={14} /> Attach from Drive
-        </button>
+            </form>
+          </div>
+        )}
       </aside>
     </div>
   );

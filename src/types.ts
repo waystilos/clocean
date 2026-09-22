@@ -89,3 +89,35 @@ export interface UserWorkspaceReference {
   icon: string;
   role: "owner" | "admin" | "member";
 }
+
+export interface DocComment {
+  id: string;
+  docId: string;
+  user: {
+    name: string;
+    email: string;
+    avatar: string;
+  };
+  text: string;
+  mentions: string[];
+  createdAt: string;
+}
+
+export interface MentionNotification {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  documentId: string;
+  documentTitle: string;
+  sender: {
+    name: string;
+    email: string;
+    avatar: string;
+  };
+  recipientEmail: string;
+  recipientName: string;
+  contextSnippet: string;
+  timestamp: string;
+  emailStatus: "sent" | "delivered" | "simulated";
+  read: boolean;
+}

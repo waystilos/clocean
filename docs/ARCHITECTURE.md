@@ -156,7 +156,36 @@ graph TD
    - **`owner`**: Created the workspace; can manage team members, invite new colleagues, and delete content.
    - **`admin`**: Can invite new teammates and manage workspace settings.
    - **`member`**: Can view, edit, upload, and collaborate in real time.
+---
 
+### Layer 6: @ Mentions & Email Notification System
+
+Clocean features an edge-native **@ mention and transactional email notification engine**. When a collaborator mentions a teammate using `@Name` or `@email` in any block document or document discussion thread, the system automatically detects the mention, formats an Obsidian/Parchment branded HTML email, dispatches the notification, and synchronizes the recipient's in-app notification center.
+
+```mermaid
+graph TD
+    Author([Collaborator]) -->|Types '@Elena Rostova' in Doc or Comment| Editor[EditorView.tsx]
+    Editor -->|PUT /api/docs/:id or POST /api/docs/:id/comments| EdgeAPI[Worker Edge API]
+
+    subgraph Mention Processing & Notification Engine
+        EdgeAPI -->|Extract Mentions| Notifier[emailNotifier.ts]
+        Notifier -->|Lookup Recipient & Sender| Roster[(workspaces/{wsId}/members.json)]
+        Notifier -->|Generate Branded HTML Email| EmailRenderer[Obsidian-styled Email Template]
+        EmailRenderer -->|Cloudflare Email Routing / Transactional API| Mailbox([Recipient Email Inbox])
+        Notifier -->|Persist Notification Item| UserInbox[(users/{recipientEmail}/notifications.json)]
+        Notifier -->|Audit Log| Outbox[(workspaces/{wsId}/notifications/outbox.json)]
+    end
+
+    Recipient([Mentioned Teammate]) -->|Header Notification Bell| AppShell[Header.tsx]
+    Recipient -->|Direct Email Deep Link| Browser[Opens Clocean Document]
+```
+
+#### How It Works
+1. **Interactive Autocomplete**: Typing `@` in the editor or comments panel displays a teammate popup with member avatars, names, emails, and roles.
+2. **Edge Regex & Fuzzy Detection**: `extractMentions` scans text for direct email mentions (`@elena@clocean.co`), full names (`@Elena Rostova`), and first names (`@Elena`), while preventing self-notification.
+3. **Figma-Branded HTML Emails**: Generates a responsive dark Obsidian/Warm Parchment HTML email with Clocean branding, sender avatar, context quote snippet, and direct deep-link (`/?doc={id}&ws={wsId}`).
+4. **Zero-Database Notification Inboxes**: Notifications are stored directly in Cloudflare R2 at `workspaces/registry/users/{email}/notifications.json` with an outbox audit log at `workspaces/{wsId}/notifications/outbox.json`.
+5. **Real-Time Notification Bell**: The app header features an interactive notification bell with unread count badges and one-click mark-as-read.
 
 ---
 

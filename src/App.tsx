@@ -20,6 +20,7 @@ import {
   UserProfile,
   DocAttachment,
   UserWorkspaceReference,
+  MentionNotification,
 } from "./types.ts";
 
 export const App: React.FC = () => {
@@ -45,6 +46,7 @@ export const App: React.FC = () => {
   });
   const [isCreateWsOpen, setIsCreateWsOpen] = useState(false);
   const [isTeamMembersOpen, setIsTeamMembersOpen] = useState(false);
+  const [notifications, setNotifications] = useState<MentionNotification[]>([]);
 
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
@@ -88,12 +90,15 @@ export const App: React.FC = () => {
   const refreshData = async () => {
     try {
       const headers = { "x-workspace-id": currentWorkspace.id };
-      const [treeRes, tasksRes, photosRes, actRes, userRes] = await Promise.all([
+      const [treeRes, tasksRes, photosRes, actRes, userRes, notifRes] = await Promise.all([
         fetch("/api/tree", { headers }).then((r) => r.json() as Promise<{ nodes?: TreeNode[] }>),
         fetch("/api/tasks", { headers }).then((r) => r.json() as Promise<TaskItem[]>),
         fetch("/api/photos", { headers }).then((r) => r.json() as Promise<PhotoItem[]>),
         fetch("/api/activity", { headers }).then((r) => r.json() as Promise<ActivityItem[]>),
         fetch(`/api/me?user=${currentUser.email.split("@")[0]}`).then((r) => r.json() as Promise<UserProfile>),
+        fetch(`/api/notifications?user=${encodeURIComponent(currentUser.email)}`)
+          .then((r) => r.json() as Promise<MentionNotification[]>)
+          .catch(() => []),
       ]);
 
       if (treeRes?.nodes) setTree(treeRes.nodes);
@@ -101,9 +106,17 @@ export const App: React.FC = () => {
       if (Array.isArray(photosRes)) setPhotos(photosRes);
       if (Array.isArray(actRes)) setActivities(actRes);
       if (userRes?.email) setCurrentUser(userRes);
+      if (Array.isArray(notifRes)) setNotifications(notifRes);
     } catch (err) {
       console.error("Failed to load workspace data:", err);
     }
+  };
+
+  const handleMarkNotificationsRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    await fetch(`/api/notifications/read?user=${encodeURIComponent(currentUser.email)}`, {
+      method: "PUT",
+    }).catch(() => {});
   };
 
   useEffect(() => {
@@ -212,6 +225,9 @@ export const App: React.FC = () => {
           breadcrumbs={getBreadcrumbs()}
           onOpenSearch={() => setIsSearchOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          notifications={notifications}
+          onSelectDoc={(docId) => handleNavigateDoc(docId)}
+          onMarkNotificationsRead={handleMarkNotificationsRead}
         />
 
         {/* View Routing */}

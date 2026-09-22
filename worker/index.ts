@@ -1,9 +1,22 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { Env, WorkspaceTree, TreeNode, DocContent, TasksData, PhotosData, ActivitiesData } from "./types.ts";
+import {
+  Env,
+  WorkspaceTree,
+  TreeNode,
+  DocContent,
+  TasksData,
+  PhotosData,
+  ActivitiesData,
+  DocComment,
+  DocCommentsData,
+  MentionNotification,
+  UserNotificationsData,
+} from "./types.ts";
 import { R2Database } from "./storage/r2Db.ts";
 import { getAuthEmail, requireAuth } from "./auth/cfAccess.ts";
 import { DocSessionDO } from "./durable_objects/DocSessionDO.ts";
+import { extractMentions, dispatchMentionNotification } from "./notifications/emailNotifier.ts";
 
 export { DocSessionDO };
 
@@ -401,7 +414,216 @@ app.put("/api/docs/:id", async (c) => {
     }
   }
 
+  // Detect @ mentions in document content and dispatch email notifications to mentioned teammates
+  if (body.content) {
+    const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+    const members = await db.getWorkspaceMembers(ws);
+    const newMentions = extractMentions(body.content, members, senderEmail);
+    const existingMentions = existing?.content ? extractMentions(existing.content, members, senderEmail) : [];
+    const existingEmails = new Set(existingMentions.map((m) => m.email.toLowerCase()));
+
+    const newlyMentioned = newMentions.filter((m) => !existingEmails.has(m.email.toLowerCase()));
+    if (newlyMentioned.length > 0) {
+      const wsMeta = await db.getWorkspaceMetadata(ws);
+      const senderProfile = await db.getUserProfile(senderEmail);
+      for (const member of newlyMentioned) {
+        const notif: MentionNotification = {
+          id: `notif-${crypto.randomUUID()}`,
+          workspaceId: ws,
+          workspaceName: wsMeta?.name || "Clocean Main",
+          documentId: id,
+          documentTitle: safeTitle,
+          sender: {
+            name: senderProfile.name,
+            email: senderEmail,
+            avatar: senderProfile.avatar,
+          },
+          recipientEmail: member.email,
+          recipientName: member.name,
+          contextSnippet: body.content.slice(0, 160).trim(),
+          timestamp: "Just now",
+          emailStatus: "simulated",
+          read: false,
+        };
+        await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
+        await db.appendActivity(ws, {
+          title: `${senderProfile.name} mentioned @${member.name} in "${safeTitle}"`,
+          type: "doc",
+          user: senderProfile.name,
+        });
+      }
+    }
+  }
+
   return c.json(updatedDoc);
+});
+
+// Document Comments & Discussions Endpoints
+app.get("/api/docs/:id/comments", async (c) => {
+  const id = c.req.param("id");
+  if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
+  const ws = getWorkspaceId(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const res = await db.getJson<DocCommentsData>(`workspaces/${ws}/docs/${id}/comments.json`);
+  return c.json(res.data?.comments || []);
+});
+
+app.post("/api/docs/:id/comments", async (c) => {
+  const id = c.req.param("id");
+  if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
+  const ws = getWorkspaceId(c);
+  const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+
+  const body = await c.req.json<{ text: string; documentTitle?: string }>();
+  if (!body.text || !body.text.trim()) {
+    return c.json({ error: "Comment text is required" }, 400);
+  }
+
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const senderProfile = await db.getUserProfile(senderEmail);
+  const members = await db.getWorkspaceMembers(ws);
+  const memberSender = members.find((m) => m.email.toLowerCase() === senderEmail.toLowerCase());
+  const senderName = memberSender?.name || senderProfile.name;
+  const senderAvatar = memberSender?.avatar || senderProfile.avatar;
+  const wsMeta = await db.getWorkspaceMetadata(ws);
+  const docRes = await db.getJson<DocContent>(`workspaces/${ws}/docs/${id}/content.json`);
+  const docTitle = body.documentTitle || docRes.data?.title || "Document";
+
+  const mentioned = extractMentions(body.text, members, senderEmail);
+  const comment: DocComment = {
+    id: `comment-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    docId: id,
+    user: {
+      name: senderName,
+      email: senderEmail,
+      avatar: senderAvatar,
+    },
+    text: body.text.trim(),
+    mentions: mentioned.map((m) => m.email),
+    createdAt: new Date().toISOString(),
+  };
+
+  const commentsKey = `workspaces/${ws}/docs/${id}/comments.json`;
+  const existingComments = await db.getJson<DocCommentsData>(commentsKey);
+  const list = existingComments.data?.comments || [];
+  list.push(comment);
+  await db.putJson(commentsKey, { docId: id, comments: list });
+
+  // Dispatch email notifications to all mentioned teammates
+  for (const member of mentioned) {
+    const notif: MentionNotification = {
+      id: `notif-${crypto.randomUUID()}`,
+      workspaceId: ws,
+      workspaceName: wsMeta?.name || "Clocean Main",
+      documentId: id,
+      documentTitle: docTitle,
+      sender: {
+        name: senderName,
+        email: senderEmail,
+        avatar: senderAvatar,
+      },
+      recipientEmail: member.email,
+      recipientName: member.name,
+      contextSnippet: body.text.trim(),
+      timestamp: "Just now",
+      emailStatus: "simulated",
+      read: false,
+    };
+    await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
+  }
+
+  await db.appendActivity(ws, {
+    title: `${senderProfile.name} commented on "${docTitle}"`,
+    type: "doc",
+    user: senderProfile.name,
+  });
+
+  return c.json(comment, 201);
+});
+
+// Notifications Endpoints
+app.get("/api/notifications", async (c) => {
+  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const key = `workspaces/registry/users/${encodeURIComponent(email)}/notifications.json`;
+  const res = await db.getJson<UserNotificationsData>(key);
+  return c.json(res.data?.notifications || []);
+});
+
+app.put("/api/notifications/read", async (c) => {
+  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const key = `workspaces/registry/users/${encodeURIComponent(email)}/notifications.json`;
+  const res = await db.getJson<UserNotificationsData>(key);
+  if (res.data) {
+    res.data.notifications.forEach((n) => (n.read = true));
+    await db.putJson(key, res.data);
+  }
+  return c.json({ success: true });
+});
+
+app.post("/api/notifications/mention", async (c) => {
+  const ws = getWorkspaceId(c);
+  const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const body = await c.req.json<{
+    documentId: string;
+    documentTitle: string;
+    text: string;
+  }>();
+
+  if (!body.text || !body.documentId) {
+    return c.json({ error: "Text and documentId are required" }, 400);
+  }
+
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const members = await db.getWorkspaceMembers(ws);
+  const senderProfile = await db.getUserProfile(senderEmail);
+  const memberSender = members.find((m) => m.email.toLowerCase() === senderEmail.toLowerCase());
+  const senderName = memberSender?.name || senderProfile.name;
+  const senderAvatar = memberSender?.avatar || senderProfile.avatar;
+  const wsMeta = await db.getWorkspaceMetadata(ws);
+  const mentioned = extractMentions(body.text, members, senderEmail);
+
+  const dispatched: MentionNotification[] = [];
+  for (const member of mentioned) {
+    const lines = body.text.split("\n");
+    const matchedLine =
+      lines.find(
+        (l) =>
+          l.toLowerCase().includes(member.email.toLowerCase()) ||
+          l.toLowerCase().includes(member.name.toLowerCase())
+      ) || body.text.slice(0, 150);
+
+    const notification: MentionNotification = {
+      id: `notif-${crypto.randomUUID()}`,
+      workspaceId: ws,
+      workspaceName: wsMeta?.name || "Clocean Main",
+      documentId: body.documentId,
+      documentTitle: body.documentTitle || "Document",
+      sender: {
+        name: senderName,
+        email: senderEmail,
+        avatar: senderAvatar,
+      },
+      recipientEmail: member.email,
+      recipientName: member.name,
+      contextSnippet: matchedLine.trim(),
+      timestamp: "Just now",
+      emailStatus: "simulated",
+      read: false,
+    };
+
+    await dispatchMentionNotification(c.env, db, notification, new URL(c.req.url).origin);
+    dispatched.push(notification);
+
+    await db.appendActivity(ws, {
+      title: `${senderProfile.name} mentioned @${member.name} in "${body.documentTitle || "Document"}"`,
+      type: "doc",
+      user: senderProfile.name,
+    });
+  }
+
+  return c.json({ dispatched: dispatched.length, notifications: dispatched });
 });
 
 // Drive File Upload & Streaming
