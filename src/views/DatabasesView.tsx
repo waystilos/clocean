@@ -16,6 +16,7 @@ export const DatabasesView: React.FC<Props> = ({ workspaceId, currentUser, getAu
   const [newDatabaseName, setNewDatabaseName] = useState("");
   const [newRecordTitle, setNewRecordTitle] = useState("");
   const [error, setError] = useState("");
+  const [isCreatingDatabase, setIsCreatingDatabase] = useState(false);
 
   const headers = (json = false) => getAuthHeaders({ "x-workspace-id": workspaceId, ...(json ? { "Content-Type": "application/json" } : {}) });
   const loadDatabases = async () => {
@@ -42,17 +43,33 @@ export const DatabasesView: React.FC<Props> = ({ workspaceId, currentUser, getAu
   useEffect(() => { if (selected) loadRecords(selected).catch((e) => setError(e.message)); }, [selected, search]);
 
   const createDatabase = async () => {
-    if (!newDatabaseName.trim()) return;
-    const response = await fetch("/api/databases", { method: "POST", headers: headers(true), body: JSON.stringify({
-      name: newDatabaseName.trim(),
-      properties: [
-        { id: "status", name: "Status", type: "select", options: ["Not started", "In progress", "Done"] },
-        { id: "due_date", name: "Due date", type: "date" },
-      ],
-    }) });
-    if (!response.ok) { setError("Could not create database"); return; }
-    const database = await response.json() as DatabaseSchema;
-    setDatabases((items) => [...items, database]); setSelected(database); setNewDatabaseName("");
+    const name = newDatabaseName.trim();
+    if (!name) {
+      setError("Enter a name for the new database.");
+      return;
+    }
+    setIsCreatingDatabase(true);
+    setError("");
+    try {
+      const response = await fetch("/api/databases", { method: "POST", headers: headers(true), body: JSON.stringify({
+        name,
+        properties: [
+          { id: "status", name: "Status", type: "select", options: ["Not started", "In progress", "Done"] },
+          { id: "due_date", name: "Due date", type: "date" },
+        ],
+      }) });
+      const data = await response.json().catch(() => ({})) as DatabaseSchema & { error?: string };
+      if (!response.ok) throw new Error(data.error || `Could not create database (${response.status})`);
+      const database = data as DatabaseSchema;
+      setDatabases((items) => [...items, database]);
+      setSelected(database);
+      setNewDatabaseName("");
+      await loadRecords(database);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create database");
+    } finally {
+      setIsCreatingDatabase(false);
+    }
   };
   const createRecord = async () => {
     if (!selected || !newRecordTitle.trim()) return;
@@ -72,7 +89,7 @@ export const DatabasesView: React.FC<Props> = ({ workspaceId, currentUser, getAu
   return <div className="animate-fade-in database-view" style={{ padding: "32px", maxWidth: "1200px", margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
     <div className="database-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 24 }}>
       <div><h1 className="font-serif" style={{ margin: 0, fontSize: 32 }}>Databases</h1><p style={{ color: "var(--text-secondary)", marginTop: 8 }}>Structured workspace data stored securely in R2.</p></div>
-      <div className="database-create" style={{ display: "flex", gap: 8 }}><input value={newDatabaseName} maxLength={100} onChange={(e) => setNewDatabaseName(e.target.value)} placeholder="New database" aria-label="New database name" /><button className="btn-primary" onClick={createDatabase}><Plus size={16} /> Create</button></div>
+      <form className="database-create" onSubmit={(e) => { e.preventDefault(); void createDatabase(); }} style={{ display: "flex", gap: 8 }}><input value={newDatabaseName} maxLength={100} onChange={(e) => { setNewDatabaseName(e.target.value); if (error) setError(""); }} placeholder="New database" aria-label="New database name" /><button type="submit" className="btn-primary" disabled={isCreatingDatabase}><Plus size={16} /> {isCreatingDatabase ? "Creating…" : "Create"}</button></form>
     </div>
     {error && <div role="alert" style={{ color: "var(--danger, #b42318)", marginBottom: 16 }}>{error}</div>}
     <div className="database-layout" style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 24 }}>

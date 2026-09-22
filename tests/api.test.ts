@@ -323,7 +323,55 @@ describe("Clocean R2 Edge REST API & Database Tests", () => {
     });
   });
 
-  // 5. Tasks Board & Activity Feed
+  // 5. R2 Database Schemas & Records
+  describe("Notion-style databases", () => {
+    it("should create a database, persist its schema, and create a record", async () => {
+      const name = `Project database ${Date.now()}`;
+      const createRes = await fetch(`${BASE_URL}/api/databases`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-workspace-id": "default" },
+        body: JSON.stringify({
+          name,
+          properties: [
+            { id: "status", name: "Status", type: "select", options: ["Not started", "Done"] },
+            { id: "due_date", name: "Due date", type: "date" },
+          ],
+        }),
+      });
+      expect(createRes.status).toBe(201);
+      const database = await createRes.json() as any;
+      expect(database.name).toBe(name);
+      expect(database.id).toMatch(/^db-/);
+
+      const listRes = await fetch(`${BASE_URL}/api/databases`, { headers: { "x-workspace-id": "default" } });
+      const listed = await listRes.json() as { databases: any[] };
+      expect(listed.databases.some((item) => item.id === database.id)).toBe(true);
+
+      const recordRes = await fetch(`${BASE_URL}/api/databases/${database.id}/records`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-workspace-id": "default" },
+        body: JSON.stringify({ title: "First project", properties: { status: "Done", due_date: "2026-10-01" } }),
+      });
+      expect(recordRes.status).toBe(201);
+      const record = await recordRes.json() as any;
+      expect(record.databaseId).toBe(database.id);
+
+      const recordsRes = await fetch(`${BASE_URL}/api/databases/${database.id}/records`, { headers: { "x-workspace-id": "default" } });
+      const records = await recordsRes.json() as { records: any[] };
+      expect(records.records.some((item) => item.id === record.id)).toBe(true);
+    });
+
+    it("should reject an unnamed database without writing it", async () => {
+      const createRes = await fetch(`${BASE_URL}/api/databases`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-workspace-id": "default" },
+        body: JSON.stringify({ name: "", properties: [] }),
+      });
+      expect(createRes.status).toBe(400);
+    });
+  });
+
+  // 6. Tasks Board & Activity Feed
   describe("Kanban Tasks & Activity Logging", () => {
     it("should create and persist an independent task board", async () => {
       const createRes = await fetch(`${BASE_URL}/api/task-boards`, {
