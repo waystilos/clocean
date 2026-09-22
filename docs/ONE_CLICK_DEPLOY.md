@@ -1,12 +1,36 @@
 # Deployment Guide
 
 > [!IMPORTANT]
-> **Work in Progress (WIP)**: The 1-click deployment button is temporarily disabled during testing. Use the command-line deployment steps below.
+> The one-command deployment provisions the R2 bucket, deploys the Worker, creates the Cloudflare Access application and allow policy, configures production secrets, and redeploys with authentication enabled.
 
 This guide walks you through deploying **Clocean** to your Cloudflare account with zero database setup required.
 
 ---
 
+
+## One-command deployment
+
+After installing Node.js 18+, pnpm, and Pulumi, log in to Cloudflare and Pulumi once:
+
+```bash
+npx wrangler login
+pulumi login
+```
+
+Then run:
+
+```bash
+export CLOCEAN_ACCESS_EMAIL="you@example.com"
+export CLOUDFLARE_ACCESS_TEAM_DOMAIN="your-team.cloudflareaccess.com"
+export CLOUDFLARE_API_TOKEN="<token with Workers, R2, and Access edit permissions>"
+export PULUMI_CONFIG_PASSPHRASE="<local encryption passphrase>"
+pnpm install
+pnpm deploy:one-click
+```
+
+`CLOUDFLARE_ACCOUNT_ID` is detected from Wrangler when possible. Set it explicitly when using an API token instead of an interactive Wrangler login. The command stores encrypted Pulumi values for the Access team domain and generated session secret, and sends runtime secrets to Wrangler without writing them into Git. The API token is read by Pulumi and Wrangler from the environment and is never written to the repository.
+
+The only required identity setup is the Cloudflare Access team domain and the email address allowed into the application. No email delivery service is used.
 
 ## Command-Line Deployment (Wrangler)
 
@@ -56,6 +80,8 @@ Wrangler will:
 * Upload static assets to Cloudflare Pages.
 * Deploy your API globally.
 * Output your live application URL: `https://clocean.<your-subdomain>.workers.dev`.
+
+The deployed `workers.dev` hostname is a valid Access application hostname. A Pages `pages.dev` hostname is only created when the project is deployed as a Pages project; it is not required for this Worker deployment.
 
 ---
 

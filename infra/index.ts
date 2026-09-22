@@ -6,7 +6,7 @@ const config = new pulumi.Config();
 const accountId = config.require("accountId");
 const domain = config.get("domain") || "clocean.example.com";
 const allowedEmails = config.getObject<string[]>("allowedEmails") || [];
-const allowedEmailDomains = config.getObject<string[]>("allowedEmailDomains") || ["clocean.co"];
+const allowedEmailDomains = config.getObject<string[]>("allowedEmailDomains") || [];
 const zoneId = config.get("zoneId"); // Optional: if managing DNS CNAME through Pulumi
 
 // 1. Cloudflare R2 Bucket for Clocean (Database & File Storage)
@@ -55,28 +55,7 @@ export const accessPolicy = new cloudflare.AccessPolicy("clocean-team-policy", {
   ],
 });
 
-// 4. Provision Cloudflare Access Service Token (For CI/CD or Automated Testing)
-export const serviceToken = new cloudflare.AccessServiceToken("clocean-ci-token", {
-  accountId: accountId,
-  name: "Clocean CI Automation Token",
-  duration: "8760h", // 1 year
-});
-
-// Service Token Access Policy
-export const serviceTokenPolicy = new cloudflare.AccessPolicy("clocean-ci-policy", {
-  accountId: accountId,
-  applicationId: accessApp.id,
-  name: "CI Service Token Policy",
-  decision: "non_identity",
-  precedence: 2,
-  includes: [
-    {
-      serviceTokens: [serviceToken.id],
-    },
-  ],
-});
-
-// 5. Optional DNS Record (If zoneId provided)
+// 4. Optional DNS Record (If zoneId provided)
 if (zoneId) {
   const subdomain = domain.split(".")[0];
   new cloudflare.Record("clocean-dns-record", {
@@ -92,5 +71,3 @@ if (zoneId) {
 export const r2BucketName = storageBucket ? storageBucket.name : "clocean-storage";
 export const appAudienceTag = accessApp.aud;
 export const appDomain = accessApp.domain;
-export const ciClientId = serviceToken.clientId;
-export const ciClientSecret = serviceToken.clientSecret;
