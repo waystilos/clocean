@@ -169,10 +169,28 @@ body {
 
 .mobile-bottom-nav { display: none; }
 
+.desktop-sidebar-toggle {
+  width: 44px;
+  min-width: 44px;
+  height: 64px;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.desktop-sidebar-toggle:hover { color: var(--text-primary); background: var(--bg-surface-hover); }
+
 @media (max-width: 720px) {
   .clocean-shell { height: 100dvh !important; }
   .clocean-sidebar { display: none !important; }
   .clocean-shell > div { width: 100% !important; min-width: 0 !important; padding-bottom: 68px; }
+  .clocean-shell header { padding-left: 14px !important; padding-right: 14px !important; }
+  .desktop-sidebar-toggle { display: none; }
   .mobile-bottom-nav {
     display: flex;
     position: fixed;
@@ -208,6 +226,14 @@ body {
   .database-layout { display: flex !important; flex-direction: column; gap: 14px !important; }
   .notes-workspace { display: flex !important; flex-direction: column; }
   .notes-workspace > aside { border-right: 0 !important; border-bottom: 1px solid var(--border-subtle); max-height: 260px; overflow-y: auto; }
+  .notes-workspace > aside.notes-tree-collapsed { min-height: 44px; max-height: 44px; width: 100%; padding: 6px 8px !important; }
+  .documents-view { padding: 20px 14px !important; }
+  .documents-header { align-items: flex-start !important; flex-wrap: wrap; gap: 16px; margin-bottom: 20px !important; }
+  .documents-header > div:first-child { min-width: 0; flex: 1 1 180px; }
+  .documents-header .btn-primary { white-space: nowrap; }
+  .documents-table-header, .documents-table-row { grid-template-columns: minmax(0, 1fr) auto !important; padding-left: 14px !important; padding-right: 14px !important; }
+  .documents-table-meta { display: none; }
+  .task-board-columns { grid-template-columns: 1fr !important; gap: 14px !important; }
   .database-panel { min-width: 0; }
   .database-toolbar { align-items: stretch; flex-direction: column; }
   .database-actions { width: 100%; }

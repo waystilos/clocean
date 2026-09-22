@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, FileText, Folder, FolderPlus, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Folder, FolderPlus, Plus, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { TreeNode, UserProfile, DocAttachment } from "../types.ts";
 import { EditorView } from "./EditorView.tsx";
 
@@ -31,6 +31,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [isTreeOpen, setIsTreeOpen] = useState(true);
   const nodes = useMemo(() => tree.filter((node) => node.type === "doc" || node.type === "folder"), [tree]);
   const childrenOf = (parentId: string | null) => nodes.filter((node) => node.parentId === parentId);
 
@@ -124,18 +125,18 @@ export const NotesView: React.FC<NotesViewProps> = ({
     });
 
   return (
-    <div className="notes-workspace" style={{ display: "grid", gridTemplateColumns: "250px minmax(0, 1fr)", minHeight: "calc(100vh - 64px)" }}>
-      <aside style={{ borderRight: "1px solid var(--border-subtle)", padding: 16, background: "var(--bg-sidebar)" }}>
+    <div className="notes-workspace" style={{ display: "grid", gridTemplateColumns: isTreeOpen ? "250px minmax(0, 1fr)" : "44px minmax(0, 1fr)", minHeight: "calc(100vh - 64px)" }}>
+      <aside className={isTreeOpen ? "notes-tree" : "notes-tree notes-tree-collapsed"} style={{ borderRight: "1px solid var(--border-subtle)", padding: isTreeOpen ? 16 : 8, background: "var(--bg-sidebar)" }}>
+        {!isTreeOpen && <button className="btn-icon" onClick={() => setIsTreeOpen(true)} title="Show notes tree" aria-label="Show notes tree"><PanelLeftOpen size={17} /></button>}
+        {isTreeOpen && <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <strong style={{ fontSize: 13 }}>Notes</strong>
           <div style={{ display: "flex", gap: 4 }}>
             <button className="btn-icon" title="New folder" onClick={createFolder}><FolderPlus size={15} /></button>
             <button className="btn-icon" title="New note" onClick={() => createNote()} disabled={creating}><Plus size={16} /></button>
+            <button className="btn-icon" title="Hide notes tree" onClick={() => setIsTreeOpen(false)} aria-label="Hide notes tree"><PanelLeftClose size={15} /></button>
           </div>
         </div>
-        <button className="btn-primary" onClick={() => createNote()} disabled={creating} style={{ width: "100%", justifyContent: "center", marginBottom: 12 }}>
-          <Plus size={15} /> New note
-        </button>
         {moveError && <div role="alert" style={{ color: "var(--danger, #b42318)", fontSize: 12, marginBottom: 8 }}>{moveError}</div>}
         <div
           onDragEnter={(event) => {
@@ -173,6 +174,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
           {dropTargetId === "root" && <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, padding: "4px 6px 8px" }}>Move to workspace root</div>}
           {renderTree(null)}
         </div>
+        </>}
       </aside>
       <section style={{ minWidth: 0 }}>
         <EditorView docId={activeDocId} currentUser={currentUser} workspaceId={workspaceId} sessionToken={sessionToken} onOpenFilePreview={onOpenFilePreview} />

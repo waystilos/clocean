@@ -71,7 +71,7 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
 
   return (
     <div
-      className="animate-fade-in"
+      className="animate-fade-in documents-view"
       style={{
         maxWidth: "1060px",
         margin: "0 auto",
@@ -103,6 +103,7 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
     >
       {/* Header Row */}
       <div
+        className="documents-header"
         style={{
           display: "flex",
           alignItems: "center",
@@ -196,6 +197,7 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
       >
         {/* Table Header */}
         <div
+          className="documents-table-header"
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 120px 140px 80px",
@@ -208,14 +210,15 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
           }}
         >
           <div>Name</div>
-          <div style={{ textAlign: "right" }}>Size</div>
-          <div style={{ textAlign: "right" }}>Modified</div>
+          <div className="documents-table-meta" style={{ textAlign: "right" }}>Size</div>
+          <div className="documents-table-meta" style={{ textAlign: "right" }}>Modified</div>
           <div style={{ textAlign: "center" }}>Actions</div>
         </div>
 
         {/* Table Body */}
         {onlyFiles.map((file, idx) => (
           <div
+            className="documents-table-row"
             key={file.id || idx}
             onClick={() => onPreviewFile(file)}
             style={{
@@ -252,6 +255,7 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
 
             {/* Size Column */}
             <div
+              className="documents-table-meta"
               style={{
                 textAlign: "right",
                 fontSize: "13px",
@@ -263,6 +267,7 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
 
             {/* Modified Column */}
             <div
+              className="documents-table-meta"
               style={{
                 textAlign: "right",
                 fontSize: "13px",

@@ -789,6 +789,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
         </div>
       ) : (
         <div
+          className="task-board-columns"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",

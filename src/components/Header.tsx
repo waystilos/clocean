@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Search, Settings, Cloud, RefreshCw, Bell, Mail, CheckCheck, UserPlus } from "lucide-react";
+import { Search, Settings, Cloud, RefreshCw, Bell, Mail, CheckCheck, UserPlus, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { MentionNotification } from "../types.ts";
 
 interface HeaderProps {
@@ -14,6 +14,8 @@ interface HeaderProps {
   notifications?: MentionNotification[];
   onSelectDoc?: (docId: string) => void;
   onMarkNotificationsRead?: () => void;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -28,6 +30,8 @@ export const Header: React.FC<HeaderProps> = ({
   notifications = [],
   onSelectDoc,
   onMarkNotificationsRead,
+  sidebarCollapsed = false,
+  onToggleSidebar,
 }) => {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const notifDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -66,6 +70,9 @@ export const Header: React.FC<HeaderProps> = ({
     >
       {/* Left: Breadcrumbs or Title */}
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        {onToggleSidebar && <button className="btn-icon" onClick={onToggleSidebar} title={sidebarCollapsed ? "Show navigation sidebar" : "Hide navigation sidebar"} aria-label={sidebarCollapsed ? "Show navigation sidebar" : "Hide navigation sidebar"}>
+          {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+        </button>}
         {breadcrumbs && breadcrumbs.length > 0 ? (
           <nav style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px" }}>
             {breadcrumbs.map((b, i) => (

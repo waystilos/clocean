@@ -25,10 +25,13 @@ import {
   MentionNotification,
 } from "./types.ts";
 import { MarkdownRenderer } from "./components/MarkdownRenderer.tsx";
-import { Layers, Sun, Moon, FileText, Users, Home, ListCheck, Table2 } from "lucide-react";
+import { Layers, Sun, Moon, FileText, Users, Home, ListCheck, Table2, PanelLeftOpen } from "lucide-react";
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewMode>("home");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem("clocean_sidebar_collapsed") === "true"; } catch { return false; }
+  });
   const [activeDocId, setActiveDocId] = useState<string>("doc-manifesto");
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     try {
@@ -562,26 +565,40 @@ export const App: React.FC = () => {
     );
   }
 
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((collapsed) => {
+      const next = !collapsed;
+      try { localStorage.setItem("clocean_sidebar_collapsed", String(next)); } catch { /* best effort */ }
+      return next;
+    });
+  };
+
   return (
     <div className="clocean-shell" style={{ display: "flex", width: "100vw", height: "100vh", overflow: "hidden" }}>
       {/* Figma Sidebar */}
-      <Sidebar
-        className="clocean-sidebar"
-        currentView={currentView}
-        onSelectView={(v) => setCurrentView(v)}
-        currentUser={currentUser}
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
-        workspaces={workspaces}
-        currentWorkspace={currentWorkspace}
-        onSelectWorkspace={(ws) => setCurrentWorkspace(ws)}
-        onOpenCreateWorkspace={() => setIsCreateWsOpen(true)}
-        onOpenTeamMembers={() => setIsTeamMembersOpen(true)}
-        tree={tree}
-        onSelectDoc={handleNavigateDoc}
-        onSignOut={handleSignOut}
-        sessionToken={sessionToken}
-      />
+      {isSidebarCollapsed ? (
+        <button className="desktop-sidebar-toggle" onClick={toggleSidebar} title="Show navigation sidebar" aria-label="Show navigation sidebar">
+          <PanelLeftOpen size={18} />
+        </button>
+      ) : (
+        <Sidebar
+          className="clocean-sidebar"
+          currentView={currentView}
+          onSelectView={(v) => setCurrentView(v)}
+          currentUser={currentUser}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+          workspaces={workspaces}
+          currentWorkspace={currentWorkspace}
+          onSelectWorkspace={(ws) => setCurrentWorkspace(ws)}
+          onOpenCreateWorkspace={() => setIsCreateWsOpen(true)}
+          onOpenTeamMembers={() => setIsTeamMembersOpen(true)}
+          tree={tree}
+          onSelectDoc={handleNavigateDoc}
+          onSignOut={handleSignOut}
+          sessionToken={sessionToken}
+        />
+      )}
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         <button className={currentView === "home" ? "active" : ""} onClick={() => setCurrentView("home")}><Home size={18} /><span>Home</span></button>
         <button className={currentView === "tasks" ? "active" : ""} onClick={() => setCurrentView("tasks")}><ListCheck size={18} /><span>Tasks</span></button>
@@ -609,6 +626,8 @@ export const App: React.FC = () => {
           notifications={notifications}
           onSelectDoc={(docId) => handleNavigateDoc(docId)}
           onMarkNotificationsRead={handleMarkNotificationsRead}
+          sidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={toggleSidebar}
         />
 
         {/* View Routing */}
