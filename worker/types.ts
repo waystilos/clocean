@@ -82,6 +82,7 @@ export interface TaskItem {
   };
   tags?: string[];
   subtasks?: TaskSubtask[];
+  lastAlertedAt?: string;
 }
 
 export interface TasksData {
@@ -175,6 +176,22 @@ export interface DocCommentsData {
   comments: DocComment[];
 }
 
+export interface OtpRecord {
+  email: string;
+  hashedCode: string;
+  salt: string;
+  purpose: "setup" | "login" | "signin" | "join";
+  metadata?: {
+    name?: string;
+    workspaceName?: string;
+    workspaceId?: string;
+    theme?: string;
+  };
+  expiresAt: number;
+  attempts: number;
+  lastSentAt: number;
+}
+
 export interface MentionNotification {
   id: string;
   workspaceId: string;
@@ -183,7 +200,7 @@ export interface MentionNotification {
   documentTitle?: string;
   taskId?: string;
   taskTitle?: string;
-  type?: "doc" | "comment" | "task" | "invite" | "test";
+  type?: "doc" | "comment" | "task" | "invite" | "test" | "deadline";
   inviteRole?: "admin" | "member";
   sender: {
     name: string;
@@ -209,8 +226,12 @@ export interface Env {
   ASSETS?: Fetcher;
   ENVIRONMENT?: string;
   CF_ACCESS_AUD?: string;
+  CF_ACCESS_TEAM_DOMAIN?: string;
+  CF_ACCESS_JWKS_URL?: string;
   ALLOWED_ORIGINS?: string;
+  APP_URL?: string;
   SEND_EMAIL?: any;
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;
+  SESSION_SECRET?: string;
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, User, Shield, HardDrive, Palette, Check, Mail, Bell, Send, ExternalLink } from "lucide-react";
+import { X, User, Shield, HardDrive, Palette, Check, Mail, Bell, Send, ExternalLink, LogOut, Camera, AlertTriangle, Trash2 } from "lucide-react";
 import { UserProfile } from "../types.ts";
 
 interface SettingsModalProps {
@@ -9,6 +9,9 @@ interface SettingsModalProps {
   theme: "dark" | "light";
   onToggleTheme: () => void;
   onUpdateProfile: (profile: UserProfile) => void;
+  onSignOut?: () => void;
+  onDeleteAccount?: () => void;
+  sessionToken?: string | null;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -18,17 +21,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   theme,
   onToggleTheme,
   onUpdateProfile,
+  onSignOut,
+  onDeleteAccount,
+  sessionToken,
 }) => {
   const [activeTab, setActiveTab] = useState<
     "profile" | "storage" | "access" | "notifications" | "appearance"
   >("profile");
   const [name, setName] = useState(currentUser.name);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
   const [testEmailMsg, setTestEmailMsg] = useState<string | null>(null);
   const [recentNotifications, setRecentNotifications] = useState<any[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -77,24 +88,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Instant local image preview
+    const objectUrl = URL.createObjectURL(file);
+    setAvatarPreview(objectUrl);
+
     setIsUploading(true);
     try {
       const formData = new FormData();
       formData.append("avatar", file);
 
+      const token = sessionToken || localStorage.getItem("clocean_session_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      headers["x-user-email"] = currentUser.email;
+
       const res = await fetch(`/api/user/avatar?user=${encodeURIComponent(currentUser.email)}`, {
         method: "POST",
+        headers,
         body: formData,
       });
 
-      if (!res.ok) throw new Error("Failed to upload avatar");
+      if (!res.ok) {
+        const errData = (await res.json().catch(() => ({}))) as any;
+        throw new Error(errData.error || "Failed to upload avatar to Cloudflare R2");
+      }
       const updatedProfile: UserProfile = await res.json();
+      setAvatarPreview(updatedProfile.avatar);
+      localStorage.setItem("clocean_user", JSON.stringify(updatedProfile));
       onUpdateProfile(updatedProfile);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Failed to upload photo to Cloudflare R2.");
+      alert(err.message || "Failed to upload photo to Cloudflare R2.");
+      setAvatarPreview(null);
     } finally {
       setIsUploading(false);
     }
@@ -103,13 +130,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleSaveProfile = async () => {
     setIsSaving(true);
     try {
+      const token = sessionToken || localStorage.getItem("clocean_session_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      headers["x-user-email"] = currentUser.email;
+
       const res = await fetch(`/api/user/profile?user=${encodeURIComponent(currentUser.email)}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ name }),
       });
       if (!res.ok) throw new Error("Failed to update profile");
       const updatedProfile: UserProfile = await res.json();
+      localStorage.setItem("clocean_user", JSON.stringify(updatedProfile));
       onUpdateProfile(updatedProfile);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
@@ -118,6 +151,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       alert("Failed to save profile changes.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const token = sessionToken || localStorage.getItem("clocean_session_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      headers["x-user-email"] = currentUser.email;
+
+      const res = await fetch(`/api/user/account?user=${encodeURIComponent(currentUser.email)}`, {
+        method: "DELETE",
+        headers,
+      });
+
+      if (!res.ok) {
+        const errData = (await res.json().catch(() => ({}))) as any;
+        throw new Error(errData.error || "Failed to delete account");
+      }
+
+      setShowDeleteConfirm(false);
+      onClose();
+      if (onDeleteAccount) {
+        onDeleteAccount();
+      } else if (onSignOut) {
+        onSignOut();
+      }
+    } catch (err: any) {
+      setDeleteError(err.message || "Failed to delete account. Please try again.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -277,6 +343,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             >
               <Palette size={15} /> Appearance
             </button>
+
+            {onSignOut && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onSignOut();
+                }}
+                style={{
+                  marginTop: "auto",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 12px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "none",
+                  background: "transparent",
+                  color: "#ef4444",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <LogOut size={15} /> Sign Out
+              </button>
+            )}
           </div>
 
           {/* Right Content */}
@@ -285,25 +378,50 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
                 {/* Avatar Section */}
                 <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-                  <div style={{ position: "relative" }}>
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{ position: "relative", cursor: "pointer" }}
+                    title="Click to change profile photo"
+                  >
                     <img
-                      src={currentUser.avatar}
+                      src={avatarPreview || currentUser.avatar}
                       alt={currentUser.name}
                       style={{
-                        width: "72px",
-                        height: "72px",
+                        width: "76px",
+                        height: "76px",
                         borderRadius: "50%",
                         objectFit: "cover",
-                        border: "2px solid var(--accent)",
+                        border: "2.5px solid var(--accent)",
                         boxShadow: "var(--shadow-sm)",
+                        transition: "opacity 0.2s ease",
+                        opacity: isUploading ? 0.6 : 1,
                       }}
                     />
+                    <div
+                      style={{
+                        position: "absolute",
+                        bottom: 0,
+                        right: 0,
+                        width: "24px",
+                        height: "24px",
+                        borderRadius: "50%",
+                        backgroundColor: "var(--accent)",
+                        color: "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.25)",
+                        border: "2px solid var(--bg-surface)",
+                      }}
+                    >
+                      <Camera size={12} />
+                    </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                     <input
                       type="file"
                       ref={fileInputRef}
-                      accept="image/*"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
                       style={{ display: "none" }}
                       onChange={handleAvatarFileChange}
                     />
@@ -311,12 +429,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isUploading}
                       className="btn-primary"
-                      style={{ fontSize: "12px", padding: "6px 14px", alignSelf: "flex-start" }}
+                      style={{ fontSize: "12px", padding: "6px 14px", alignSelf: "flex-start", display: "flex", alignItems: "center", gap: "6px" }}
                     >
-                      {isUploading ? "Uploading to R2..." : "Upload Profile Photo"}
+                      <Camera size={14} />
+                      <span>{isUploading ? "Uploading to R2..." : "Upload Profile Photo"}</span>
                     </button>
                     <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                      JPG, PNG, or WebP stored directly in Cloudflare R2
+                      JPG, PNG, or WebP up to 5MB stored directly in Cloudflare R2
                     </span>
                   </div>
                 </div>
@@ -379,6 +498,71 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <Check size={14} /> Profile updated in R2!
                     </span>
                   )}
+                </div>
+
+                {/* Danger Zone: Delete Account */}
+                <div
+                  style={{
+                    marginTop: "16px",
+                    paddingTop: "20px",
+                    borderTop: "1px solid var(--border-subtle)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "12px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, color: "#ef4444" }}>
+                    <AlertTriangle size={15} />
+                    <span>Danger Zone</span>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: "14px 16px",
+                      borderRadius: "var(--radius-md)",
+                      backgroundColor: "rgba(239, 68, 68, 0.05)",
+                      border: "1px solid rgba(239, 68, 68, 0.25)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "16px",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
+                        Delete Account
+                      </div>
+                      <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px", lineHeight: 1.4 }}>
+                        Permanently delete your profile, personal data, and workspace access. This cannot be undone.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDeleteConfirm(true);
+                        setDeleteConfirmText("");
+                        setDeleteError(null);
+                      }}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: "var(--radius-sm)",
+                        backgroundColor: "rgba(239, 68, 68, 0.12)",
+                        border: "1px solid rgba(239, 68, 68, 0.4)",
+                        color: "#ef4444",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <Trash2 size={13} />
+                      <span>Delete Account</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -696,6 +880,152 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
           </div>
         </div>
+
+        {/* Delete Account Confirmation Dialog */}
+        {showDeleteConfirm && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.7)",
+              backdropFilter: "blur(4px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 110,
+              padding: "20px",
+            }}
+            onClick={() => setShowDeleteConfirm(false)}
+          >
+            <div
+              className="animate-fade-in"
+              style={{
+                width: "100%",
+                maxWidth: "460px",
+                backgroundColor: "var(--bg-surface)",
+                border: "1px solid rgba(239, 68, 68, 0.4)",
+                borderRadius: "var(--radius-lg)",
+                padding: "24px",
+                boxShadow: "var(--shadow-lg)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "50%",
+                    backgroundColor: "rgba(239, 68, 68, 0.15)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#ef4444",
+                  }}
+                >
+                  <AlertTriangle size={18} />
+                </div>
+                <div>
+                  <h3 className="font-serif" style={{ fontSize: "17px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+                    Delete Account Permanently
+                  </h3>
+                </div>
+              </div>
+
+              <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.5, margin: "0 0 16px 0" }}>
+                This action is <strong style={{ color: "#ef4444" }}>permanent and irreversible</strong>. Your user profile, avatar, notifications, and private workspaces will be permanently erased from Cloudflare R2.
+              </p>
+
+              {deleteError && (
+                <div
+                  style={{
+                    backgroundColor: "rgba(239, 68, 68, 0.1)",
+                    border: "1px solid rgba(239, 68, 68, 0.3)",
+                    color: "#ef4444",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "8px 12px",
+                    fontSize: "12px",
+                    marginBottom: "14px",
+                  }}
+                >
+                  {deleteError}
+                </div>
+              )}
+
+              <div style={{ marginBottom: "18px" }}>
+                <label style={{ display: "block", fontSize: "12px", color: "var(--text-secondary)", marginBottom: "6px" }}>
+                  To confirm, type <strong style={{ color: "var(--text-primary)" }}>DELETE</strong> or your email (<strong style={{ color: "var(--text-primary)" }}>{currentUser.email}</strong>):
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="Type DELETE or your email"
+                  autoFocus
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--border-subtle)",
+                    backgroundColor: "var(--bg-primary)",
+                    color: "var(--text-primary)",
+                    fontSize: "13px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className="btn-ghost"
+                  style={{ fontSize: "13px", padding: "8px 14px" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteAccount}
+                  disabled={
+                    isDeleting ||
+                    (deleteConfirmText.trim() !== "DELETE" &&
+                      deleteConfirmText.trim().toLowerCase() !== currentUser.email.toLowerCase())
+                  }
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "var(--radius-sm)",
+                    backgroundColor: "#ef4444",
+                    border: "none",
+                    color: "#FFFFFF",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor:
+                      isDeleting ||
+                      (deleteConfirmText.trim() !== "DELETE" &&
+                        deleteConfirmText.trim().toLowerCase() !== currentUser.email.toLowerCase())
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      isDeleting ||
+                      (deleteConfirmText.trim() !== "DELETE" &&
+                        deleteConfirmText.trim().toLowerCase() !== currentUser.email.toLowerCase())
+                        ? 0.5
+                        : 1,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <Trash2 size={14} />
+                  <span>{isDeleting ? "Deleting Account..." : "Permanently Delete Account"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -31,15 +31,21 @@ graph TD
 
 ## Architectural Layers
 
-### Layer 1: Edge Security & Authentication (Cloudflare Zero Trust)
-* **Goal**: Authenticate users without building custom authentication tables, hashing passwords, or running OAuth servers.
-* **Mechanism**:
-  * Cloudflare Access sits in front of the application domain (`clocean.yourdomain.com`).
-  * Supports Google Workspace, GitHub, Microsoft 365, or Email One-Time PIN (OTP).
-  * Requests that pass Cloudflare Access are decorated with cryptographic headers:
-    * `Cf-Access-Authenticated-User-Email`: Authenticated user's email address.
-    * `Cf-Access-Jwt-Assertion`: Cryptographically signed JWT token verified by the Worker against Cloudflare's public certs.
-* **Cost**: Free for up to 50 team members on the Cloudflare Zero Trust free tier.
+### Layer 1: Edge Security & Authentication
+
+Clocean supports a flexible dual-authentication architecture:
+
+1. **Native Email OTP & Cryptographic Session Tokens**:
+   * Users sign in or register with their email address.
+   * The worker issues a secure, time-limited 6-digit numeric OTP code (`POST /api/auth/send-otp`). The hash is stored in R2 (`workspaces/registry/otp/{email}.json`) with a per-user salt to prevent replay and brute-force attacks (rate-limited, max 5 attempts, expires in 10 minutes).
+   * Upon verification (`POST /api/auth/verify-otp`), the server signs an HMAC-SHA256 session token (`Authorization: Bearer <token>`) providing stateless, edge-verified sessions.
+2. **Cloudflare Zero Trust / Access (Enterprise SSO)**:
+   * Sits in front of the application domain (`clocean.yourcompany.com`).
+   * Supports Google Workspace, GitHub, Microsoft 365, Okta, or Cloudflare Access OTP.
+   * Passes authenticated identity headers down to the Worker:
+     * `Cf-Access-Authenticated-User-Email`: Authenticated user's email address.
+     * `Cf-Access-Jwt-Assertion`: Cryptographically signed JWT verified by the Worker against Cloudflare's JWKS, including issuer, audience, expiration, and signature checks.
+   * Free for up to 50 active team members on Cloudflare's Zero Trust free tier.
 
 ---
 
@@ -48,20 +54,27 @@ graph TD
 * **Serving**: Built into `./dist` and served via Cloudflare Workers Static Assets (`env.ASSETS`).
 * **Design Tokens**: Pure CSS variables inspired by the Figma design system:
   * **Typography**: `Spectral` (Serif) for headings and brand logo; `Schibsted Grotesk` (Sans-serif) for UI components.
-  * **Themes**: Warm Parchment (`#FAF8F5`) for light mode, Obsidian (`#1C1C1A`) for dark mode.
+  * **Theme**: Warm Parchment (`#FAF8F5`) for an editorial, distraction-free writing surface.
   * **Icons**: Curated Lucide icons matching the Figma artboard specs.
 
 ---
 
-### Layer 3: Edge API & Real-Time Multiplayer Collaboration
+### Layer 3: Edge API & Real-Time Collaboration
 
 #### 1. REST API (`worker/index.ts`)
 Powered by [Hono](https://hono.dev/), a lightweight, edge-optimized routing framework with sub-millisecond route matching.
-* `GET /api/me`: Returns user profile and avatar.
+* `GET /api/me`: Returns user profile, active workspaces, and authentication status.
+* `POST /api/auth/send-otp`: Dispatches a 6-digit verification code for login, setup, or workspace joining.
+* `POST /api/auth/verify-otp`: Validates the OTP code, issues session token, and provisions profile.
+* `GET /api/workspaces/:wsId/invite-info`: Unauthenticated endpoint returning public workspace name, icon, and member count for Notion-style share links.
+* `POST /api/workspaces/:wsId/join`: Authenticated endpoint that completes a previously issued invitation; knowing a workspace ID alone is insufficient.
 * `GET /api/tree`: Returns workspace folder and document tree.
 * `POST /api/upload`: Direct streaming multipart upload to R2 without buffering in RAM.
 * `GET /api/files/:id/:filename`: Streams binary files from R2 with byte-range requests for audio/video/PDFs.
-* `GET /api/tasks`, `PUT /api/tasks`: Kanban board persistence.
+* `POST /api/user/avatar`: Uploads and validates custom profile avatar pictures directly to R2.
+* `GET /api/user/avatar/:email`: Edge-cached streaming of user avatar images with Dicebear fallback.
+* `GET /api/tasks`, `PUT /api/tasks`: Kanban board persistence with calendar due dates.
+* `POST /api/tasks/check-deadlines`: Scans tasks for deadlines due within 48 hours and sends email alerts.
 * `GET /api/photos`: Media gallery metadata.
 
 #### 2. Durable Objects Real-Time Room Sync (`worker/durable_objects/DocSessionDO.ts`)
@@ -94,8 +107,10 @@ Cloudflare R2 provides:
 #### Key Schema Structure
 ```text
 workspaces/registry/
-└── users/
-    └── {email}.json                   # User's registered organizations & assigned roles
+├── users/
+│   └── {email}.json                   # User's registered organizations & assigned roles
+└── otp/
+    └── {email}.json                   # Hashed 6-digit verification code, salt, attempts, metadata
 
 workspaces/{workspaceId}/              # Multi-tenant partitioned team root (e.g. 'default', 'ws-design')
 ├── meta.json                          # Organization metadata (name, icon, owner, timestamps)
@@ -104,20 +119,25 @@ workspaces/{workspaceId}/              # Multi-tenant partitioned team root (e.g
 ├── tasks.json                         # Kanban sprint tasks isolated to this organization
 ├── photos.json                        # Photos gallery index isolated to this organization
 ├── activity.json                      # Organization-specific activity changelog
+├── favorites.json                     # Pinned and starred documents per user
+├── public/
+│   └── {token}.json                   # Read-only public share mappings
 ├── users/
 │   └── {email}.json                   # User profile, display name, preferences
 ├── avatars/
-│   └── {email}.png                    # Uploaded user profile picture
+│   └── {email}.png                    # Uploaded user profile picture (binary)
 ├── docs/
 │   └── {docId}/
-│       └── content.json               # Document blocks, text, checklists, attachments
+│       ├── content.json               # Document blocks, text, checklists, attachments
+│       ├── revisions.json             # Document version history snapshots
+│       └── comments.json              # Discussion comments and @mentions
 └── files/
     └── {fileId}/
         └── {filename}                 # Raw binary uploads (PDF, ZIP, images, docs)
 ```
 
 #### Optimistic Concurrency Control (ETags)
-To prevent race conditions when two users rename or move files in the tree simultaneously, `r2Db.ts` uses R2's native **HTTP ETags**:
+To prevent race conditions when two users rename or move files in the tree simultaneously, `r2Db.ts` uses R2's native **HTTP ETags**. A failed conditional write returns a conflict and is never retried unconditionally:
 ```typescript
 await bucket.put(key, jsonString, {
   onlyIf: { etagMatches: expectedEtag }
@@ -189,6 +209,51 @@ graph TD
 
 ---
 
+### Layer 7: Notion-Style Workspace & Document Sharing Flow
+
+Clocean enables frictionless team onboarding and document sharing inspired by Notion's link-sharing model, operating without an external relational database.
+
+```mermaid
+graph TD
+    ShareLink["Share Link: ?join={wsId}&doc={docId}"] --> VisitorCheck{"Is Visitor Logged In?"}
+    VisitorCheck -->|Yes (Has Valid Session)| OneClickJoin["Prompt 1-Click Join<br/>POST /api/workspaces/:wsId/join"]
+    VisitorCheck -->|No (First-Time Visitor)| FetchPublicInfo["Fetch Public Workspace Info<br/>GET /api/workspaces/:wsId/invite-info"]
+    FetchPublicInfo --> Banner["Render Team Welcome Banner<br/>'Join Acme • Invited by Alice'"]
+    Banner --> RequestOtp["Enter Email -> Send 6-Digit OTP<br/>POST /api/auth/send-otp"]
+    RequestOtp --> VerifyOtp["Verify OTP -> Auto-Add to Roster<br/>POST /api/auth/verify-otp"]
+    VerifyOtp --> EnterDoc["Redirect Directly to Shared Document"]
+    OneClickJoin --> EnterDoc
+```
+
+1. **Deep-Linked Share URLs**:
+   - Workspace Invite: `https://clocean.example.com/?join=ws-marketing`
+   - Document Invite: `https://clocean.example.com/?join=ws-marketing&doc=doc-q4-strategy`
+2. **Public Invite Metadata Endpoint (`GET /api/workspaces/:wsId/invite-info`)**:
+   - Unauthenticated visitors fetch public workspace name, icon, member count, and owner name without exposing internal documents, trees, or membership emails.
+3. **New User Onboarding via Email OTP**:
+   - The user inputs their email address and receives a 6-digit numeric OTP.
+   - Verifying the code creates their user profile and automatically calls `addWorkspaceMember`, granting instant access and redirecting to the target document.
+4. **1-Click Join for Existing Users**:
+   - Teammates already authenticated receive a non-intrusive prompt: *"You've been invited to join Acme. [Join Workspace]"*.
+   - A single click registers them in the workspace roster and activates the workspace in their organization switcher.
+
+---
+
+### Layer 8: Task Deadlines & Edge Email Alert Engine
+
+To keep teams synchronized on delivery dates, Clocean integrates calendar-based task deadlines with automated edge alerting.
+
+1. **Calendar Due Dates**: Tasks record standardized ISO calendar strings (`YYYY-MM-DD`), rendered with status indicators (`Today`, `Overdue`, `In 2 days`).
+2. **Deadline Scanner Routine (`POST /api/tasks/check-deadlines`)**:
+   - Can be triggered manually or via a Cloudflare Workers Cron Trigger (`[triggers.crons]`).
+   - Scans `tasks.json` in R2 and calculates the delta between current edge timestamp and task due dates.
+   - For any incomplete task due within 48 hours (or overdue) that has not yet been alerted, the engine:
+     - Formats an alert email to the task assignee.
+     - Appends an entry to the user's notifications inbox (`workspaces/registry/users/{email}/notifications.json`).
+     - Updates `lastAlertedAt` on the task item to prevent duplicate emails.
+
+---
+
 ## Security Architecture & Threat Defenses
 
 Clocean implements an enterprise-grade defense-in-depth model engineered specifically for the serverless edge, preventing user impersonation, data leaks, path traversal attacks, and cross-site hijacking.
@@ -218,9 +283,9 @@ graph LR
 * **Threat Addressed**: Unauthorized access, account impersonation via spoofed headers or dev parameters.
 * **Defense Mechanism**:
   * In **Production** (`ENVIRONMENT = "production"`), dev query parameters (`?email=`, `?user=`) and custom testing headers (`x-user-email`) are unconditionally stripped.
-  * Requests must originate through Cloudflare Zero Trust with a valid `Cf-Access-Authenticated-User-Email` and `Cf-Access-Jwt-Assertion` cryptographic token.
+  * Requests must originate through Cloudflare Zero Trust with a valid `Cf-Access-Jwt-Assertion`. The Worker verifies the JWT signature against the configured JWKS, issuer, audience, and time claims before using the email claim.
   * Unauthenticated requests in production receive an immediate `401 Unauthorized` without querying R2.
-  * In **Local Development / Open Source Testing** (`ENVIRONMENT != "production"`), local mock fallbacks are automatically enabled so open-source contributors can run and test multiplayer features with zero initial Cloudflare Access configuration.
+  * In **Local Development / Open Source Testing** (`ENVIRONMENT != "production"`), local mock fallbacks are automatically enabled so open-source contributors can run and test multiplayer features with zero initial Cloudflare Access configuration. Production deployments fail closed when Access configuration is missing.
 
 ```mermaid
 sequenceDiagram

@@ -5,11 +5,11 @@ import { z } from "zod";
 // =====================================================================
 
 export const DocAttachmentSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  type: z.string(),
+  id: z.string().min(1).max(100),
+  name: z.string().trim().min(1).max(200),
+  type: z.string().max(100),
   size: z.number().nonnegative(),
-  url: z.string().min(1),
+  url: z.string().min(1).max(2048),
 });
 export type DocAttachment = z.infer<typeof DocAttachmentSchema>;
 
@@ -64,7 +64,7 @@ export const DocContentSchema = z.object({
 export type DocContent = z.infer<typeof DocContentSchema>;
 
 export const WorkspaceMemberSchema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   name: z.string().min(1).max(100),
   role: z.enum(["owner", "admin", "member"]),
   avatar: z.string(),
@@ -90,7 +90,7 @@ export type TaskSubtask = z.infer<typeof TaskSubtaskSchema>;
 export const TaskItemSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1).max(300),
-  description: z.string().optional(),
+  description: z.string().max(10000).optional(),
   status: z.enum(["todo", "inprogress", "in_progress", "done"]),
   priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
   dueDate: z.string().optional(),
@@ -102,8 +102,9 @@ export const TaskItemSchema = z.object({
       avatar: z.string().optional(),
     }),
   ]).optional(),
-  tags: z.array(z.string()).optional(),
-  subtasks: z.array(TaskSubtaskSchema).optional(),
+  tags: z.array(z.string().max(50)).max(50).optional(),
+  subtasks: z.array(TaskSubtaskSchema).max(100).optional(),
+  lastAlertedAt: z.string().optional(),
 });
 export type TaskItem = z.infer<typeof TaskItemSchema>;
 
@@ -122,7 +123,7 @@ export const DocCommentSchema = z.object({
   docId: z.string().min(1),
   user: z.object({
     name: z.string().min(1),
-    email: z.string().email(),
+    email: z.email(),
     avatar: z.string(),
   }),
   text: z.string().min(1).max(5000),
@@ -143,10 +144,10 @@ export const MentionNotificationSchema = z.object({
   type: z.enum(["doc", "comment", "task", "invite", "test"]).optional(),
   sender: z.object({
     name: z.string().min(1),
-    email: z.string().email(),
+    email: z.email(),
     avatar: z.string(),
   }),
-  recipientEmail: z.string().email(),
+  recipientEmail: z.email(),
   recipientName: z.string(),
   contextSnippet: z.string(),
   timestamp: z.string(),
@@ -166,7 +167,7 @@ export const CreateWorkspaceSchema = z.object({
 export type CreateWorkspaceInput = z.infer<typeof CreateWorkspaceSchema>;
 
 export const InviteMemberSchema = z.object({
-  email: z.string().trim().email("A valid email address is required"),
+  email: z.string().trim().pipe(z.email("A valid email address is required")),
   name: z.string().trim().max(100).optional(),
   role: z.enum(["admin", "member"]).default("member"),
 });
@@ -179,11 +180,11 @@ export type UpdateMemberRoleInput = z.infer<typeof UpdateMemberRoleSchema>;
 
 export const SaveDocSchema = z.object({
   title: z.string().trim().min(1, "Document title cannot be empty").max(200),
-  content: z.string().default(""),
-  tags: z.array(z.string()).default([]),
+  content: z.string().max(5 * 1024 * 1024).default(""),
+  tags: z.array(z.string().max(50)).max(50).default([]),
   icon: z.string().max(50).optional(),
   cover: z.string().max(100).optional(),
-  attachments: z.array(DocAttachmentSchema).optional(),
+  attachments: z.array(DocAttachmentSchema).max(50).optional(),
   isPublic: z.boolean().optional(),
   publicToken: z.string().optional(),
 });
@@ -247,3 +248,39 @@ export const ToggleFavoriteSchema = z.object({
 });
 export type ToggleFavoriteInput = z.infer<typeof ToggleFavoriteSchema>;
 
+export const SetupSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100),
+  email: z.string().trim().pipe(z.email("Valid email is required")),
+  workspaceName: z.string().trim().min(1).max(100).optional(),
+  theme: z.enum(["dark", "light"]).optional(),
+});
+export type SetupInput = z.infer<typeof SetupSchema>;
+
+export const LoginSchema = z.object({
+  email: z.string().trim().pipe(z.email("Valid email is required")),
+});
+export type LoginInput = z.infer<typeof LoginSchema>;
+
+export const SendOtpSchema = z.object({
+  email: z.string().trim().pipe(z.email("Valid email is required")),
+  purpose: z.enum(["setup", "login", "signin", "join"]),
+  name: z.string().trim().min(1).max(100).optional(),
+  workspaceName: z.string().trim().min(1).max(100).optional(),
+  workspaceId: z.string().trim().min(1).max(100).optional(),
+});
+export type SendOtpInput = z.infer<typeof SendOtpSchema>;
+
+export const VerifyOtpSchema = z.object({
+  email: z.string().trim().pipe(z.email("Valid email is required")),
+  code: z.string().trim().regex(/^\d{6}$/, "Verification code must be exactly 6 numeric digits"),
+  purpose: z.enum(["setup", "login", "signin", "join"]).optional(),
+  name: z.string().trim().min(1).max(100).optional(),
+  workspaceName: z.string().trim().min(1).max(100).optional(),
+  workspaceId: z.string().trim().min(1).max(100).optional(),
+});
+export type VerifyOtpInput = z.infer<typeof VerifyOtpSchema>;
+
+export const CheckDeadlinesSchema = z.object({
+  workspaceId: z.string().trim().min(1).optional(),
+});
+export type CheckDeadlinesInput = z.infer<typeof CheckDeadlinesSchema>;

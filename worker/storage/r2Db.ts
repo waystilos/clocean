@@ -10,6 +10,8 @@ import {
   WorkspaceMembersData,
   UserWorkspaceReference,
   UserWorkspacesData,
+  OtpRecord,
+  TaskItem,
 } from "../types.ts";
 
 export class R2Database {
@@ -42,13 +44,7 @@ export class R2Database {
     }
 
     try {
-      let res = await this.bucket.put(key, jsonStr, options);
-      if (!res && ifMatchEtag) {
-        // Fallback retry without conditional if concurrency lock or quote mismatch in emulation
-        res = await this.bucket.put(key, jsonStr, {
-          httpMetadata: { contentType: "application/json" },
-        });
-      }
+      const res = await this.bucket.put(key, jsonStr, options);
       return { ok: !!res, etag: res ? (res.httpEtag || res.etag) : null };
     } catch {
       return { ok: false, etag: null };
@@ -59,35 +55,242 @@ export class R2Database {
     await this.bucket.delete(key);
   }
 
+  async getUserProfileIfExists(email: string): Promise<UserProfile | null> {
+    const cleanEmail = email.toLowerCase().trim();
+    let res = await this.getJson<UserProfile>(`workspaces/default/users/${cleanEmail}.json`);
+    if (!res.data) {
+      res = await this.getJson<UserProfile>(`workspaces/default/users/${encodeURIComponent(cleanEmail)}.json`);
+    }
+    return res.data || null;
+  }
+
   async getUserProfile(email: string): Promise<UserProfile> {
-    const key = `workspaces/default/users/${encodeURIComponent(email)}.json`;
-    const res = await this.getJson<UserProfile>(key);
+    const cleanEmail = email.toLowerCase().trim();
+    let res = await this.getJson<UserProfile>(`workspaces/default/users/${cleanEmail}.json`);
+    if (!res.data) {
+      res = await this.getJson<UserProfile>(`workspaces/default/users/${encodeURIComponent(cleanEmail)}.json`);
+    }
     if (res.data) return res.data;
 
-    const defaultName =
-      email === "alex@clocean.co"
-        ? "Alex Sterling"
-        : email.split("@")[0].replace(".", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const defaultName = cleanEmail
+      .split("@")[0]
+      .replace(/[._-]/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
 
     const profile: UserProfile = {
-      email,
+      email: cleanEmail,
       name: defaultName,
-      avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(email)}`,
+      avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanEmail)}`,
       updatedAt: new Date().toISOString(),
     };
-    await this.putJson(key, profile);
+    await this.putUserProfile(profile);
     return profile;
   }
 
   async putUserProfile(profile: UserProfile): Promise<void> {
-    const key = `workspaces/default/users/${encodeURIComponent(profile.email)}.json`;
-    await this.putJson(key, profile);
+    const cleanEmail = profile.email.toLowerCase().trim();
+    const payload = { ...profile, email: cleanEmail };
+    await this.putJson(`workspaces/default/users/${cleanEmail}.json`, payload);
+    await this.putJson(`workspaces/default/users/${encodeURIComponent(cleanEmail)}.json`, payload);
+  }
+
+  async setupWorkspace(
+    name: string,
+    email: string,
+    workspaceName?: string,
+    _theme?: string
+  ): Promise<{ user: UserProfile; workspace: UserWorkspaceReference }> {
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanName = name.trim();
+    const wsTitle = workspaceName?.trim() || `${cleanName.split(" ")[0]}'s Workspace`;
+    const wsId = `ws-${crypto.randomUUID().slice(0, 8)}`;
+    const now = new Date().toISOString();
+
+    const profile: UserProfile = {
+      email: cleanEmail,
+      name: cleanName,
+      avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`,
+      updatedAt: now,
+    };
+    await this.putUserProfile(profile);
+
+    const meta: WorkspaceMetadata = {
+      id: wsId,
+      name: wsTitle,
+      icon: "layers",
+      ownerEmail: cleanEmail,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.putJson(`workspaces/${wsId}/workspace.json`, meta);
+
+    const member: WorkspaceMember = {
+      email: cleanEmail,
+      name: cleanName,
+      role: "owner",
+      avatar: profile.avatar,
+      joinedAt: now,
+    };
+    await this.putJson(`workspaces/${wsId}/members.json`, {
+      workspaceId: wsId,
+      members: [member],
+    });
+
+    const welcomeDocId = `doc-${crypto.randomUUID().slice(0, 8)}`;
+    const initialTree: WorkspaceTree = {
+      workspaceId: wsId,
+      updatedAt: now,
+      nodes: [
+        {
+          id: welcomeDocId,
+          name: `Welcome to ${wsTitle}`,
+          type: "doc",
+          parentId: null,
+          createdAt: now,
+          updatedAt: now,
+          tags: ["Welcome", "Getting Started"],
+        },
+      ],
+    };
+    await this.putJson(`workspaces/${wsId}/tree.json`, initialTree);
+
+    const welcomeContent: DocContent = {
+      id: welcomeDocId,
+      title: `Welcome to ${wsTitle}`,
+      tags: ["Welcome", "Getting Started"],
+      content: `# Welcome to ${wsTitle}\n\n> [!NOTE]\n> Workspace initialized for **${cleanName}** on ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.\n\n### Your Unified Workspace\n- **Notes**: Collaborative block document authoring.\n- **Files & Assets**: Direct file management and streaming uploads.\n- **Sprint Tasks**: Interactive Kanban task tracking.\n- **Moodboard Photos**: Visual moodboard and image gallery.\n\n### Next Steps\n- Type \`/\` anywhere in the editor to format blocks, headings, and code.\n- Organize team specs and uploads in Documents.\n- Manage upcoming sprint deliverables in Tasks.\n`,
+      updatedAt: now,
+      attachments: [],
+    };
+    await this.putJson(`workspaces/${wsId}/docs/${welcomeDocId}/content.json`, welcomeContent);
+
+    await this.putJson(`workspaces/${wsId}/tasks.json`, { updatedAt: now, tasks: [] });
+    await this.putJson(`workspaces/${wsId}/photos.json`, { updatedAt: now, photos: [] });
+    await this.putJson(`workspaces/${wsId}/activity.json`, {
+      activities: [
+        {
+          id: `act-${crypto.randomUUID()}`,
+          title: `Initialized workspace "${wsTitle}"`,
+          type: "doc",
+          timestamp: "Just now",
+          user: cleanName,
+        },
+      ],
+    });
+
+    const wsRef: UserWorkspaceReference = {
+      id: wsId,
+      name: wsTitle,
+      icon: "layers",
+      role: "owner",
+    };
+    await this.saveUserRegistry(cleanEmail, [wsRef]);
+
+    return { user: profile, workspace: wsRef };
+  }
+
+  async saveUserRegistry(email: string, workspaces: UserWorkspaceReference[]): Promise<void> {
+    const cleanEmail = email.toLowerCase().trim();
+    const payload = {
+      email: cleanEmail,
+      workspaces,
+    };
+    await this.putJson(`workspaces/registry/users/${cleanEmail}.json`, payload);
+    await this.putJson(`workspaces/registry/users/${encodeURIComponent(cleanEmail)}.json`, payload);
+  }
+
+  // --- OTP Verification Storage & Rate-Limiting ---
+  async storeOtp(email: string, record: OtpRecord): Promise<void> {
+    const cleanEmail = email.toLowerCase().trim();
+    const key = `workspaces/registry/otp/${cleanEmail}.json`;
+    await this.putJson(key, record);
+    await this.putJson(`workspaces/registry/otp/${encodeURIComponent(cleanEmail)}.json`, record);
+  }
+
+  async getOtp(email: string): Promise<OtpRecord | null> {
+    const cleanEmail = email.toLowerCase().trim();
+    let res = await this.getJson<OtpRecord>(`workspaces/registry/otp/${cleanEmail}.json`);
+    if (!res.data) {
+      res = await this.getJson<OtpRecord>(`workspaces/registry/otp/${encodeURIComponent(cleanEmail)}.json`);
+    }
+    return res.data || null;
+  }
+
+  async incrementOtpAttempts(email: string): Promise<number> {
+    const cleanEmail = email.toLowerCase().trim();
+    const record = await this.getOtp(cleanEmail);
+    if (!record) return 0;
+    const attempts = (record.attempts || 0) + 1;
+    record.attempts = attempts;
+    await this.storeOtp(cleanEmail, record);
+    return attempts;
+  }
+
+  async deleteOtp(email: string): Promise<void> {
+    const cleanEmail = email.toLowerCase().trim();
+    await this.deleteKey(`workspaces/registry/otp/${cleanEmail}.json`);
+    await this.deleteKey(`workspaces/registry/otp/${encodeURIComponent(cleanEmail)}.json`);
+  }
+
+  // --- Sprint Task Deadline Scanner ---
+  async checkWorkspaceDeadlines(workspaceId: string): Promise<{ checked: number; alerted: TaskItem[] }> {
+    const key = `workspaces/${workspaceId}/tasks.json`;
+    const res = await this.getJson<TasksData>(key);
+    if (!res.data || !res.data.tasks || !res.data.tasks.length) {
+      return { checked: 0, alerted: [] };
+    }
+
+    const tasks = res.data.tasks;
+    const alerted: TaskItem[] = [];
+    const now = Date.now();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    let modified = false;
+
+    for (const task of tasks) {
+      if (task.status === "done" || !task.dueDate) continue;
+
+      const dueTimestamp = Date.parse(task.dueDate);
+      if (isNaN(dueTimestamp)) continue;
+
+      const timeRemaining = dueTimestamp - now;
+      // Alert if due within 48 hours or overdue up to 72 hours
+      const isApproachingOrOverdue = timeRemaining <= 48 * 60 * 60 * 1000 && timeRemaining >= -72 * 60 * 60 * 1000;
+
+      if (isApproachingOrOverdue) {
+        if (task.lastAlertedAt) {
+          const lastAlertTime = Date.parse(task.lastAlertedAt);
+          if (!isNaN(lastAlertTime) && now - lastAlertTime < DAY_MS) {
+            continue; // Skip, already alerted recently
+          }
+        }
+
+        task.lastAlertedAt = new Date().toISOString();
+        alerted.push({ ...task });
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      await this.putJson(key, {
+        tasks,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    return { checked: tasks.length, alerted };
   }
 
   // --- Organization & Team Workspaces ---
   async getUserWorkspaces(email: string): Promise<UserWorkspaceReference[]> {
-    const key = `workspaces/registry/users/${encodeURIComponent(email)}.json`;
-    const res = await this.getJson<UserWorkspacesData>(key);
+    const cleanEmail = email.toLowerCase().trim();
+    let res = await this.getJson<UserWorkspacesData>(`workspaces/registry/users/${cleanEmail}.json`);
+    if (!res.data) {
+      res = await this.getJson<UserWorkspacesData>(`workspaces/registry/users/${encodeURIComponent(cleanEmail)}.json`);
+      if (res.data && res.data.workspaces && res.data.workspaces.length > 0) {
+        // Auto-migrate to clean key
+        await this.saveUserRegistry(cleanEmail, res.data.workspaces);
+      }
+    }
     if (res.data && res.data.workspaces && res.data.workspaces.length > 0) {
       return res.data.workspaces.map((w) => ({
         ...w,
@@ -99,7 +302,7 @@ export class R2Database {
     const defaultWorkspaces: UserWorkspaceReference[] = [
       { id: "default", name: "Clocean Main", icon: "layers", role: "owner" },
     ];
-    await this.putJson(key, { email, workspaces: defaultWorkspaces });
+    await this.saveUserRegistry(cleanEmail, defaultWorkspaces);
     return defaultWorkspaces;
   }
 
@@ -211,10 +414,7 @@ export class R2Database {
     const userWsList = await this.getUserWorkspaces(ownerEmail);
     if (!userWsList.some((w) => w.id === id)) {
       userWsList.push({ id, name, icon: icon || "layers", role: "owner" });
-      await this.putJson(`workspaces/registry/users/${encodeURIComponent(ownerEmail)}.json`, {
-        email: ownerEmail,
-        workspaces: userWsList,
-      });
+      await this.saveUserRegistry(ownerEmail, userWsList);
     }
 
     return meta;
@@ -299,10 +499,7 @@ export class R2Database {
         role,
       });
     }
-    await this.putJson(`workspaces/registry/users/${encodeURIComponent(email)}.json`, {
-      email,
-      workspaces: userWsList,
-    });
+    await this.saveUserRegistry(email, userWsList);
 
     return member;
   }
@@ -329,10 +526,7 @@ export class R2Database {
     const existing = userWsList.find((w) => w.id === wsId);
     if (existing) {
       existing.role = newRole;
-      await this.putJson(`workspaces/registry/users/${encodeURIComponent(email)}.json`, {
-        email,
-        workspaces: userWsList,
-      });
+      await this.saveUserRegistry(email, userWsList);
     }
 
     return { success: true, members };
@@ -660,6 +854,131 @@ Clocean replaces heavy SQL servers with structured JSON documents backed by Clou
         ],
       };
       await this.putJson("workspaces/default/activity.json", initialActivities);
+    }
+  }
+
+  async deleteWorkspace(wsId: string): Promise<void> {
+    if (!wsId || wsId === "default") return;
+
+    const standardKeys = [
+      `workspaces/${wsId}/workspace.json`,
+      `workspaces/${wsId}/meta.json`,
+      `workspaces/${wsId}/members.json`,
+      `workspaces/${wsId}/tree.json`,
+      `workspaces/${wsId}/tasks.json`,
+      `workspaces/${wsId}/photos.json`,
+      `workspaces/${wsId}/activity.json`,
+      `workspaces/${wsId}/favorites.json`,
+      `workspaces/${wsId}/notifications/outbox.json`,
+    ];
+
+    for (const key of standardKeys) {
+      await this.deleteKey(key);
+    }
+
+    if (this.bucket && typeof (this.bucket as any).list === "function") {
+      try {
+        let truncated = true;
+        let cursor: string | undefined = undefined;
+        while (truncated) {
+          const listRes: any = await (this.bucket as any).list({
+            prefix: `workspaces/${wsId}/`,
+            cursor,
+          });
+          if (listRes?.objects && Array.isArray(listRes.objects)) {
+            for (const obj of listRes.objects) {
+              await this.bucket.delete(obj.key);
+            }
+          }
+          truncated = !!listRes?.truncated;
+          cursor = listRes?.truncated ? listRes.cursor : undefined;
+        }
+      } catch {
+        // Fallback: standard keys were already deleted
+      }
+    }
+  }
+
+  async deleteUserAccount(email: string): Promise<void> {
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 1. Delete user profile
+    await this.deleteKey(`workspaces/default/users/${cleanEmail}.json`);
+    await this.deleteKey(`workspaces/default/users/${encodeURIComponent(cleanEmail)}.json`);
+
+    // 2. Delete avatar files
+    const avatarExtensions = ["png", "jpg", "jpeg", "webp", "gif"];
+    for (const ext of avatarExtensions) {
+      await this.deleteKey(`workspaces/default/avatars/${cleanEmail}.${ext}`);
+      await this.deleteKey(`workspaces/default/avatars/${encodeURIComponent(cleanEmail)}.${ext}`);
+    }
+
+    // 3. Delete OTP record if any
+    await this.deleteOtp(cleanEmail);
+
+    // 4. Delete user notifications log
+    await this.deleteKey(`workspaces/registry/users/${cleanEmail}/notifications.json`);
+    await this.deleteKey(`workspaces/registry/users/${encodeURIComponent(cleanEmail)}/notifications.json`);
+
+    // 5. Workspaces cleanup
+    let userWorkspaces: UserWorkspaceReference[] = [];
+    const regRes = await this.getJson<UserWorkspacesData>(`workspaces/registry/users/${cleanEmail}.json`);
+    if (regRes.data?.workspaces) {
+      userWorkspaces = regRes.data.workspaces;
+    } else {
+      const regResEnc = await this.getJson<UserWorkspacesData>(`workspaces/registry/users/${encodeURIComponent(cleanEmail)}.json`);
+      if (regResEnc.data?.workspaces) {
+        userWorkspaces = regResEnc.data.workspaces;
+      }
+    }
+
+    // Delete user's registry files
+    await this.deleteKey(`workspaces/registry/users/${cleanEmail}.json`);
+    await this.deleteKey(`workspaces/registry/users/${encodeURIComponent(cleanEmail)}.json`);
+
+    // Process each workspace
+    for (const ws of userWorkspaces) {
+      if (!ws.id || ws.id === "default") {
+        const defaultMembers = await this.getWorkspaceMembers("default");
+        const filtered = defaultMembers.filter((m) => m.email.toLowerCase() !== cleanEmail);
+        if (filtered.length !== defaultMembers.length) {
+          await this.putJson("workspaces/default/members.json", {
+            workspaceId: "default",
+            members: filtered,
+          });
+        }
+        continue;
+      }
+
+      const members = await this.getWorkspaceMembers(ws.id);
+      const remainingMembers = members.filter((m) => m.email.toLowerCase() !== cleanEmail);
+
+      if (remainingMembers.length === 0) {
+        await this.deleteWorkspace(ws.id);
+      } else {
+        const hasOwner = remainingMembers.some((m) => m.role === "owner");
+        if (!hasOwner) {
+          const newOwner = remainingMembers.find((m) => m.role === "admin") || remainingMembers[0];
+          newOwner.role = "owner";
+          const meta = await this.getWorkspaceMetadata(ws.id);
+          if (meta) {
+            meta.ownerEmail = newOwner.email;
+            meta.updatedAt = new Date().toISOString();
+            await this.putJson(`workspaces/${ws.id}/workspace.json`, meta);
+          }
+        }
+
+        await this.putJson(`workspaces/${ws.id}/members.json`, {
+          workspaceId: ws.id,
+          members: remainingMembers,
+        });
+
+        await this.appendActivity(ws.id, {
+          title: `${cleanEmail} left the workspace (account deleted)`,
+          type: "doc",
+          user: "System",
+        });
+      }
     }
   }
 }

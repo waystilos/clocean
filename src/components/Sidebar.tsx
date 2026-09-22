@@ -17,6 +17,7 @@ import {
   Check,
   UserPlus,
   Star,
+  LogOut,
 } from "lucide-react";
 import { ViewMode, UserProfile, UserWorkspaceReference, TreeNode } from "../types.ts";
 
@@ -33,6 +34,7 @@ interface SidebarProps {
   onOpenTeamMembers?: () => void;
   tree?: TreeNode[];
   onSelectDoc?: (docId: string) => void;
+  onSignOut?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -48,6 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenTeamMembers,
   tree = [],
   onSelectDoc,
+  onSignOut,
 }) => {
   const [isWsDropdownOpen, setIsWsDropdownOpen] = useState(false);
   const [favoriteDocIds, setFavoriteDocIds] = useState<string[]>([]);
@@ -552,14 +555,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          {/* Theme Toggle Button */}
-          <button
-            onClick={onToggleTheme}
-            className="btn-icon"
-            title={`Switch to ${theme === "dark" ? "Light (Parchment)" : "Dark (Obsidian)"} mode`}
-          >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            {/* Theme Toggle Button */}
+            <button
+              onClick={onToggleTheme}
+              className="btn-icon"
+              title={`Switch to ${theme === "dark" ? "Light (Parchment)" : "Dark (Obsidian)"} mode`}
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+
+            {/* Sign Out Button */}
+            {onSignOut && (
+              <button
+                onClick={onSignOut}
+                className="btn-icon"
+                title="Sign Out"
+              >
+                <LogOut size={15} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </aside>

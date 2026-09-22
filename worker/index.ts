@@ -16,11 +16,19 @@ import {
   DocRevision,
   DocRevisionsData,
   WorkspaceFavoritesData,
+  UserProfile,
+  UserWorkspaceReference,
 } from "./types.ts";
 import { R2Database } from "./storage/r2Db.ts";
 import { getAuthEmail, requireAuth } from "./auth/cfAccess.ts";
 import { DocSessionDO } from "./durable_objects/DocSessionDO.ts";
-import { extractMentions, dispatchMentionNotification } from "./notifications/emailNotifier.ts";
+import crypto from "node:crypto";
+import { signSessionToken } from "./auth/session.ts";
+import {
+  extractMentions,
+  dispatchMentionNotification,
+  generateOtpEmailHtml,
+} from "./notifications/emailNotifier.ts";
 import { z } from "zod";
 import {
   CreateWorkspaceSchema,
@@ -35,6 +43,11 @@ import {
   CreateTreeNodeSchema,
   UpdateTreeNodeSchema,
   ToggleFavoriteSchema,
+  SetupSchema,
+  LoginSchema,
+  SendOtpSchema,
+  VerifyOtpSchema,
+  CheckDeadlinesSchema,
 } from "./schemas.ts";
 
 export { DocSessionDO };
@@ -59,12 +72,17 @@ export function isValidId(id: string): boolean {
 export function isAllowedOrigin(originHeader: string | null | undefined, requestUrl: string, env?: Env): boolean {
   if (!originHeader) return true; // Direct non-browser requests or same-site
   try {
-    const reqHost = new URL(requestUrl).host;
+    const requestOrigin = new URL(requestUrl).origin;
     const originUrl = new URL(originHeader);
 
-    // Match exact host or loopback development
-    if (originUrl.host === reqHost) return true;
-    if (originUrl.hostname === "localhost" || originUrl.hostname === "127.0.0.1") return true;
+    // Match exact scheme, host, and port.
+    if (originUrl.origin === requestOrigin) return true;
+
+    // Allow localhost development only in non-production environments
+    if (env?.ENVIRONMENT !== "production") {
+      if ((originUrl.hostname === "localhost" || originUrl.hostname === "127.0.0.1") &&
+          (originUrl.port === "" || originUrl.port === "3000" || originUrl.port === "8787")) return true;
+    }
 
     // Check configured allowed origins
     if (env?.ALLOWED_ORIGINS) {
@@ -84,7 +102,7 @@ const ALLOWED_AVATAR_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gi
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5 MB
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: { requesterEmail: string } }>();
 
 // Hardened CORS: dynamically validate origin and allow credentials
 app.use(
@@ -101,6 +119,19 @@ app.use(
   })
 );
 
+app.use("*", async (c, next) => {
+  await next();
+  const headers = new Headers(c.res.headers);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  c.res = new Response(c.res.body, {
+    status: c.res.status,
+    statusText: c.res.statusText,
+    headers,
+  });
+});
+
 // Helper: Extract active workspace ID from header or query (defaulting to "default")
 export function getWorkspaceId(c: any): string {
   const headerWs = c.req.header("x-workspace-id");
@@ -109,34 +140,437 @@ export function getWorkspaceId(c: any): string {
   return isValidId(ws) ? ws : "default";
 }
 
-// Middleware: Auto-seed R2 database on first run and enforce auth in production
+function getRequestedWorkspaceId(c: any): string | null {
+  const headerWs = c.req.header("x-workspace-id");
+  const queryWs = c.req.query("ws");
+  if (headerWs || queryWs) return headerWs || queryWs;
+  const match = c.req.path.match(/^\/api\/workspaces\/([^/]+)/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+// Helper: Extract authenticated user email or throw 401
+export function getRequesterEmail(c: any): string {
+  const email = c.get?.("requesterEmail");
+  if (!email) {
+    throw new Error("Unauthorized: Identity required");
+  }
+  return email;
+}
+
+function getAppUrl(c: any): string {
+  if (c.env.APP_URL) return c.env.APP_URL.replace(/\/$/, "");
+  if (c.env.ENVIRONMENT === "production" && c.env.ALLOWED_ORIGINS) {
+    return c.env.ALLOWED_ORIGINS.split(",")[0].trim().replace(/\/$/, "");
+  }
+  if (c.env.ENVIRONMENT === "production") throw new Error("APP_URL or ALLOWED_ORIGINS must be configured in production");
+  return new URL(c.req.url).origin;
+}
+
+function rejectOversizedRequest(c: any, maxBytes: number): Response | null {
+  const contentLength = Number(c.req.header("content-length"));
+  return Number.isFinite(contentLength) && contentLength > maxBytes
+    ? c.json({ error: "Request body exceeds the maximum allowed size" }, 413)
+    : null;
+}
+
+app.onError((err, c) => {
+  if (err.message.startsWith("Unauthorized")) {
+    return c.json({ error: "Unauthorized", message: err.message }, 401);
+  }
+  console.error("Unhandled request error:", err);
+  return c.json({ error: "Internal Server Error" }, 500);
+});
+
+// Security Utility: Verify that an authenticated user has membership in the requested workspace
+export async function verifyWorkspaceAccess(
+  c: any,
+  wsId: string,
+  db: R2Database,
+  requesterEmail: string
+): Promise<Response | null> {
+  // 'default' workspace is shared and accessible to all authenticated users
+  if (wsId === "default") return null;
+
+  const meta = await db.getWorkspaceMetadata(wsId);
+  if (!meta) {
+    return c.json({ error: "Workspace not found" }, 404);
+  }
+
+  // Fast-path: Check user's registered workspaces
+  const userWorkspaces = await db.getUserWorkspaces(requesterEmail);
+  if (userWorkspaces.some((w) => w.id === wsId)) {
+    return null;
+  }
+
+  // Fallback: Check workspace members roster
+  const members = await db.getWorkspaceMembers(wsId);
+  if (members.some((m) => m.email.toLowerCase() === requesterEmail.toLowerCase())) {
+    return null;
+  }
+
+  return c.json({ error: "Forbidden: You are not a member of this workspace" }, 403);
+}
+
+// Middleware: Enforce authentication across all workspace endpoints
 app.use("/api/*", async (c, next) => {
-  // Public document viewing endpoints are accessible without Zero Trust auth
+  // Public endpoints accessible without session
   if (c.req.path.startsWith("/api/public/")) {
     return next();
   }
+  if (
+    c.req.path === "/api/auth/login" ||
+    c.req.path === "/api/auth/send-otp" ||
+    c.req.path === "/api/auth/verify-otp" ||
+    c.req.path === "/api/setup" ||
+    c.req.path === "/api/me" ||
+    c.req.path.startsWith("/api/user/avatar/") ||
+    (c.req.path.startsWith("/api/workspaces/") && c.req.path.endsWith("/invite-info"))
+  ) {
+    return next();
+  }
 
-  // Enforce Cloudflare Zero Trust authentication in production
-  const authRes = requireAuth(c.req.raw, c.env);
+  // Enforce authentication on all other endpoints
+  const authRes = await requireAuth(c.req.raw, c.env);
   if (authRes instanceof Response) {
     return authRes;
   }
 
+  c.set("requesterEmail", authRes.email);
+
+  const requestedWs = getRequestedWorkspaceId(c);
+  if (requestedWs !== null && !isValidId(requestedWs)) {
+    return c.json({ error: "Invalid workspace ID" }, 400);
+  }
+
+  // Joining is authorized by the route's invitation check rather than current membership.
+  const isJoinRoute = /^\/api\/workspaces\/[^/]+\/join$/.test(c.req.path);
+  if (requestedWs && !isJoinRoute) {
+    const db = new R2Database(c.env.CLOCEAN_STORAGE);
+    const access = await verifyWorkspaceAccess(c, requestedWs, db, authRes.email);
+    if (access) return access;
+  }
+
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   await db.ensureSeeded();
+
   await next();
 });
 
-// Auth & Real User Profile Endpoints (Backed by R2)
+// Auth & Setup Endpoints (Backed by R2)
 app.get("/api/me", async (c) => {
-  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const email = await getAuthEmail(c.req.raw, c.env);
+  if (!email) {
+    return c.json({ authenticated: false, setupRequired: true }, 200);
+  }
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const profile = await db.getUserProfile(email);
-  return c.json(profile);
+  const workspaces = await db.getUserWorkspaces(email);
+  return c.json({ ...profile, authenticated: true, user: profile, workspaces }, 200);
+});
+
+// 1. Send 6-digit Verification Code via Email (OTP)
+app.post("/api/auth/send-otp", async (c) => {
+  const json = await c.req.json().catch(() => null);
+  const parsed = SendOtpSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid request payload", details: parsed.error.issues }, 400);
+  }
+
+  const cleanEmail = parsed.data.email.toLowerCase().trim();
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+
+  if (parsed.data.purpose === "login") {
+    const existing = await db.getUserProfileIfExists(cleanEmail);
+    if (!existing) {
+      return c.json({ setupRequired: true, error: "No workspace found for this email. Please complete workspace setup first." }, 404);
+    }
+  }
+
+  if (parsed.data.purpose === "setup") {
+    const existing = await db.getUserProfileIfExists(cleanEmail);
+    if (existing) {
+      return c.json(
+        {
+          error: "An account with this email already exists. Please sign in instead.",
+          accountExists: true,
+        },
+        409
+      );
+    }
+  }
+
+  // Rate-limiting: prevent sending more than once every 30 seconds
+  const existingOtp = await db.getOtp(cleanEmail);
+  if (existingOtp && Date.now() - existingOtp.lastSentAt < 30000) {
+    const waitSec = Math.ceil((30000 - (Date.now() - existingOtp.lastSentAt)) / 1000);
+    return c.json({ error: `Please wait ${waitSec}s before requesting a new code.` }, 429);
+  }
+
+  // Generate cryptographically secure 6-digit numeric OTP (CSPRNG)
+  let randomNum: string;
+  if (typeof crypto.randomInt === "function") {
+    randomNum = crypto.randomInt(100000, 1000000).toString();
+  } else {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    randomNum = (100000 + (buf[0] % 900000)).toString();
+  }
+  const salt = crypto.randomUUID();
+  const hashedCode = crypto.createHash("sha256").update(randomNum + salt).digest("hex");
+
+  await db.storeOtp(cleanEmail, {
+    email: cleanEmail,
+    hashedCode,
+    salt,
+    purpose: parsed.data.purpose,
+    metadata: {
+      name: parsed.data.name,
+      workspaceName: parsed.data.workspaceName,
+      workspaceId: parsed.data.workspaceId,
+    },
+    expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+    attempts: 0,
+    lastSentAt: Date.now(),
+  });
+
+  const emailSubject = parsed.data.purpose === "join"
+    ? `Clocean Invite Code: ${randomNum}`
+    : parsed.data.purpose === "setup"
+    ? `Clocean Verification Code: ${randomNum}`
+    : `Clocean Login Code: ${randomNum}`;
+  const emailHtml = generateOtpEmailHtml(randomNum, parsed.data.purpose, parsed.data.workspaceName);
+
+  let emailSent = false;
+  // Option A: Cloudflare Email Routing
+  if (c.env.SEND_EMAIL && typeof c.env.SEND_EMAIL.send === "function") {
+    try {
+      await c.env.SEND_EMAIL.send({
+        to: cleanEmail,
+        from: c.env.EMAIL_FROM || "notifications@clocean.co",
+        subject: emailSubject,
+        html: emailHtml,
+      });
+      emailSent = true;
+    } catch (e) {
+      console.warn("Cloudflare Email send failed:", e);
+    }
+  }
+  // Option B: Resend Transactional Email
+  else if (c.env.RESEND_API_KEY) {
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${c.env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: c.env.EMAIL_FROM || "notifications@clocean.co",
+          to: cleanEmail,
+          subject: emailSubject,
+          html: emailHtml,
+        }),
+      });
+      if (res.ok) emailSent = true;
+    } catch (e) {
+      console.warn("Resend API send failed:", e);
+    }
+  }
+
+  const responsePayload: any = {
+    success: true,
+    message: `Verification code sent to ${cleanEmail}.`,
+    emailSent,
+  };
+
+  if (c.env.ENVIRONMENT !== "production") {
+    responsePayload.devVerificationCode = randomNum;
+  }
+
+  return c.json(responsePayload, 200);
+});
+
+// 2. Verify 6-digit Code & Issue Signed Session Token
+app.post("/api/auth/verify-otp", async (c) => {
+  const json = await c.req.json().catch(() => null);
+  const parsed = VerifyOtpSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid verification payload", details: parsed.error.issues }, 400);
+  }
+
+  const cleanEmail = parsed.data.email.toLowerCase().trim();
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const record = await db.getOtp(cleanEmail);
+
+  if (!record) {
+    return c.json({ error: "No pending verification found for this email. Please request a new code." }, 400);
+  }
+
+  if (Date.now() > record.expiresAt) {
+    await db.deleteOtp(cleanEmail);
+    return c.json({ error: "Verification code has expired. Please request a new code." }, 400);
+  }
+
+  if (record.attempts >= 5) {
+    await db.deleteOtp(cleanEmail);
+    return c.json({ error: "Too many failed attempts. Code has been invalidated for security. Please request a new code." }, 429);
+  }
+
+  const testHash = crypto.createHash("sha256").update(parsed.data.code.trim() + record.salt).digest("hex");
+  const isMatch = crypto.timingSafeEqual(Buffer.from(testHash), Buffer.from(record.hashedCode));
+
+  if (!isMatch) {
+    const attempts = await db.incrementOtpAttempts(cleanEmail);
+    const remaining = Math.max(0, 5 - attempts);
+    return c.json({ error: `Invalid code. ${remaining} attempts remaining.` }, 400);
+  }
+
+  // Invalidate OTP immediately to prevent replay attacks
+  await db.deleteOtp(cleanEmail);
+
+  let primaryWorkspace: UserWorkspaceReference;
+  let user: UserProfile;
+
+  if (record.purpose === "setup") {
+    const existing = await db.getUserProfileIfExists(cleanEmail);
+    if (existing) {
+      return c.json(
+        {
+          error: "An account with this email already exists. Please sign in instead.",
+          accountExists: true,
+        },
+        409
+      );
+    }
+    const name = record.metadata?.name || parsed.data.name || cleanEmail.split("@")[0];
+    const wsName = record.metadata?.workspaceName || parsed.data.workspaceName;
+    const setupResult = await db.setupWorkspace(name, cleanEmail, wsName);
+    user = setupResult.user;
+    primaryWorkspace = setupResult.workspace;
+  } else if (record.purpose === "join") {
+    const targetWsId = record.metadata?.workspaceId || parsed.data.workspaceId;
+    if (!targetWsId) {
+      return c.json({ error: "Missing target workspace ID to join" }, 400);
+    }
+    if (!isValidId(targetWsId)) {
+      return c.json({ error: "Invalid target workspace ID" }, 400);
+    }
+    const invited = (await db.getWorkspaceMembers(targetWsId)).some(
+      (member) => member.email.toLowerCase() === cleanEmail
+    );
+    if (!invited) {
+      return c.json({ error: "A valid invitation is required to join this workspace" }, 403);
+    }
+    const name = record.metadata?.name || parsed.data.name || cleanEmail.split("@")[0];
+    user = await db.getUserProfile(cleanEmail);
+    if (name && (!user.name || user.name === cleanEmail.split("@")[0])) {
+      user.name = name;
+      await db.putUserProfile(user);
+    }
+    await db.addWorkspaceMember(targetWsId, cleanEmail, user.name || name, "member");
+    const wsMeta = await db.getWorkspaceMetadata(targetWsId);
+    primaryWorkspace = {
+      id: targetWsId,
+      name: wsMeta?.name || "Team Workspace",
+      icon: wsMeta?.icon || "layers",
+      role: "member",
+    };
+  } else {
+    user = await db.getUserProfile(cleanEmail);
+    const workspaces = await db.getUserWorkspaces(cleanEmail);
+    primaryWorkspace = workspaces[0];
+  }
+
+  const allWorkspaces = await db.getUserWorkspaces(cleanEmail);
+  const token = signSessionToken(cleanEmail, c.env.SESSION_SECRET, c.env);
+
+  return c.json({
+    success: true,
+    authenticated: true,
+    token,
+    user,
+    workspace: primaryWorkspace,
+    workspaces: allWorkspaces,
+  }, 200);
+});
+
+app.post("/api/auth/login", async (c) => {
+  const json = await c.req.json().catch(() => null);
+  const parsed = LoginSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid email", details: parsed.error.issues }, 400);
+  }
+  const email = parsed.data.email.toLowerCase().trim();
+
+  // In production, direct passwordless login without OTP or Zero Trust is strictly forbidden
+  if (c.env.ENVIRONMENT === "production") {
+    return c.json(
+      {
+        error: "Direct passwordless login is disabled in production. Please use /api/auth/send-otp to verify your email.",
+        otpRequired: true,
+      },
+      403
+    );
+  }
+
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const profile = await db.getUserProfileIfExists(email);
+  if (!profile) {
+    return c.json({ authenticated: false, email, setupRequired: true }, 200);
+  }
+  const workspaces = await db.getUserWorkspaces(email);
+  const token = signSessionToken(email, c.env.SESSION_SECRET, c.env);
+  return c.json({ authenticated: true, token, user: profile, workspaces }, 200);
+});
+
+app.post("/api/setup", async (c) => {
+  const json = await c.req.json().catch(() => null);
+  const parsed = SetupSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid setup payload", details: parsed.error.issues }, 400);
+  }
+
+  // In production, direct setup without OTP verification is strictly forbidden
+  if (c.env.ENVIRONMENT === "production") {
+    return c.json(
+      {
+        error: "Direct setup is disabled in production. Please verify your email via /api/auth/send-otp with purpose='setup'.",
+        otpRequired: true,
+      },
+      403
+    );
+  }
+
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const cleanEmail = parsed.data.email.toLowerCase().trim();
+  const existing = await db.getUserProfileIfExists(cleanEmail);
+  if (existing) {
+    return c.json(
+      {
+        error: "An account with this email already exists. Please sign in instead.",
+        accountExists: true,
+      },
+      409
+    );
+  }
+
+  const result = await db.setupWorkspace(
+    parsed.data.name,
+    parsed.data.email,
+    parsed.data.workspaceName,
+    parsed.data.theme
+  );
+  const token = signSessionToken(parsed.data.email, c.env.SESSION_SECRET, c.env);
+  return c.json({ success: true, token, ...result }, 201);
 });
 
 app.put("/api/user/profile", async (c) => {
-  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const email = getRequesterEmail(c);
   const json = await c.req.json().catch(() => null);
   const parsed = UpdateUserProfileSchema.safeParse(json);
   if (!parsed.success) {
@@ -153,7 +587,10 @@ app.put("/api/user/profile", async (c) => {
 });
 
 app.post("/api/user/avatar", async (c) => {
-  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const email = getRequesterEmail(c);
+  const oversized = rejectOversizedRequest(c, MAX_AVATAR_SIZE + 64 * 1024);
+  if (oversized) return oversized;
+  const cleanEmail = email.toLowerCase().trim();
   const body = await c.req.parseBody();
   const file = body["avatar"] as File | undefined;
   if (!file) return c.json({ error: "No avatar image provided" }, 400);
@@ -164,18 +601,24 @@ app.post("/api/user/avatar", async (c) => {
   }
 
   // Validate avatar MIME type
-  if (file.type && !ALLOWED_AVATAR_MIMES.includes(file.type)) {
+  if (!file.type || !ALLOWED_AVATAR_MIMES.includes(file.type)) {
     return c.json({ error: "Invalid image format. Allowed: PNG, JPEG, WEBP, GIF" }, 400);
   }
 
-  const avatarKey = `workspaces/default/avatars/${encodeURIComponent(email)}.png`;
-  await c.env.CLOCEAN_STORAGE.put(avatarKey, file.stream(), {
-    httpMetadata: { contentType: file.type || "image/png" },
+  const arrayBuffer = await file.arrayBuffer();
+  const mimeType = file.type || "image/png";
+
+  // Dual-write to unencoded and encoded keys for total robustness
+  await c.env.CLOCEAN_STORAGE.put(`workspaces/default/avatars/${cleanEmail}.png`, arrayBuffer, {
+    httpMetadata: { contentType: mimeType },
+  });
+  await c.env.CLOCEAN_STORAGE.put(`workspaces/default/avatars/${encodeURIComponent(cleanEmail)}.png`, arrayBuffer, {
+    httpMetadata: { contentType: mimeType },
   });
 
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const profile = await db.getUserProfile(email);
-  profile.avatar = `/api/user/avatar/${encodeURIComponent(email)}?t=${Date.now()}`;
+  const profile = await db.getUserProfile(cleanEmail);
+  profile.avatar = `/api/user/avatar/${encodeURIComponent(cleanEmail)}?t=${Date.now()}`;
   profile.updatedAt = new Date().toISOString();
   await db.putUserProfile(profile);
 
@@ -183,32 +626,86 @@ app.post("/api/user/avatar", async (c) => {
 });
 
 app.get("/api/user/avatar/:email", async (c) => {
-  const email = c.req.param("email");
-  const avatarKey = `workspaces/default/avatars/${encodeURIComponent(email)}.png`;
-  const object = await c.env.CLOCEAN_STORAGE.get(avatarKey);
+  const param = c.req.param("email");
+  if (!param || param.includes("/") || param.includes("\\") || param.includes("..")) {
+    return c.json({ error: "Invalid email parameter" }, 400);
+  }
+  const cleanEmail = decodeURIComponent(param).toLowerCase().trim();
+  if (cleanEmail.includes("/") || cleanEmail.includes("\\") || cleanEmail.includes("..")) {
+    return c.json({ error: "Invalid email parameter" }, 400);
+  }
+
+  let object = await c.env.CLOCEAN_STORAGE.get(`workspaces/default/avatars/${cleanEmail}.png`);
+  if (!object) {
+    object = await c.env.CLOCEAN_STORAGE.get(`workspaces/default/avatars/${encodeURIComponent(cleanEmail)}.png`);
+  }
+  if (!object) {
+    object = await c.env.CLOCEAN_STORAGE.get(`workspaces/default/avatars/${param}.png`);
+  }
   if (!object) {
     return c.redirect(
-      `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(email)}`
+      `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanEmail)}`
     );
   }
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set("Cache-Control", "public, max-age=86400");
   headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Content-Security-Policy", "default-src 'none'; img-src 'self'; sandbox;");
   const hasBody = "body" in object && object.body;
   return new Response(hasBody ? object.body : null, { headers, status: hasBody ? 200 : 304 });
 });
 
+app.delete("/api/user/account", async (c) => {
+  const email = getRequesterEmail(c);
+  const cleanEmail = email.toLowerCase().trim();
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const profile = await db.getUserProfileIfExists(cleanEmail);
+  if (!profile) {
+    return c.json({ error: "User account not found" }, 404);
+  }
+
+  await db.deleteUserAccount(cleanEmail);
+
+  return c.json(
+    {
+      success: true,
+      message: `Account for ${cleanEmail} has been permanently deleted.`,
+    },
+    200
+  );
+});
+
+app.delete("/api/user", async (c) => {
+  const email = getRequesterEmail(c);
+  const cleanEmail = email.toLowerCase().trim();
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const profile = await db.getUserProfileIfExists(cleanEmail);
+  if (!profile) {
+    return c.json({ error: "User account not found" }, 404);
+  }
+
+  await db.deleteUserAccount(cleanEmail);
+
+  return c.json(
+    {
+      success: true,
+      message: `Account for ${cleanEmail} has been permanently deleted.`,
+    },
+    200
+  );
+});
+
 // --- Organization & Team Workspace Endpoints ---
 app.get("/api/workspaces", async (c) => {
-  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const email = getRequesterEmail(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const workspaces = await db.getUserWorkspaces(email);
   return c.json(workspaces);
 });
 
 app.post("/api/workspaces", async (c) => {
-  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const email = getRequesterEmail(c);
   const json = await c.req.json().catch(() => null);
   const parsed = CreateWorkspaceSchema.safeParse(json);
   if (!parsed.success) {
@@ -234,10 +731,55 @@ app.get("/api/workspaces/:wsId/members", async (c) => {
   return c.json(members);
 });
 
+app.get("/api/workspaces/:wsId/invite-info", async (c) => {
+  const wsId = c.req.param("wsId");
+  if (!isValidId(wsId)) return c.json({ error: "Invalid workspace ID" }, 400);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const meta = await db.getWorkspaceMetadata(wsId);
+  if (!meta) return c.json({ error: "Workspace not found" }, 404);
+  const members = await db.getWorkspaceMembers(wsId);
+  const owner = members.find((m) => m.role === "owner") || members[0];
+  return c.json({
+    id: meta.id,
+    name: meta.name,
+    icon: meta.icon,
+    memberCount: members.length,
+    ownerName: owner ? owner.name : "A team member",
+  });
+});
+
+app.post("/api/workspaces/:wsId/join", async (c) => {
+  const wsId = c.req.param("wsId");
+  if (!isValidId(wsId)) return c.json({ error: "Invalid workspace ID" }, 400);
+  const email = getRequesterEmail(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const meta = await db.getWorkspaceMetadata(wsId);
+  if (!meta) return c.json({ error: "Workspace not found" }, 404);
+  const members = await db.getWorkspaceMembers(wsId);
+  const user = await db.getUserProfile(email);
+  const invitedMember = members.find((member) => member.email.toLowerCase() === email.toLowerCase());
+  if (!invitedMember) {
+    return c.json({ error: "A valid invitation is required to join this workspace" }, 403);
+  }
+  await db.addWorkspaceMember(wsId, email, user.name, "member");
+  const workspaces = await db.getUserWorkspaces(email);
+  const joinedWs = workspaces.find((w) => w.id === wsId) || {
+    id: wsId,
+    name: meta.name,
+    icon: meta.icon,
+    role: "member",
+  };
+  return c.json({
+    success: true,
+    workspace: joinedWs,
+    workspaces,
+  });
+});
+
 app.post("/api/workspaces/:wsId/members", async (c) => {
   const wsId = c.req.param("wsId");
   if (!isValidId(wsId)) return c.json({ error: "Invalid workspace ID" }, 400);
-  const requesterEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const requesterEmail = getRequesterEmail(c);
 
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const currentMembers = await db.getWorkspaceMembers(wsId);
@@ -295,7 +837,7 @@ app.post("/api/workspaces/:wsId/members", async (c) => {
     emailStatus: "delivered",
     read: false,
   };
-  await dispatchMentionNotification(c.env, db, inviteNotification, new URL(c.req.url).origin);
+  await dispatchMentionNotification(c.env, db, inviteNotification, getAppUrl(c));
 
   await db.appendActivity(wsId, {
     title: `${senderName} invited ${body.email.trim()} as ${body.role || "member"}`,
@@ -316,7 +858,7 @@ app.put("/api/workspaces/:wsId/members/:email/role", async (c) => {
     return c.json({ error: "Invalid target email" }, 400);
   }
 
-  const requesterEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const requesterEmail = getRequesterEmail(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const currentMembers = await db.getWorkspaceMembers(wsId);
   const requester = currentMembers.find(
@@ -395,7 +937,8 @@ app.post("/api/tree/node", async (c) => {
     await db.putJson(`workspaces/${ws}/docs/${newNode.id}/content.json`, docData);
   }
 
-  await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
+  const write = await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
+  if (!write.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
   return c.json(newNode);
 });
 
@@ -423,7 +966,8 @@ app.put("/api/tree/node/:id", async (c) => {
   if (body.tags) node.tags = body.tags;
   node.updatedAt = "Just now";
 
-  await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
+  const write = await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
+  if (!write.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
   return c.json(node);
 });
 
@@ -439,7 +983,8 @@ app.delete("/api/tree/node/:id", async (c) => {
   data.nodes = data.nodes.filter((n) => n.id !== id);
   data.updatedAt = new Date().toISOString();
 
-  await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
+  const write = await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
+  if (!write.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
   return c.json({ success: true, deletedId: id });
 });
 
@@ -476,7 +1021,8 @@ app.put("/api/docs/:id", async (c) => {
   }
   const body = parsed.data;
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const existing = (await db.getJson<DocContent>(`workspaces/${ws}/docs/${id}/content.json`)).data;
+  const existingRes = await db.getJson<DocContent>(`workspaces/${ws}/docs/${id}/content.json`);
+  const existing = existingRes.data;
 
   const rawTitle = body.title ?? existing?.title ?? "Untitled";
   const safeTitle = sanitizeFilename(rawTitle).slice(0, 200);
@@ -494,7 +1040,12 @@ app.put("/api/docs/:id", async (c) => {
     publicToken: body.publicToken ?? existing?.publicToken,
   };
 
-  await db.putJson(`workspaces/${ws}/docs/${id}/content.json`, updatedDoc);
+  const docWrite = await db.putJson(
+    `workspaces/${ws}/docs/${id}/content.json`,
+    updatedDoc,
+    existingRes.etag || undefined
+  );
+  if (!docWrite.ok) return c.json({ error: "Document changed concurrently; please retry" }, 409);
 
   // Sync title & icon in tree
   const treeRes = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
@@ -512,14 +1063,15 @@ app.put("/api/docs/:id", async (c) => {
       }
       if (treeChanged) {
         node.updatedAt = "Just now";
-        await db.putJson(`workspaces/${ws}/tree.json`, treeRes.data);
+        const treeWrite = await db.putJson(`workspaces/${ws}/tree.json`, treeRes.data, treeRes.etag || undefined);
+        if (!treeWrite.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
       }
     }
   }
 
   // Save revision snapshot if content changed and non-empty
   if (body.content !== undefined && body.content !== existing?.content && updatedDoc.content.trim().length > 0) {
-    const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+    const senderEmail = getRequesterEmail(c);
     const senderProfile = await db.getUserProfile(senderEmail);
     const revId = `rev-${Date.now()}`;
     const newRev: DocRevision = {
@@ -543,7 +1095,7 @@ app.put("/api/docs/:id", async (c) => {
 
   // Detect @ mentions in document content and dispatch email notifications to mentioned teammates
   if (body.content) {
-    const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+    const senderEmail = getRequesterEmail(c);
     const members = await db.getWorkspaceMembers(ws);
     const newMentions = extractMentions(body.content, members, senderEmail);
     const existingMentions = existing?.content ? extractMentions(existing.content, members, senderEmail) : [];
@@ -572,7 +1124,7 @@ app.put("/api/docs/:id", async (c) => {
           emailStatus: "delivered",
           read: false,
         };
-        await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
+        await dispatchMentionNotification(c.env, db, notif, getAppUrl(c));
         await db.appendActivity(ws, {
           title: `${senderProfile.name} mentioned @${member.name} in "${safeTitle}"`,
           type: "doc",
@@ -616,7 +1168,8 @@ app.post("/api/docs/:id/revisions/:revId/restore", async (c) => {
   doc.content = revRes.data.content;
   doc.title = revRes.data.title;
   doc.updatedAt = new Date().toISOString();
-  await db.putJson(`workspaces/${ws}/docs/${id}/content.json`, doc);
+  const restoreWrite = await db.putJson(`workspaces/${ws}/docs/${id}/content.json`, doc, docRes.etag || undefined);
+  if (!restoreWrite.ok) return c.json({ error: "Document changed concurrently; please retry" }, 409);
   return c.json(doc);
 });
 
@@ -636,17 +1189,22 @@ app.post("/api/docs/:id/share", async (c) => {
   if (!docRes.data) return c.json({ error: "Document not found" }, 404);
 
   const doc = docRes.data;
+  const previousToken = doc.publicToken;
   doc.isPublic = !!body.isPublic;
   if (doc.isPublic && !doc.publicToken) {
-    doc.publicToken = `pub-${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    doc.publicToken = `pub-${crypto.randomUUID().replace(/-/g, "")}`;
   }
-  await db.putJson(`workspaces/${ws}/docs/${id}/content.json`, doc);
+  const shareWrite = await db.putJson(`workspaces/${ws}/docs/${id}/content.json`, doc, docRes.etag || undefined);
+  if (!shareWrite.ok) return c.json({ error: "Document changed concurrently; please retry" }, 409);
 
   if (doc.isPublic && doc.publicToken) {
     await db.putJson(`public/shares/${doc.publicToken}.json`, {
       workspaceId: ws,
       docId: id,
     });
+  } else if (!doc.isPublic && previousToken) {
+    // Clean up public share lookup index when sharing is revoked
+    await db.deleteKey(`public/shares/${previousToken}.json`);
   }
   return c.json({ isPublic: doc.isPublic, publicToken: doc.publicToken });
 });
@@ -657,7 +1215,7 @@ app.get("/api/public/docs/:token", async (c) => {
   if (!isValidId(token)) return c.json({ error: "Invalid share token" }, 400);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const lookup = await db.getJson<{ workspaceId: string; docId: string }>(`public/shares/${token}.json`);
-  if (!lookup.data) return c.json({ error: "Public document not found or revoked" }, 404);
+  if (!lookup.data) return c.json({ error: "Public document not found or sharing disabled" }, 404);
 
   const { workspaceId, docId } = lookup.data;
   const docRes = await db.getJson<DocContent>(`workspaces/${workspaceId}/docs/${docId}/content.json`);
@@ -705,7 +1263,8 @@ app.post("/api/workspaces/:ws/favorites", async (c) => {
   } else {
     favs.docIds.push(parsed.data.docId);
   }
-  await db.putJson(`workspaces/${ws}/favorites.json`, favs);
+  const favoriteWrite = await db.putJson(`workspaces/${ws}/favorites.json`, favs, res.etag || undefined);
+  if (!favoriteWrite.ok) return c.json({ error: "Favorites changed concurrently; please retry" }, 409);
   return c.json(favs.docIds);
 });
 
@@ -723,7 +1282,7 @@ app.post("/api/docs/:id/comments", async (c) => {
   const id = c.req.param("id");
   if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
   const ws = getWorkspaceId(c);
-  const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const senderEmail = getRequesterEmail(c);
 
   const json = await c.req.json().catch(() => null);
   const parsed = AddCommentSchema.extend({ documentTitle: z.string().optional() }).safeParse(json);
@@ -760,7 +1319,8 @@ app.post("/api/docs/:id/comments", async (c) => {
   const existingComments = await db.getJson<DocCommentsData>(commentsKey);
   const list = existingComments.data?.comments || [];
   list.push(comment);
-  await db.putJson(commentsKey, { docId: id, comments: list });
+  const commentWrite = await db.putJson(commentsKey, { docId: id, comments: list }, existingComments.etag || undefined);
+  if (!commentWrite.ok) return c.json({ error: "Comments changed concurrently; please retry" }, 409);
 
   // Dispatch email notifications to all mentioned teammates
   for (const member of mentioned) {
@@ -782,7 +1342,7 @@ app.post("/api/docs/:id/comments", async (c) => {
       emailStatus: "delivered",
       read: false,
     };
-    await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
+    await dispatchMentionNotification(c.env, db, notif, getAppUrl(c));
   }
 
   await db.appendActivity(ws, {
@@ -796,28 +1356,37 @@ app.post("/api/docs/:id/comments", async (c) => {
 
 // Notifications Endpoints
 app.get("/api/notifications", async (c) => {
-  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const email = getRequesterEmail(c);
+  const cleanEmail = email.toLowerCase().trim();
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const key = `workspaces/registry/users/${encodeURIComponent(email)}/notifications.json`;
-  const res = await db.getJson<UserNotificationsData>(key);
+  let res = await db.getJson<UserNotificationsData>(`workspaces/registry/users/${cleanEmail}/notifications.json`);
+  if (!res.data) {
+    res = await db.getJson<UserNotificationsData>(`workspaces/registry/users/${encodeURIComponent(cleanEmail)}/notifications.json`);
+  }
   return c.json(res.data?.notifications || []);
 });
 
 app.put("/api/notifications/read", async (c) => {
-  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const email = getRequesterEmail(c);
+  const cleanEmail = email.toLowerCase().trim();
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const key = `workspaces/registry/users/${encodeURIComponent(email)}/notifications.json`;
-  const res = await db.getJson<UserNotificationsData>(key);
+  const key1 = `workspaces/registry/users/${cleanEmail}/notifications.json`;
+  const key2 = `workspaces/registry/users/${encodeURIComponent(cleanEmail)}/notifications.json`;
+  let res = await db.getJson<UserNotificationsData>(key1);
+  if (!res.data) {
+    res = await db.getJson<UserNotificationsData>(key2);
+  }
   if (res.data) {
     res.data.notifications.forEach((n) => (n.read = true));
-    await db.putJson(key, res.data);
+    await db.putJson(key1, res.data);
+    await db.putJson(key2, res.data);
   }
   return c.json({ success: true });
 });
 
 app.post("/api/notifications/mention", async (c) => {
   const ws = getWorkspaceId(c);
-  const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const senderEmail = getRequesterEmail(c);
   const json = await c.req.json().catch(() => null);
   const parsed = MentionNotificationPayloadSchema.safeParse(json);
   if (!parsed.success) {
@@ -863,7 +1432,7 @@ app.post("/api/notifications/mention", async (c) => {
       read: false,
     };
 
-    await dispatchMentionNotification(c.env, db, notification, new URL(c.req.url).origin);
+    await dispatchMentionNotification(c.env, db, notification, getAppUrl(c));
     dispatched.push(notification);
 
     await db.appendActivity(ws, {
@@ -878,7 +1447,7 @@ app.post("/api/notifications/mention", async (c) => {
 
 app.post("/api/notifications/test", async (c) => {
   const ws = getWorkspaceId(c);
-  const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const senderEmail = getRequesterEmail(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const wsMeta = await db.getWorkspaceMetadata(ws);
   const senderProfile = await db.getUserProfile(senderEmail);
@@ -906,13 +1475,15 @@ app.post("/api/notifications/test", async (c) => {
     c.env,
     db,
     testNotification,
-    new URL(c.req.url).origin
+    getAppUrl(c)
   );
   return c.json({ success: true, notification: testNotification, deliveryStatus: result.status });
 });
 
 // Drive File Upload & Streaming
 app.post("/api/upload", async (c) => {
+  const oversized = rejectOversizedRequest(c, MAX_FILE_SIZE + 64 * 1024);
+  if (oversized) return oversized;
   const body = await c.req.parseBody();
   const file = body["file"] as File | undefined;
   if (!file) {
@@ -939,7 +1510,7 @@ app.post("/api/upload", async (c) => {
 
   // Record node in tree
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
+  const { data, etag } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
   const newNode: TreeNode = {
     id: fileId,
     name: filename,
@@ -954,7 +1525,8 @@ app.post("/api/upload", async (c) => {
 
   if (data) {
     data.nodes.unshift(newNode);
-    await db.putJson(`workspaces/${ws}/tree.json`, data);
+    const treeWrite = await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
+    if (!treeWrite.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
   }
 
   // If image, also record in photos gallery in R2
@@ -974,7 +1546,7 @@ app.post("/api/upload", async (c) => {
   }
 
   // Also record in activity log
-  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const email = getRequesterEmail(c);
   const user = await db.getUserProfile(email);
   const actRes = await db.getJson<ActivitiesData>(`workspaces/${ws}/activity.json`);
   if (actRes.data) {
@@ -1014,14 +1586,6 @@ app.get("/api/files/:id/:filename", async (c) => {
     range: c.req.raw.headers,
     onlyIf: c.req.raw.headers,
   });
-
-  if (!object && ws !== "default") {
-    // Fallback check default workspace if file was originally there
-    object = await c.env.CLOCEAN_STORAGE.get(`workspaces/default/files/${id}/${safeFilename}`, {
-      range: c.req.raw.headers,
-      onlyIf: c.req.raw.headers,
-    });
-  }
 
   if (!object) {
     return c.json({ error: "File not found" }, 404);
@@ -1065,7 +1629,7 @@ app.put("/api/tasks", async (c) => {
     return c.json({ error: "Invalid tasks array payload" }, 400);
   }
   const tasks = parsed.data;
-  const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const senderEmail = getRequesterEmail(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const existing = await db.getJson<TasksData>(`workspaces/${ws}/tasks.json`);
   const previousTasks = existing.data?.tasks || [];
@@ -1126,7 +1690,7 @@ app.put("/api/tasks", async (c) => {
         emailStatus: "delivered",
         read: false,
       };
-      await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
+      await dispatchMentionNotification(c.env, db, notif, getAppUrl(c));
     }
 
     if (isNewAssignee && !notifiedEmails.has(assigneeEmail)) {
@@ -1151,16 +1715,60 @@ app.put("/api/tasks", async (c) => {
           emailStatus: "delivered",
           read: false,
         };
-        await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
+        await dispatchMentionNotification(c.env, db, notif, getAppUrl(c));
       }
     }
   }
 
-  await db.putJson(`workspaces/${ws}/tasks.json`, {
+  const taskWrite = await db.putJson(`workspaces/${ws}/tasks.json`, {
     tasks,
     updatedAt: new Date().toISOString(),
-  });
+  }, existing.etag || undefined);
+  if (!taskWrite.ok) return c.json({ error: "Tasks changed concurrently; please retry" }, 409);
   return c.json({ success: true, count: tasks.length });
+});
+
+// Check deadlines and dispatch email alerts for tasks due soon
+app.post("/api/tasks/check-deadlines", async (c) => {
+  const ws = getWorkspaceId(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const wsMeta = await db.getWorkspaceMetadata(ws);
+  const workspaceTitle = wsMeta?.name || "Clocean Workspace";
+
+  const result = await db.checkWorkspaceDeadlines(ws);
+
+  for (const task of result.alerted) {
+    if (task.assignee && task.assignee.email) {
+      const notif: MentionNotification = {
+        id: `notif-deadline-${crypto.randomUUID()}`,
+        workspaceId: ws,
+        workspaceName: workspaceTitle,
+        taskId: task.id,
+        taskTitle: task.title,
+        type: "deadline",
+        sender: {
+          name: "Clocean Deadlines",
+          email: c.env.EMAIL_FROM || "notifications@clocean.co",
+          avatar: "https://api.dicebear.com/7.x/initials/svg?seed=Clocean",
+        },
+        recipientEmail: task.assignee.email,
+        recipientName: task.assignee.name || task.assignee.email,
+        contextSnippet: `Deadline alert: "${task.title}" is due ${task.dueDate}. Priority: ${task.priority || "normal"}.`,
+        timestamp: "Just now",
+        emailStatus: "sent",
+        read: false,
+      };
+      await dispatchMentionNotification(c.env, db, notif, getAppUrl(c));
+    }
+  }
+
+  return c.json({
+    success: true,
+    workspaceId: ws,
+    checkedCount: result.checked,
+    alertedCount: result.alerted.length,
+    alertedTasks: result.alerted,
+  });
 });
 
 // Photos Gallery
@@ -1195,7 +1803,7 @@ app.get("/api/collab/:docId", async (c) => {
   }
 
   const ws = getWorkspaceId(c);
-  const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const email = getRequesterEmail(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const user = await db.getUserProfile(email);
 

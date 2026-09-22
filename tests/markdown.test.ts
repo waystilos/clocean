@@ -156,4 +156,85 @@ Third section deep dive.
     expect(html).toContain('href="#"');
   });
 });
+import { LiveMarkdownEditor } from "../src/components/LiveMarkdownEditor.tsx";
+
+describe("LiveMarkdownEditor Hybrid WYSIWYG Engine", () => {
+  it("should render formatted elements for inactive lines and raw markdown textarea ONLY for the active line", () => {
+    const docContent = `# Welcome to bleacher_labs
+> [!NOTE]
+> Workspace initialized for **Ardon Bailey**
+- **Notes**: Collaborative block authoring
+- [ ] Review sprint backlog`;
+
+    // 1. Line 0 (H1) is active: should render textarea for line 0, but regular formatted elements for lines 1..4
+    const htmlWithLine0Active = renderToString(
+      React.createElement(LiveMarkdownEditor, {
+        content: docContent,
+        onChange: () => {},
+        activeLineIndex: 0,
+      })
+    );
+
+    // Line 0 is active, so it has a textarea containing "# Welcome to bleacher_labs"
+    expect(htmlWithLine0Active).toContain("<textarea");
+    expect(htmlWithLine0Active).toContain("# Welcome to bleacher_labs");
+
+    // Inactive lines render regular formatted elements, NOT raw markdown
+    expect(htmlWithLine0Active).toContain("Note");
+    expect(htmlWithLine0Active).toContain("Workspace initialized for");
+    expect(htmlWithLine0Active).toContain("Ardon Bailey");
+    expect(htmlWithLine0Active).toContain("Notes");
+    expect(htmlWithLine0Active).toContain("Review sprint backlog");
+    // Ensure raw markdown syntax for inactive lines is NOT rendered as raw text
+    expect(htmlWithLine0Active).not.toContain("&gt; [!NOTE]");
+    expect(htmlWithLine0Active).not.toContain("- [ ] Review sprint backlog");
+  });
+
+  it("should render regular heading tags (<h1-3>) when heading lines are inactive", () => {
+    const docContent = `# Main Title
+## Section Title
+### Subsection Title`;
+
+    // Line 2 (H3) is active; lines 0 (H1) and 1 (H2) are inactive
+    const html = renderToString(
+      React.createElement(LiveMarkdownEditor, {
+        content: docContent,
+        onChange: () => {},
+        activeLineIndex: 2,
+      })
+    );
+
+    // Inactive lines 0 and 1 render as <h1> and <h2>
+    expect(html).toContain("<h1");
+    expect(html).toContain("Main Title");
+    expect(html).toContain("<h2");
+    expect(html).toContain("Section Title");
+
+    // Active line 2 renders as textarea with raw markdown ### Subsection Title
+    expect(html).toContain("<textarea");
+    expect(html).toContain("### Subsection Title");
+  });
+
+  it("should render all lines as regular formatted elements when no line is active (activeLineIndex is null)", () => {
+    const docContent = `# Bleacher Labs Documentation
+- [x] Initial release done
+- [ ] Next milestone in progress`;
+
+    const html = renderToString(
+      React.createElement(LiveMarkdownEditor, {
+        content: docContent,
+        onChange: () => {},
+        activeLineIndex: null,
+      })
+    );
+
+    // No textareas exist when activeLineIndex is null
+    expect(html).not.toContain("<textarea");
+    expect(html).toContain("<h1");
+    expect(html).toContain("Bleacher Labs Documentation");
+    expect(html).toContain("Initial release done");
+    expect(html).toContain("Next milestone in progress");
+    expect(html).toContain("line-through");
+  });
+});
 

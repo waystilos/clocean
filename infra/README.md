@@ -62,6 +62,9 @@ pnpm login:r2
 pulumi login "s3://clocean-pulumi-state?endpoint=${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com&region=auto"
 ```
 
+> **Why is `clocean-pulumi-state` empty initially?**
+> The R2 state bucket only receives state files once a stack is initialized and `pulumi up` runs. If `pulumi login` is executed without the `s3://` target URL, Pulumi defaults to Pulumi Cloud or `~/.pulumi` local disk. Always make sure the `s3://...` endpoint URL is specified or use `pnpm login:r2`.
+
 ---
 
 ### 3. Configure Cloudflare API Credentials

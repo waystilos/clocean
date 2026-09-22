@@ -22,7 +22,7 @@ interface MarkdownRendererProps {
   members?: WorkspaceMember[];
 }
 
-interface CalloutConfig {
+export interface CalloutConfig {
   type: "tip" | "note" | "warning" | "important" | "caution";
   label: string;
   icon: React.ReactNode;
@@ -31,77 +31,64 @@ interface CalloutConfig {
   color: string;
 }
 
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
-  content,
-  onToggleCheckbox,
-  members = [],
-}) => {
-  const [copiedCodeIdx, setCopiedCodeIdx] = useState<number | null>(null);
-
-  const handleCopyCode = (code: string, idx: number) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCodeIdx(idx);
-    setTimeout(() => setCopiedCodeIdx(null), 2000);
-  };
-
-  const getCalloutConfig = (alertType: string): CalloutConfig => {
-    const norm = alertType.toUpperCase();
-    if (norm === "TIP") {
-      return {
-        type: "tip",
-        label: "Tip",
-        icon: <Lightbulb size={16} color="#1E7D6B" />,
-        bg: "rgba(30, 125, 107, 0.12)",
-        border: "rgba(30, 125, 107, 0.4)",
-        color: "#1E7D6B",
-      };
-    }
-    if (norm === "WARNING") {
-      return {
-        type: "warning",
-        label: "Warning",
-        icon: <AlertTriangle size={16} color="#D97706" />,
-        bg: "rgba(217, 119, 6, 0.12)",
-        border: "rgba(217, 119, 6, 0.4)",
-        color: "#D97706",
-      };
-    }
-    if (norm === "IMPORTANT") {
-      return {
-        type: "important",
-        label: "Important",
-        icon: <AlertCircle size={16} color="#8B5CF6" />,
-        bg: "rgba(139, 92, 246, 0.12)",
-        border: "rgba(139, 92, 246, 0.4)",
-        color: "#8B5CF6",
-      };
-    }
-    if (norm === "CAUTION") {
-      return {
-        type: "caution",
-        label: "Caution",
-        icon: <ShieldAlert size={16} color="#EF4444" />,
-        bg: "rgba(239, 68, 68, 0.12)",
-        border: "rgba(239, 68, 68, 0.4)",
-        color: "#EF4444",
-      };
-    }
+export const getCalloutConfig = (alertType: string): CalloutConfig => {
+  const norm = alertType.toUpperCase();
+  if (norm === "TIP") {
     return {
-      type: "note",
-      label: "Note",
-      icon: <Info size={16} color="#0284C7" />,
-      bg: "rgba(2, 132, 199, 0.12)",
-      border: "rgba(2, 132, 199, 0.4)",
-      color: "#0284C7",
+      type: "tip",
+      label: "Tip",
+      icon: <Lightbulb size={16} color="#1E7D6B" />,
+      bg: "rgba(30, 125, 107, 0.12)",
+      border: "rgba(30, 125, 107, 0.4)",
+      color: "#1E7D6B",
     };
+  }
+  if (norm === "WARNING") {
+    return {
+      type: "warning",
+      label: "Warning",
+      icon: <AlertTriangle size={16} color="#D97706" />,
+      bg: "rgba(217, 119, 6, 0.12)",
+      border: "rgba(217, 119, 6, 0.4)",
+      color: "#D97706",
+    };
+  }
+  if (norm === "IMPORTANT") {
+    return {
+      type: "important",
+      label: "Important",
+      icon: <AlertCircle size={16} color="#8B5CF6" />,
+      bg: "rgba(139, 92, 246, 0.12)",
+      border: "rgba(139, 92, 246, 0.4)",
+      color: "#8B5CF6",
+    };
+  }
+  if (norm === "CAUTION") {
+    return {
+      type: "caution",
+      label: "Caution",
+      icon: <ShieldAlert size={16} color="#EF4444" />,
+      bg: "rgba(239, 68, 68, 0.12)",
+      border: "rgba(239, 68, 68, 0.4)",
+      color: "#EF4444",
+    };
+  }
+  return {
+    type: "note",
+    label: "Note",
+    icon: <Info size={16} color="#0284C7" />,
+    bg: "rgba(2, 132, 199, 0.12)",
+    border: "rgba(2, 132, 199, 0.4)",
+    color: "#0284C7",
   };
+};
 
-  const renderInline = (text: string): React.ReactNode => {
-    if (!text) return null;
+export const renderInline = (text: string): React.ReactNode => {
+  if (!text) return null;
 
-    const tokens: React.ReactNode[] = [];
-    let remaining = text;
-    let keyIdx = 0;
+  const tokens: React.ReactNode[] = [];
+  let remaining = text;
+  let keyIdx = 0;
 
     while (remaining.length > 0) {
       // 1. Teammate Mention: @First Last or @email or @First
@@ -185,7 +172,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
       if (linkMatch) {
         const rawHref = linkMatch[2].trim();
-        const isSafe = /^https?:\/\//i.test(rawHref) || /^mailto:/i.test(rawHref) || rawHref.startsWith("/") || rawHref.startsWith("#");
+        const isSafe =
+          /^https?:\/\//i.test(rawHref) ||
+          /^mailto:/i.test(rawHref) ||
+          (rawHref.startsWith("/") && !rawHref.startsWith("//") && !rawHref.startsWith("/\\")) ||
+          rawHref.startsWith("#");
         const safeHref = isSafe ? rawHref : "#";
 
         tokens.push(
@@ -219,6 +210,19 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     }
 
     return tokens;
+  };
+
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
+  content,
+  onToggleCheckbox,
+  members = [],
+}) => {
+  const [copiedCodeIdx, setCopiedCodeIdx] = useState<number | null>(null);
+
+  const handleCopyCode = (code: string, idx: number) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCodeIdx(idx);
+    setTimeout(() => setCopiedCodeIdx(null), 2000);
   };
 
   // Helper: extract all headings for Table of Contents

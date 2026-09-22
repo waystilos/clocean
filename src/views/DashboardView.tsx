@@ -7,11 +7,14 @@ import {
   ArrowRight,
   Sparkles,
 } from "lucide-react";
-import { ActivityItem, UserProfile } from "../types.ts";
+import { ActivityItem, UserProfile, TaskItem, TreeNode, PhotoItem } from "../types.ts";
 
 interface DashboardViewProps {
   currentUser: UserProfile;
   activities: ActivityItem[];
+  tasks?: TaskItem[];
+  tree?: TreeNode[];
+  photos?: PhotoItem[];
   onNavigateDoc: (docId: string) => void;
   onNavigateView: (view: "tasks" | "notes" | "documents" | "photos") => void;
 }
@@ -19,6 +22,9 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({
   currentUser,
   activities,
+  tasks = [],
+  tree = [],
+  photos = [],
   onNavigateDoc,
   onNavigateView,
 }) => {
@@ -27,6 +33,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     month: "long",
     day: "numeric",
   }).format(new Date());
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const firstName = currentUser.name?.trim().split(" ")[0] || "there";
+
+  const activeTasksCount = tasks.filter((t) => t.status !== "done").length;
+  const notesCount = tree.filter((n) => n.type === "doc").length;
+  const filesCount = tree.filter((n) => n.type === "file").length;
+  const totalBytes =
+    tree.reduce((acc, n) => acc + (n.size || 0), 0) +
+    photos.reduce((acc, p) => acc + (p.size || 0), 0);
+
+  const formatStorage = (bytes: number) => {
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes > 0) return `${Math.round(bytes / 1024)} KB`;
+    return "0 KB";
+  };
+
+  const firstDoc = tree.find((n) => n.type === "doc");
 
   const getActivityIcon = (type: ActivityItem["type"]) => {
     switch (type) {
@@ -65,7 +91,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             marginBottom: "4px",
           }}
         >
-          Good morning, {currentUser.name.split(" ")[0]}
+          {greeting}, {firstName}
         </h1>
         <p
           style={{
@@ -84,9 +110,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             lineHeight: 1.6,
           }}
         >
-          You have <strong style={{ color: "var(--text-primary)" }}>12 active tasks</strong>,{" "}
-          <strong style={{ color: "var(--text-primary)" }}>8 notes</strong> updated this week, and{" "}
-          <strong style={{ color: "var(--text-primary)" }}>4.2 GB</strong> stored in Cloudflare R2.
+          You have{" "}
+          <strong style={{ color: "var(--text-primary)" }}>
+            {activeTasksCount} active {activeTasksCount === 1 ? "task" : "tasks"}
+          </strong>
+          ,{" "}
+          <strong style={{ color: "var(--text-primary)" }}>
+            {notesCount} {notesCount === 1 ? "note" : "notes"}
+          </strong>
+          , and{" "}
+          <strong style={{ color: "var(--text-primary)" }}>
+            {formatStorage(totalBytes)}
+          </strong>{" "}
+          stored in Cloudflare R2 edge storage.
         </p>
       </div>
 
@@ -99,7 +135,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         }}
       >
         <div
-          onClick={() => onNavigateDoc("doc-manifesto")}
+          onClick={() => {
+            if (firstDoc) {
+              onNavigateDoc(firstDoc.id);
+            } else {
+              onNavigateView("notes");
+            }
+          }}
           style={{
             padding: "20px",
             backgroundColor: "var(--bg-surface)",
@@ -118,10 +160,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <ArrowRight size={16} color="var(--text-muted)" />
           </div>
           <h3 className="font-serif" style={{ fontSize: "16px", fontWeight: 600, marginBottom: "4px" }}>
-            Design Manifesto
+            {firstDoc ? firstDoc.name : "New Note"}
           </h3>
           <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-            Active multiplayer document
+            {firstDoc ? "Active multiplayer document" : "Create your first document"}
           </p>
         </div>
 

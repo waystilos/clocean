@@ -78,6 +78,7 @@ export interface TaskItem {
   };
   tags?: string[];
   subtasks?: TaskSubtask[];
+  lastAlertedAt?: string;
 }
 
 export interface PhotoItem {

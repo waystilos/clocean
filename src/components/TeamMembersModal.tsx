@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Users, UserPlus, Shield, ShieldCheck, Mail, Check, AlertCircle, Layers } from "lucide-react";
+import { X, Users, UserPlus, Shield, ShieldCheck, Mail, Check, AlertCircle, Layers, Link2, Copy } from "lucide-react";
 import { UserWorkspaceReference, WorkspaceMember, UserProfile } from "../types.ts";
 
 interface TeamMembersModalProps {
@@ -7,6 +7,7 @@ interface TeamMembersModalProps {
   onClose: () => void;
   workspace: UserWorkspaceReference;
   currentUser: UserProfile;
+  sessionToken?: string | null;
 }
 
 export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
@@ -14,15 +15,25 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
   onClose,
   workspace,
   currentUser,
+  sessionToken,
 }) => {
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
   const [isInviting, setIsInviting] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [updatingMemberEmail, setUpdatingMemberEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const getAuthHeaders = (extra: Record<string, string> = {}) => {
+    const token = sessionToken || localStorage.getItem("clocean_session_token");
+    const headers: Record<string, string> = { ...extra };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    if (currentUser?.email) headers["x-user-email"] = currentUser.email;
+    return headers;
+  };
 
   // Fetch members when modal is opened or workspace changes
   useEffect(() => {
@@ -32,7 +43,9 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
     setIsLoading(true);
     setError(null);
 
-    fetch(`/api/workspaces/${workspace.id}/members?user=${encodeURIComponent(currentUser.email)}`)
+    fetch(`/api/workspaces/${workspace.id}/members?user=${encodeURIComponent(currentUser.email)}`, {
+      headers: getAuthHeaders(),
+    })
       .then((res) => {
         if (!res.ok) throw new Error("Failed to load workspace members");
         return res.json();
@@ -73,7 +86,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
         `/api/workspaces/${workspace.id}/members?user=${encodeURIComponent(currentUser.email)}`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({
             email: inviteEmail.trim(),
             role: inviteRole,
@@ -108,7 +121,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
         `/api/workspaces/${workspace.id}/members/${encodeURIComponent(memberEmail)}/role?user=${encodeURIComponent(currentUser.email)}`,
         {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ role: newRole }),
         }
       );
@@ -264,6 +277,65 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
               <span>{successMsg}</span>
             </div>
           )}
+
+          {/* Notion-style Workspace Invite Link */}
+          <div
+            style={{
+              padding: "14px 16px",
+              borderRadius: "var(--radius-md)",
+              backgroundColor: "var(--bg-surface-hover)",
+              border: "1px solid var(--border-subtle)",
+              marginBottom: "20px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Link2 size={16} color="var(--accent)" />
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
+                  Workspace Invite Link
+                </span>
+              </div>
+              <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                Anyone with link can join as a member
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <input
+                type="text"
+                readOnly
+                value={`${window.location.origin}?join=${workspace.id}`}
+                style={{
+                  flex: 1,
+                  fontSize: "12px",
+                  padding: "7px 10px",
+                  borderRadius: "var(--radius-sm)",
+                  backgroundColor: "var(--bg-primary)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--text-secondary)",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}?join=${workspace.id}`);
+                  setCopiedLink(true);
+                  setTimeout(() => setCopiedLink(false), 2500);
+                }}
+                className="btn-primary"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "12px",
+                  whiteSpace: "nowrap",
+                  padding: "6px 14px",
+                }}
+              >
+                {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedLink ? "Copied!" : "Copy Link"}</span>
+              </button>
+            </div>
+          </div>
 
           {/* Invite form (only for Owner and Admin) */}
           {isPrivileged ? (

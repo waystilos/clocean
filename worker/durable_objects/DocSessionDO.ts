@@ -24,6 +24,7 @@ export class DocSessionDO {
   private title: string = "";
   private tags: string[] = [];
   private attachments: any[] = [];
+  private contentEtag: string | null = null;
   private dirty: boolean = false;
   private saveTimeout: any = null;
 
@@ -39,8 +40,8 @@ export class DocSessionDO {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
 
-      const email = url.searchParams.get("email") || "alex@clocean.co";
-      const name = url.searchParams.get("name") || "Alex Sterling";
+      const email = url.searchParams.get("email") || "anonymous@clocean.co";
+      const name = url.searchParams.get("name") || "Collaborator";
       const avatar = url.searchParams.get("avatar") || "";
 
       await this.handleWebSocket(server, { email, name, avatar });
@@ -74,6 +75,7 @@ export class DocSessionDO {
         this.title = json.title || "";
         this.tags = json.tags || [];
         this.attachments = json.attachments || [];
+        this.contentEtag = r2Object.httpEtag || null;
       }
     } catch (err) {
       console.error("Failed to load doc from R2:", err);
@@ -91,13 +93,19 @@ export class DocSessionDO {
         updatedAt: new Date().toISOString(),
         attachments: this.attachments,
       };
-      await this.env.CLOCEAN_STORAGE.put(
+      const result = await this.env.CLOCEAN_STORAGE.put(
         `workspaces/${this.workspaceId}/docs/${this.docId}/content.json`,
         JSON.stringify(payload, null, 2),
         {
           httpMetadata: { contentType: "application/json" },
+          ...(this.contentEtag ? { onlyIf: { etagMatches: this.contentEtag.replace(/^"|"$/g, "") } } : {}),
         }
       );
+      if (!result) {
+        console.warn("Skipped collaborative flush because the document changed outside the session");
+        return;
+      }
+      this.contentEtag = result.httpEtag || null;
       this.dirty = false;
     } catch (err) {
       console.error("Error saving doc to R2:", err);

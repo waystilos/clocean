@@ -29,6 +29,6 @@
     }
   ],
   "vars": {
-    "ENVIRONMENT": "development"
+    "ENVIRONMENT": "production"
   }
 }

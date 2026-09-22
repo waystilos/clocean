@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { sanitizeFilename, isValidId, isAllowedOrigin } from "../worker/index.ts";
 import { getAuthEmail, requireAuth } from "../worker/auth/cfAccess.ts";
+import { signSessionToken, verifySessionToken } from "../worker/auth/session.ts";
+import { renderToString } from "react-dom/server";
+import React from "react";
+import { MarkdownRenderer } from "../src/components/MarkdownRenderer.tsx";
 
 const BASE_URL = "http://127.0.0.1:8787";
 const WS_BASE_URL = "ws://127.0.0.1:8787";
@@ -47,9 +51,14 @@ describe("Clocean Enterprise Security Regression Test Suite", () => {
       // Same-origin / same-host
       expect(isAllowedOrigin("https://clocean.example.com", requestUrl)).toBe(true);
       
-      // Localhost development
+      // Localhost development allowed in non-production
       expect(isAllowedOrigin("http://localhost:3000", requestUrl)).toBe(true);
       expect(isAllowedOrigin("http://127.0.0.1:8787", requestUrl)).toBe(true);
+      expect(isAllowedOrigin("http://localhost:3000", requestUrl, { ENVIRONMENT: "development" } as any)).toBe(true);
+
+      // Localhost strictly blocked in production
+      expect(isAllowedOrigin("http://localhost:3000", requestUrl, { ENVIRONMENT: "production" } as any)).toBe(false);
+      expect(isAllowedOrigin("http://127.0.0.1:8787", requestUrl, { ENVIRONMENT: "production" } as any)).toBe(false);
       
       // Malicious third-party origin
       expect(isAllowedOrigin("https://evil-hacker-site.com", requestUrl)).toBe(false);
@@ -160,34 +169,40 @@ describe("Clocean Enterprise Security Regression Test Suite", () => {
 
   // 5. Zero Trust Production Authentication Gating
   describe("Zero Trust Production Authentication Gating", () => {
-    it("should strictly reject dev query parameters and headers when in production mode", () => {
+    it("should reject session tokens in ordinary HTTP query parameters", async () => {
+      const token = signSessionToken("alice@clocean.co");
+      const req = new Request(`http://127.0.0.1:8787/api/me?token=${encodeURIComponent(token)}`);
+      expect(await getAuthEmail(req, { ENVIRONMENT: "development" })).toBeNull();
+    });
+
+    it("should strictly reject dev query parameters and headers when in production mode", async () => {
       const prodEnv = { ENVIRONMENT: "production" };
 
       // Attacker attempting query override in production
       const reqQuery = new Request("https://clocean.example.com/api/me?email=admin@clocean.co");
-      expect(getAuthEmail(reqQuery, prodEnv)).toBeNull();
+      expect(await getAuthEmail(reqQuery, prodEnv)).toBeNull();
 
       // Attacker attempting custom header in production
       const reqHeader = new Request("https://clocean.example.com/api/me", {
         headers: { "x-user-email": "admin@clocean.co" },
       });
-      expect(getAuthEmail(reqHeader, prodEnv)).toBeNull();
+      expect(await getAuthEmail(reqHeader, prodEnv)).toBeNull();
 
       // Attacker connecting with no credentials in production
       const reqEmpty = new Request("https://clocean.example.com/api/me");
-      expect(getAuthEmail(reqEmpty, prodEnv)).toBeNull();
+      expect(await getAuthEmail(reqEmpty, prodEnv)).toBeNull();
 
       // Legitimate user with Cloudflare Zero Trust header
       const reqLegit = new Request("https://clocean.example.com/api/me", {
         headers: { "cf-access-authenticated-user-email": "sarah.connor@sky.net" },
       });
-      expect(getAuthEmail(reqLegit, prodEnv)).toBe("sarah.connor@sky.net");
+      expect(await getAuthEmail(reqLegit, prodEnv)).toBeNull();
     });
 
     it("should return 401 Unauthorized via requireAuth when unauthenticated in production", async () => {
       const prodEnv = { ENVIRONMENT: "production" };
       const req = new Request("https://clocean.example.com/api/tree");
-      const authRes = requireAuth(req, prodEnv);
+      const authRes = await requireAuth(req, prodEnv);
 
       expect(authRes instanceof Response).toBe(true);
       if (authRes instanceof Response) {
@@ -197,10 +212,10 @@ describe("Clocean Enterprise Security Regression Test Suite", () => {
       }
     });
 
-    it("should allow dev overrides when NOT in production for seamless open-source development", () => {
+    it("should allow dev overrides when NOT in production for seamless open-source development", async () => {
       const devEnv = { ENVIRONMENT: "development" };
       const req = new Request("http://127.0.0.1:8787/api/me?user=marcus");
-      expect(getAuthEmail(req, devEnv)).toBe("marcus@clocean.co");
+      expect(await getAuthEmail(req, devEnv)).toBe("marcus@clocean.co");
     });
   });
 
@@ -424,6 +439,60 @@ describe("Clocean Enterprise Security Regression Test Suite", () => {
       expect(data.error).toContain("Invalid favorites payload");
     });
   });
+
+  // 9. Production Session Secret & Token Tamper Defense
+  describe("Production Session Secret & Token Tamper Defense", () => {
+    it("should refuse to verify tokens signed with the default secret when ENVIRONMENT is production", () => {
+      const defaultSignedToken = signSessionToken("alice@clocean.co");
+      const prodEnv = { ENVIRONMENT: "production" };
+
+      // In production, verifySessionToken must return null for default-signed tokens
+      expect(verifySessionToken(defaultSignedToken, undefined, prodEnv)).toBeNull();
+    });
+
+    it("should throw an error if attempting to sign tokens with default secret in production", () => {
+      const prodEnv = { ENVIRONMENT: "production" };
+      expect(() => signSessionToken("alice@clocean.co", undefined, prodEnv)).toThrow(
+        "SESSION_SECRET must be configured"
+      );
+    });
+
+    it("should successfully verify tokens signed with a dedicated production secret", () => {
+      const customSecret = "super-secret-crypto-key-9876543210";
+      const validToken = signSessionToken("alice@clocean.co", customSecret);
+      const prodEnv = { ENVIRONMENT: "production" };
+
+      const result = verifySessionToken(validToken, customSecret, prodEnv);
+      expect(result).not.toBeNull();
+      expect(result?.email).toBe("alice@clocean.co");
+    });
+  });
+
+  // 10. Protocol-Relative Link Phishing Defense
+  describe("Protocol-Relative Link Phishing Defense", () => {
+    it("should neutralize protocol-relative links (//evil.com) and backslash tricks (/\\evil.com)", () => {
+      const markdown = `
+[Safe Link](/docs/intro)
+[Protocol-Relative Phishing](//evil-attacker.com/login)
+[Backslash Phishing](/\\evil-attacker.com)
+`;
+      const html = renderToString(React.createElement(MarkdownRenderer, { content: markdown }));
+
+      // Safe relative link preserved
+      expect(html).toContain('href="/docs/intro"');
+
+      // Phishing vectors neutralized to "#"
+      expect(html).not.toContain('href="//evil-attacker.com/login"');
+      expect(html).not.toContain('href="/\\evil-attacker.com"');
+    });
+  });
+
+  // 11. Public Share Token Entropy & Revocation
+  describe("Share Token Entropy & Revocation Defense", () => {
+    it("should generate full 128-bit CSPRNG tokens with pub- prefix", () => {
+      const token = `pub-${crypto.randomUUID().replace(/-/g, "")}`;
+      expect(token).toMatch(/^pub-[0-9a-f]{32}$/);
+      expect(isValidId(token)).toBe(true);
+    });
+  });
 });
-
-

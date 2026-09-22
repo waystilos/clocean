@@ -39,6 +39,16 @@ Run the one-step build & deploy command:
 pnpm deploy
 ```
 
+Before deploying, configure production authentication. The checked-in Wrangler configuration defaults to `ENVIRONMENT=production` so a deployment cannot accidentally enable local identity overrides:
+
+```bash
+npx wrangler secret put SESSION_SECRET
+npx wrangler secret put CF_ACCESS_AUD
+npx wrangler secret put CF_ACCESS_TEAM_DOMAIN
+```
+
+Set `ALLOWED_ORIGINS` and `APP_URL` to the exact HTTPS application origin in the Cloudflare dashboard or Wrangler environment configuration. The Worker rejects requests when production Access JWT verification is not fully configured.
+
 
 Wrangler will:
 * Compile the TypeScript React frontend into `./dist`.
@@ -69,7 +79,7 @@ To protect your Clocean instance so only you and your team can log in:
 6. Click **Next** > **Save**.
 
 ### How Authentication Works:
-Once configured, Cloudflare Access intercepts all requests before they hit your worker. When team members visit your site, Cloudflare displays a secure login screen (Google, GitHub, Microsoft, or Email PIN). Upon authentication, Cloudflare passes the verified identity directly to Clocean via the `Cf-Access-Authenticated-User-Email` header.
+Once configured, Cloudflare Access intercepts requests before they hit your Worker. Clocean independently verifies the accompanying `Cf-Access-Jwt-Assertion` against Cloudflare's public JWKS and only then uses the email claim. The email header alone is never trusted in production.
 
 ---
 

@@ -1,173 +1,164 @@
 # Clocean
 
-A serene, high-performance unified workspace combining collaborative block document authoring, integrated file management, sprint planning, and team moodboards—engineered on Cloudflare's serverless edge with zero external database hosting fees.
+Clocean is an open-source collaborative workspace built to run entirely on Cloudflare (Workers, Pages, R2, and Durable Objects).
 
-> [!IMPORTANT]
-> **Work in Progress (WIP)**: Clocean is currently under active development and undergoing testing. One-click deploy will be enabled once full production readiness is finalized.
+Think of it like Notion or Craft, but without needing a traditional database like Postgres, MySQL, or MongoDB. All workspace trees, document content, sprint tasks, and uploaded files live directly in Cloudflare R2 as structured JSON and binary objects.
 
-**Clocean** is a unified workspace engineered specifically for Cloudflare's serverless edge ecosystem. By replacing traditional relational or NoSQL databases with **Cloudflare R2 as both the file store and the JSON database**, Clocean operates at virtually **$0/month in database costs** with **zero egress fees**.
-
-Real-time multiplayer document editing is powered by **Cloudflare Durable Objects with WebSockets**, while user identity and access control are handled seamlessly by **Cloudflare Zero Trust / Access** (free for up to 50 active team members).
-
-The user interface strictly replicates the **Figma Design System** (`Clocean - Active`), featuring **Spectral** and **Schibsted Grotesk** typography, dark obsidian `#1C1C1A`, and warm parchment light mode `#FAF8F5`.
+Because it runs on Cloudflare's serverless edge and R2 has zero egress fees, you can self-host a full team workspace for basically $0/month.
 
 ---
 
-## Documentation Index
+## What's Inside
 
-- **[System Architecture](docs/ARCHITECTURE.md)**: Deep dive into the 4 architectural layers, Hono API, Durable Objects, and WebSocket hibernation.
-- **[Deployment Guide](docs/ONE_CLICK_DEPLOY.md)**: Step-by-step instructions for deployment and Cloudflare Access setup for 50 free users.
-- **[R2 JSON Database Guide](docs/R2_DATABASE.md)**: JSON schemas, optimistic concurrency control via HTTP ETags, and streaming file uploads.
-- **[Developer & Contributor Guide](AGENTS.md)**: Engineering constraints, coding patterns, and operational rules for developers.
-- **[Pulumi Zero Trust IaC](infra/README.md)**: Optional TypeScript IaC program to automate Cloudflare Zero Trust Access policies.
+- **Collaborative Document Editor**: Write documents with rich markdown, interactive checklists, code blocks, and linked attachments. Multi-user editing is powered by Cloudflare Durable Objects over WebSockets with live cursor tracking.
+- **Notion-Style Workspace & Doc Invites**: Share a workspace or document with a link (`?join=workspaceId` or `?join=ws&doc=docId`). Teammates already logged in can join with one click, while new teammates verify their email with a 6-digit OTP code and get added to the team roster automatically.
+- **Sprint Tasks & Deadlines**: Kanban board (`To Do`, `In Progress`, `Done`) and table view with assignees, tags, and calendar due dates. Includes an edge worker routine that flags upcoming deadlines within 48 hours and sends email alerts.
+- **Cloudflare Drive & Photo Moodboards**: Upload PDFs, design specs, and images directly to R2. Images are indexed into moodboard albums with in-app previews and no bandwidth egress charges.
+- **Custom Profile Avatars**: Upload profile photos directly to R2 with instant client preview and edge-cached streaming.
+- **Zero-Database Architecture**: Every piece of data is stored in R2. Writes to tree structures use R2 HTTP ETags (`If-Match`) for optimistic concurrency control so edits never overwrite each other silently.
+- **Dual Authentication**: Works out of the box with 6-digit email OTPs and cryptographically signed HMAC session tokens. In production behind Cloudflare Zero Trust, it automatically reads `Cf-Access-Authenticated-User-Email` headers (free for up to 50 users).
+- **Design**: Built with a warm parchment aesthetic, using Spectral for serif typography and Schibsted Grotesk for the interface.
 
 ---
 
-## Architecture Overview
+## How It Works Under the Hood
 
 ```
-                                  ┌──────────────────────────────────────────────┐
-                                  │       Cloudflare Zero Trust / Access         │
-                                  │     (Free up to 50 users, JWT Headers)       │
-                                  └──────────────────────┬───────────────────────┘
-                                                         │
-                                                         ▼
-                               ┌─────────────────────────────────────────────────────┐
-                               │             Cloudflare Pages / Assets               │
-                               │        (Vite + React 19 Frontend Application)       │
-                               └──────────────┬───────────────────────────────┬──────┘
-                                              │ REST API                      │ WebSockets (/api/collab/:id)
-                                              ▼                               ▼
-                            ┌───────────────────────────┐    ┌─────────────────────────────────┐
-                            │    Cloudflare Worker      │    │    Cloudflare Durable Object    │
-                            │ (R2 Storage & Tree CRUD)  │    │ (In-memory Room State & Sync)   │
-                            └─────────────┬─────────────┘    └────────────────┬────────────────┘
-                                          │                                   │ Periodic / Idle
-                                          │                                   │ Debounced Flush
-                                          ▼                                   ▼
-                     ┌─────────────────────────────────────────────────────────────────────────────┐
-                     │                           Cloudflare R2 Bucket                              │
-                     │  • Tree / File Hierarchy:  workspaces/{wsId}/tree.json                      │
-                     │  • Document Content:       workspaces/{wsId}/docs/{docId}/content.json      │
-                     │  • Uploaded Binary Files:  workspaces/{wsId}/files/{fileId}/{filename}      │
-                     │  • Kanban Tasks:           workspaces/{wsId}/tasks.json                     │
-                     │  • User Preferences:       workspaces/{wsId}/users/{email}.json             │
-                     └─────────────────────────────────────────────────────────────────────────────┘
+                         Browser (React 19 SPA)
+                               │
+                ┌──────────────┴──────────────┐
+                ▼                             ▼
+       REST API (/api/*)             WebSockets (/api/collab/*)
+                │                             │
+                ▼                             ▼
+        Cloudflare Worker             Durable Object (DocSessionDO)
+       (Hono Edge Router)            (Live room memory & cursor sync)
+                │                             │
+                │                             │ Debounced flush
+                └──────────────┬──────────────┘
+                               ▼
+                      Cloudflare R2 Bucket
+             ├── workspaces/{wsId}/tree.json
+             ├── workspaces/{wsId}/docs/{id}/content.json
+             ├── workspaces/{wsId}/tasks.json
+             ├── workspaces/{wsId}/members.json
+             └── workspaces/{wsId}/files/{id}/{filename}
+```
+
+1. **Routing & Static Assets**: The frontend is a React 19 app bundled with Vite and served via Cloudflare Workers Static Assets (`env.ASSETS`). The API is handled by [Hono](https://hono.dev/) inside `worker/index.ts`.
+2. **Real-Time Sync**: When users open the same document, their browsers connect to a Durable Object (`DocSessionDO`) over WebSockets. The Durable Object broadcasts character edits and cursor movements in real time, then debounces and flushes the content back to R2.
+3. **Optimistic Locking**: File trees and documents use R2 HTTP ETags. If two people rename or move items simultaneously, the second write checks `If-Match: etag` to prevent accidental overwrites.
+
+---
+
+## Quickstart (Local Development)
+
+You'll need Node 20+, `pnpm` (or `npm`), and a Cloudflare account if you plan to deploy.
+
+### 1. Clone & install dependencies
+```bash
+git clone https://github.com/waystilos/clocean.git
+cd clocean
+pnpm install
+```
+
+### 2. Start the local worker
+In one terminal, start Wrangler with local R2 and Durable Object emulation:
+```bash
+pnpm worker:dev
+```
+The edge API will be running on `http://127.0.0.1:8787`.
+
+### 3. Start the frontend
+In a second terminal, start Vite:
+```bash
+pnpm dev
+```
+Open `http://localhost:3000`. You'll be prompted to complete a quick workspace setup and verify your email.
+
+To test multi-user collaboration locally, open a second browser window in incognito mode or visit with a different email.
+
+---
+
+## Running Tests
+
+The test suite runs with Vitest and tests the full edge API, authentication, R2 schemas, and multiplayer sync:
+
+```bash
+pnpm test
+```
+
+This runs 12 test suites (126 tests) covering:
+- Document CRUD and revision history
+- R2 byte-range file streaming
+- Notion-style invite links and OTP verification
+- Avatar uploads and edge image streaming
+- Durable Object WebSockets and room isolation
+- Enterprise security (path traversal sanitization, CSWSH protection, XSS defense headers)
+
+---
+
+## Deploying to Cloudflare
+
+### Step 1: Create your R2 storage bucket
+```bash
+pnpm setup:r2
+```
+This runs Wrangler to create the `clocean-storage` bucket in your Cloudflare account.
+
+### Step 2: Build and deploy
+```bash
+pnpm deploy
+```
+This builds the React frontend (`pnpm build`) and deploys both the worker and static assets with `wrangler deploy`.
+
+### Step 3: (Optional) Set up Cloudflare Zero Trust
+If you want corporate SSO (Google Workspace, GitHub, Okta) or domain-wide access control:
+1. Go to your Cloudflare Dashboard > **Zero Trust** > **Access** > **Applications**.
+2. Add an application for your domain (e.g. `clocean.yourcompany.com`).
+3. Set your access policies (e.g., allow emails ending in `@yourcompany.com`).
+4. Clocean automatically detects Cloudflare Access headers in production.
+
+For automated Zero Trust provisioning via code, check out [`infra/`](infra/README.md) for a ready-to-use TypeScript Pulumi configuration.
+
+---
+
+## Project Structure
+
+```
+clocean/
+├── src/                       # React 19 Single Page App
+│   ├── components/            # Header, Sidebar, Modals, Markdown renderer
+│   ├── views/                 # Dashboard, Editor, Documents, Tasks, Photos
+│   └── styles/                # Design tokens (warm parchment palette)
+├── worker/                    # Cloudflare Worker backend
+│   ├── index.ts               # Hono API router & WebSocket handler
+│   ├── schemas.ts             # Zod validation schemas
+│   ├── storage/r2Db.ts        # R2 JSON database abstraction with ETags
+│   ├── durable_objects/       # DocSessionDO for multiplayer editing
+│   ├── auth/                  # Email OTP, session HMAC, and Cloudflare Access
+│   └── notifications/         # Email notifications & deadline scanner
+├── tests/                     # 12 Vitest suites (126 integration tests)
+├── docs/                      # Architectural deep dives
+│   ├── ARCHITECTURE.md        # Edge layers, WebSockets, and data flow
+│   ├── R2_DATABASE.md         # R2 JSON database schema and concurrency
+│   └── ONE_CLICK_DEPLOY.md    # Deployment and Zero Trust guide
+├── infra/                     # Optional TypeScript Pulumi IaC
+└── wrangler.jsonc             # Cloudflare Workers, Pages & R2 bindings
 ```
 
 ---
 
-## Key Features
+## Documentation
 
-### 1. Collaborative Document Editor
-* **Live Multiplayer Multi-Editing**: Multiple teammates can type, edit, and select text simultaneously. Connected users display real-time colored cursor carets and name tags.
-* **Interactive Checklists**: Checkboxes with instant state toggling.
-* **Floating Formatting Toolbar**: Quick headings (`H1`), bold, italic, links, embedded photos, checklists, and bulleted lists.
-* **Document Attachments Sidebar**: Direct association between written documentation and files stored in Cloudflare R2 (e.g. `moodboard.png`, `brand_v2.pdf`).
-
-### 2. High-Performance File Management & Storage
-* **Zero Egress Fees**: Store large files (PDFs, ZIPs, photos, videos, spreadsheets) in Cloudflare R2 without bandwidth charges.
-* **Drag-and-Drop Uploader**: Direct streaming multipart upload to R2.
-* **Table & Grid Views**: Displays file names, file sizes, last modified times, and quick action menus.
-* **File Previews**: In-app previews for PDFs, images, and documents with one-click downloads.
-
-### 3. Task Board & Photos Gallery
-* **Kanban Sprint Board**: Interactive columns (`To Do`, `In Progress`, `Done`) with assignee avatars and due dates.
-* **Photos Moodboard**: 4-column curated image gallery with responsive tabs (`All`, `Albums`, `Recent`) and full-screen lightbox viewing.
-
-### 4. Zero-Cost JSON Database on R2
-* Instead of running an expensive PostgreSQL or MongoDB cluster, all structured data models are saved as atomic JSON files in R2:
-  * `tree.json`: Hierarchical workspace tree (pages, folders, files).
-  * `docs/{docId}/content.json`: Rich text block content and attachments.
-  * `tasks.json`: Sprint tasks and assignees.
-  * `activity.json`: Audit log of recent edits and uploads.
-* Uses **HTTP ETags (`If-Match`)** for optimistic concurrency control to prevent conflicting writes during concurrent tree renames or file moves.
-
-### 5. Authentication: Cloudflare Zero Trust (Free for up to 50 Users)
-* Authenticated using Cloudflare Access headers:
-  * `Cf-Access-Authenticated-User-Email`
-  * `Cf-Access-Jwt-Assertion`
-* No database tables, password hashing, or salt management needed.
-
----
-
-## Deployment (Command Line / Wrangler)
-
-> [!NOTE]
-> The automated 1-Click "Deploy with Workers" button is temporarily disabled while the platform is under active development. You can deploy directly via the command line below.
-
-1. Clone the repository and install dependencies:
-   ```bash
-   git clone https://github.com/waystilos/clocean.git
-   cd clocean
-   pnpm install
-   ```
-
-2. Provision the Cloudflare R2 storage buckets:
-   ```bash
-   pnpm setup:r2
-   ```
-
-3. Deploy the application:
-   ```bash
-   pnpm deploy
-   ```
-
-### Infrastructure as Code with Pulumi (Optional)
-For automated provisioning of Cloudflare Zero Trust Access, team policies, and the R2 storage bucket, use the TypeScript Pulumi program in [`infra/`](infra/README.md):
-* Zero-setup local state: `pnpm infra:login:local` (or `pulumi login --local`)
-* Zero-cost Cloudflare R2 state backend: `pnpm infra:login:r2`
-
-Your application will be live globally on Cloudflare Workers and Pages!
-
----
-
-## Local Development
-
-Run the full local stack (Vite + Cloudflare Worker + Miniflare R2 + Durable Objects):
-
-1. Configure local environment variables (optional):
-   ```bash
-   cp .env.example .dev.vars
-   ```
-
-2. Start the Cloudflare Worker with local R2 and Durable Objects emulation:
-   ```bash
-   pnpm worker:dev
-   ```
-   *(Listens on `http://127.0.0.1:8787`)*
-
-3. Start the Vite React development server:
-   ```bash
-   pnpm dev
-   ```
-   *(Listens on `http://localhost:3000` with hot module replacement and `/api` proxy)*
-
-4. Open two browser windows:
-   * Window 1: `http://localhost:3000`
-   * Window 2: Open an incognito or separate browser window to collaborate simultaneously and observe real-time live cursor synchronization.
-
----
-
-## Design System Tokens
-
-Extracted directly from Figma (`Clocean - Active`):
-
-| Token | Dark Mode (Obsidian) | Light Mode (Parchment) |
-| :--- | :--- | :--- |
-| **Background** | `#1C1C1A` | `#FAF8F5` |
-| **Sidebar** | `#141412` | `#F2EDE6` |
-| **Cards & Surfaces** | `#232321` | `#FFFFFF` |
-| **Borders** | `#2C2C2A` | `#E5E0D8` |
-| **Nav Active** | `#2E2E2C` | `#E5DFD5` |
-| **Brand Accent** | `#1E7D6B` (Emerald) | `#1E7D6B` (Emerald) |
-| **Primary Text** | `#E8E5E0` | `#1C1C1A` |
-| **Secondary Text** | `#8E8B84` | `#75736E` |
-| **Serif Headings** | `Spectral`, serif | `Spectral`, serif |
-| **UI Body Font** | `Schibsted Grotesk` | `Schibsted Grotesk` |
+- [System Architecture](docs/ARCHITECTURE.md)
+- [R2 Database & Schema Reference](docs/R2_DATABASE.md)
+- [Zero Trust Deployment Guide](docs/ONE_CLICK_DEPLOY.md)
+- [Infrastructure as Code (Pulumi)](infra/README.md)
+- [Developer & Contributor Guide](AGENTS.md)
 
 ---
 
 ## License
-MIT License. Created for the Cloudflare serverless community.
 
+MIT

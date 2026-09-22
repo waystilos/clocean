@@ -47,8 +47,11 @@ import {
   Zap,
   Tag,
   Calendar,
-  Briefcase,
   Palette,
+  Briefcase,
+  Link2,
+  UserPlus,
+  Users,
 } from "lucide-react";
 import {
   DocContent,
@@ -59,6 +62,7 @@ import {
   DocRevision,
 } from "../types.ts";
 import { MarkdownRenderer } from "../components/MarkdownRenderer.tsx";
+import { LiveMarkdownEditor } from "../components/LiveMarkdownEditor.tsx";
 
 interface EditorViewProps {
   docId: string;
@@ -195,7 +199,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [viewMode, setViewMode] = useState<"edit" | "split" | "preview">("edit");
+  const [viewMode, setViewMode] = useState<"edit" | "source" | "split" | "preview">("edit");
+  const [activeLineIndex, setActiveLineIndex] = useState<number | null>(0);
 
   // Favorites state
   const [isFavorite, setIsFavorite] = useState(false);
@@ -205,6 +210,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [isPublic, setIsPublic] = useState(false);
   const [publicToken, setPublicToken] = useState("");
   const [copiedShare, setCopiedShare] = useState(false);
+  const [shareTab, setShareTab] = useState<"invite" | "publish">("invite");
+  const [inviteDocEmail, setInviteDocEmail] = useState("");
+  const [inviteDocRole, setInviteDocRole] = useState<"member" | "admin">("member");
+  const [isDocInviting, setIsDocInviting] = useState(false);
+  const [docInviteSuccess, setDocInviteSuccess] = useState<string | null>(null);
+  const [docInviteError, setDocInviteError] = useState<string | null>(null);
+  const [copiedDocInvite, setCopiedDocInvite] = useState(false);
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
 
   // History & Revisions state
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -304,11 +317,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // Connect to Cloudflare Durable Object WebSocket for real-time multiplayer editing
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const token = localStorage.getItem("clocean_session_token") || "";
     const wsUrl = `${protocol}//${window.location.host}/api/collab/${docId}?email=${encodeURIComponent(
       currentUser.email
     )}&name=${encodeURIComponent(currentUser.name)}&avatar=${encodeURIComponent(
       currentUser.avatar
-    )}&ws=${encodeURIComponent(workspaceId)}`;
+    )}&ws=${encodeURIComponent(workspaceId)}&token=${encodeURIComponent(token)}`;
 
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
@@ -518,6 +532,64 @@ export const EditorView: React.FC<EditorViewProps> = ({
     }
   };
 
+  // Fetch members for Notion-style Share modal
+  useEffect(() => {
+    if (!isShareOpen) return;
+    const ws = workspaceId || "default";
+    const token = localStorage.getItem("clocean_session_token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    if (currentUser?.email) headers["x-user-email"] = currentUser.email;
+
+    fetch(`/api/workspaces/${ws}/members?user=${encodeURIComponent(currentUser.email)}`, { headers })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: any) => {
+        setWorkspaceMembers(Array.isArray(data) ? data : data?.members || []);
+      })
+      .catch(() => {});
+  }, [isShareOpen, workspaceId, currentUser.email]);
+
+  const handleInviteToDoc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = inviteDocEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setDocInviteError("Please enter a valid email address.");
+      return;
+    }
+    setIsDocInviting(true);
+    setDocInviteError(null);
+    setDocInviteSuccess(null);
+    try {
+      const ws = workspaceId || "default";
+      const token = localStorage.getItem("clocean_session_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (currentUser?.email) headers["x-user-email"] = currentUser.email;
+
+      const res = await fetch(`/api/workspaces/${ws}/members?user=${encodeURIComponent(currentUser.email)}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          email: cleanEmail,
+          role: inviteDocRole,
+        }),
+      });
+      if (!res.ok) {
+        const errData = (await res.json().catch(() => ({}))) as any;
+        throw new Error(errData.error || "Failed to invite collaborator");
+      }
+      const updatedMembers: any = await res.json();
+      setWorkspaceMembers(Array.isArray(updatedMembers) ? updatedMembers : updatedMembers?.members || []);
+      setDocInviteSuccess(`Invited ${cleanEmail} to collaborate on this document!`);
+      setInviteDocEmail("");
+      setTimeout(() => setDocInviteSuccess(null), 4000);
+    } catch (err: any) {
+      setDocInviteError(err.message || "Failed to invite collaborator");
+    } finally {
+      setIsDocInviting(false);
+    }
+  };
+
   // Load Revisions
   const loadRevisions = async () => {
     setIsLoadingRevisions(true);
@@ -611,6 +683,32 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   // Execute Slash Command
   const executeSlashCommand = (snippet: string) => {
+    if (viewMode === "edit" && activeLineIndex !== null) {
+      const lines = content.split("\n");
+      const currentLine = lines[activeLineIndex] || "";
+      const slashIndex = currentLine.lastIndexOf("/");
+
+      if (snippet.includes("\n")) {
+        const snippetLines = snippet.trim().split("\n");
+        const newLines = [
+          ...lines.slice(0, activeLineIndex),
+          ...snippetLines,
+          ...lines.slice(activeLineIndex + 1),
+        ];
+        handleContentChange(newLines.join("\n"));
+        setActiveLineIndex(activeLineIndex + snippetLines.length - 1);
+      } else {
+        const cleanText = currentLine
+          .replace(/^(#{1,3}\s+|-\s*\[[ xX]\]\s+|[-*]\s+|\d+\.\s+|>\s*)/, "")
+          .replace(/\/([a-zA-Z0-9_-]*)$/, "");
+        lines[activeLineIndex] = snippet + cleanText.trim();
+        handleContentChange(lines.join("\n"));
+      }
+
+      setSlashMenu({ visible: false, query: "", selectedIndex: 0, pos: 0 });
+      return;
+    }
+
     if (!textareaRef.current) return;
     const val = content;
     const start = slashMenu.pos;
@@ -804,14 +902,24 @@ export const EditorView: React.FC<EditorViewProps> = ({
   };
 
   const handleSelectMention = (member: WorkspaceMember) => {
-    if (mentionPopup.target === "content" && textareaRef.current) {
-      const pos = textareaRef.current.selectionStart;
-      const textBefore = content.slice(0, pos);
-      const textAfter = content.slice(pos);
-      const atIndex = textBefore.lastIndexOf("@");
-      if (atIndex !== -1) {
-        const newText = textBefore.slice(0, atIndex) + `@${member.name} ` + textAfter;
-        handleContentChange(newText);
+    if (mentionPopup.target === "content") {
+      if (viewMode === "edit" && activeLineIndex !== null) {
+        const lines = content.split("\n");
+        const currentLine = lines[activeLineIndex] || "";
+        const atIndex = currentLine.lastIndexOf("@");
+        if (atIndex !== -1) {
+          lines[activeLineIndex] = currentLine.slice(0, atIndex) + `@${member.name} `;
+          handleContentChange(lines.join("\n"));
+        }
+      } else if (textareaRef.current) {
+        const pos = textareaRef.current.selectionStart;
+        const textBefore = content.slice(0, pos);
+        const textAfter = content.slice(pos);
+        const atIndex = textBefore.lastIndexOf("@");
+        if (atIndex !== -1) {
+          const newText = textBefore.slice(0, atIndex) + `@${member.name} ` + textAfter;
+          handleContentChange(newText);
+        }
       }
     } else if (mentionPopup.target === "comment") {
       const atIndex = commentText.lastIndexOf("@");
@@ -837,6 +945,19 @@ export const EditorView: React.FC<EditorViewProps> = ({
   };
 
   const applyFormat = (prefix: string, suffix: string = "") => {
+    if (viewMode === "edit" && activeLineIndex !== null) {
+      const lines = content.split("\n");
+      const current = lines[activeLineIndex] || "";
+      if (!suffix) {
+        const clean = current.replace(/^(#{1,3}\s+|-\s*\[[ xX]\]\s+|[-*]\s+|\d+\.\s+|>\s*)/, "");
+        lines[activeLineIndex] = `${prefix}${clean}`;
+      } else {
+        lines[activeLineIndex] = `${prefix}${current}${suffix}`;
+      }
+      handleContentChange(lines.join("\n"));
+      return;
+    }
+
     if (!textareaRef.current) return;
     const { selectionStart, selectionEnd, value } = textareaRef.current;
     const selectedText = value.substring(selectionStart, selectionEnd) || "text";
@@ -1285,9 +1406,29 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   alignItems: "center",
                   gap: "4px",
                 }}
-                title="Full Edit Mode"
+                title="Live Editor (Renders regular unless editing that line)"
               >
                 <Edit3 size={11} /> Edit
+              </button>
+              <button
+                onClick={() => setViewMode("source")}
+                className="btn-icon"
+                style={{
+                  width: "auto",
+                  padding: "3px 8px",
+                  height: "24px",
+                  fontSize: "11px",
+                  borderRadius: "var(--radius-sm)",
+                  backgroundColor: viewMode === "source" ? "var(--bg-nav-active)" : "transparent",
+                  color: viewMode === "source" ? "var(--text-primary)" : "var(--text-muted)",
+                  fontWeight: viewMode === "source" ? 600 : 400,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+                title="Raw Markdown Source"
+              >
+                <Code size={11} /> Source
               </button>
               <button
                 onClick={() => setViewMode("split")}
@@ -1402,57 +1543,59 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </div>
         )}
 
-        {/* Interactive Checkbox Items Rendered Above Editor (if available) */}
-        <div style={{ marginBottom: "20px" }}>
-          {lines.map((line, idx) => {
-            if (line.startsWith("- [ ] ") || line.startsWith("- [x] ")) {
-              const isChecked = line.startsWith("- [x] ");
-              const itemText = line.replace(/^- \[[ x]\] /, "");
-              return (
-                <div
-                  key={idx}
-                  onClick={() => toggleCheckbox(idx)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    padding: "4px 0",
-                    cursor: "pointer",
-                    userSelect: "none",
-                  }}
-                >
+        {/* Interactive Checkbox Items Rendered Above Editor in Source mode only */}
+        {viewMode === "source" && (
+          <div style={{ marginBottom: "20px" }}>
+            {lines.map((line, idx) => {
+              if (line.startsWith("- [ ] ") || line.startsWith("- [x] ")) {
+                const isChecked = line.startsWith("- [x] ");
+                const itemText = line.replace(/^- \[[ x]\] /, "");
+                return (
                   <div
+                    key={idx}
+                    onClick={() => toggleCheckbox(idx)}
                     style={{
-                      width: "16px",
-                      height: "16px",
-                      borderRadius: "3px",
-                      backgroundColor: isChecked ? "var(--accent)" : "transparent",
-                      border: `1.5px solid ${isChecked ? "var(--accent)" : "var(--border-subtle)"}`,
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "center",
-                      transition: "all 0.1s ease",
+                      gap: "10px",
+                      padding: "4px 0",
+                      cursor: "pointer",
+                      userSelect: "none",
                     }}
                   >
-                    {isChecked && <CheckSquare size={12} color="#FFFFFF" />}
+                    <div
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        borderRadius: "3px",
+                        backgroundColor: isChecked ? "var(--accent)" : "transparent",
+                        border: `1.5px solid ${isChecked ? "var(--accent)" : "var(--border-subtle)"}`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all 0.1s ease",
+                      }}
+                    >
+                      {isChecked && <CheckSquare size={12} color="#FFFFFF" />}
+                    </div>
+                    <span
+                      style={{
+                        fontSize: "15px",
+                        color: isChecked ? "var(--text-secondary)" : "var(--text-primary)",
+                        textDecoration: isChecked ? "line-through" : "none",
+                      }}
+                    >
+                      {itemText}
+                    </span>
                   </div>
-                  <span
-                    style={{
-                      fontSize: "15px",
-                      color: isChecked ? "var(--text-secondary)" : "var(--text-primary)",
-                      textDecoration: isChecked ? "line-through" : "none",
-                    }}
-                  >
-                    {itemText}
-                  </span>
-                </div>
-              );
-            }
-            return null;
-          })}
-        </div>
+                );
+              }
+              return null;
+            })}
+          </div>
+        )}
 
-        {/* Document Body: Edit Mode vs Split Mode vs Preview Mode */}
+        {/* Document Body: Preview vs Split vs Source vs Edit (Live WYSIWYG) */}
         {viewMode === "preview" ? (
           <div style={{ minHeight: "450px", padding: "12px 0" }}>
             <MarkdownRenderer content={content} onToggleCheckbox={toggleCheckbox} members={members} />
@@ -1512,7 +1655,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
               <MarkdownRenderer content={content} onToggleCheckbox={toggleCheckbox} members={members} />
             </div>
           </div>
-        ) : (
+        ) : viewMode === "source" ? (
           <div style={{ position: "relative" }}>
             <textarea
               ref={textareaRef}
@@ -1521,7 +1664,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
               onKeyDown={handleKeyDown}
               onSelect={handleCursorMove}
               onKeyUp={handleCursorMove}
-              placeholder="Type '/' for slash commands, '@' to mention a teammate, or start writing..."
+              placeholder="Type raw markdown here..."
               rows={22}
               style={{
                 width: "100%",
@@ -1531,17 +1674,259 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 outline: "none",
                 resize: "vertical",
                 color: "var(--text-primary)",
-                fontFamily: "var(--font-sans)",
-                fontSize: "16px",
-                lineHeight: 1.75,
-                letterSpacing: "-0.01em",
+                fontFamily: "var(--font-mono, monospace)",
+                fontSize: "14px",
+                lineHeight: 1.7,
+                letterSpacing: "0",
               }}
             />
           </div>
+        ) : (
+          <LiveMarkdownEditor
+            content={content}
+            onChange={handleContentChange}
+            members={members}
+            activeLineIndex={activeLineIndex}
+            onActiveLineChange={setActiveLineIndex}
+            slashMenuVisible={slashMenu.visible}
+            onSlashKeyDown={handleKeyDown}
+            onSlashTrigger={(query, lineIdx, caretPos) => {
+              setSlashMenu({
+                visible: true,
+                query,
+                selectedIndex: 0,
+                pos: caretPos,
+              });
+            }}
+            onMentionTrigger={(query, lineIdx, caretPos) => {
+              setMentionPopup({
+                visible: true,
+                query,
+                target: "content",
+              });
+            }}
+            onCursorMove={(lineIdx, ch) => {
+              if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+                socketRef.current.send(
+                  JSON.stringify({
+                    type: "cursor",
+                    user: currentUser.email,
+                    name: currentUser.name,
+                    color: "#1E7D6B",
+                    line: lineIdx,
+                    ch,
+                  })
+                );
+              }
+            }}
+            activeOverlay={
+              <>
+                {slashMenu.visible && filteredSlashCommands.length > 0 && (
+                  <div
+                    ref={slashMenuRef}
+                    className="animate-fade-in"
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: "0",
+                      width: "320px",
+                      backgroundColor: "var(--bg-surface)",
+                      border: "1px solid var(--border-subtle)",
+                      borderRadius: "var(--radius-md)",
+                      boxShadow: "0 14px 32px rgba(0, 0, 0, 0.45)",
+                      zIndex: 100,
+                      padding: "6px",
+                      marginTop: "6px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "var(--text-muted)",
+                        textTransform: "uppercase",
+                        padding: "6px 8px",
+                        letterSpacing: "0.05em",
+                      }}
+                    >
+                      Blocks & Formatting
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "2px",
+                        maxHeight: "240px",
+                        overflowY: "auto",
+                      }}
+                    >
+                      {filteredSlashCommands.map((item, idx) => {
+                        const isSelected = idx === slashMenu.selectedIndex;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={item.execute}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
+                              padding: "8px 10px",
+                              borderRadius: "var(--radius-sm)",
+                              border: "none",
+                              backgroundColor: isSelected ? "var(--bg-nav-active)" : "transparent",
+                              color: "var(--text-primary)",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              width: "100%",
+                            }}
+                            onMouseEnter={() =>
+                              setSlashMenu((prev) => ({ ...prev, selectedIndex: idx }))
+                            }
+                          >
+                            <div
+                              style={{
+                                color: "var(--accent)",
+                                display: "flex",
+                                alignItems: "center",
+                              }}
+                            >
+                              {item.icon}
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                minWidth: 0,
+                                flex: 1,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: "13px",
+                                  fontWeight: isSelected ? 600 : 500,
+                                }}
+                              >
+                                {item.label}
+                              </span>
+                              <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                                {item.description}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {mentionPopup.visible &&
+                  mentionPopup.target === "content" &&
+                  filteredMembers.length > 0 && (
+                    <div
+                      ref={mentionPopupRef}
+                      className="animate-fade-in"
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: "0",
+                        width: "280px",
+                        backgroundColor: "var(--bg-surface)",
+                        border: "1px solid var(--border-subtle)",
+                        borderRadius: "var(--radius-md)",
+                        boxShadow: "0 12px 28px rgba(0, 0, 0, 0.35)",
+                        zIndex: 100,
+                        padding: "6px",
+                        marginTop: "6px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          color: "var(--text-muted)",
+                          textTransform: "uppercase",
+                          padding: "6px 8px",
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        Mention Teammate (Email will be sent)
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "2px",
+                          maxHeight: "180px",
+                          overflowY: "auto",
+                        }}
+                      >
+                        {filteredMembers.map((m) => (
+                          <button
+                            key={m.email}
+                            onClick={() => handleSelectMention(m)}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
+                              padding: "6px 8px",
+                              borderRadius: "var(--radius-sm)",
+                              border: "none",
+                              backgroundColor: "transparent",
+                              color: "var(--text-primary)",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              width: "100%",
+                            }}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.backgroundColor = "var(--bg-nav-active)")
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.backgroundColor = "transparent")
+                            }
+                          >
+                            <img
+                              src={
+                                m.avatar ||
+                                `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+                                  m.email
+                                )}`
+                              }
+                              alt={m.name}
+                              style={{
+                                width: "24px",
+                                height: "24px",
+                                borderRadius: "50%",
+                                objectFit: "cover",
+                              }}
+                            />
+                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                              <span
+                                style={{
+                                  fontSize: "13px",
+                                  fontWeight: 500,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {m.name}
+                              </span>
+                              <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                                {m.email}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+              </>
+            }
+          />
         )}
 
-        {/* Slash Command Palette Popup */}
-        {slashMenu.visible && filteredSlashCommands.length > 0 && (
+        {/* Fallback Slash Command Palette Popup for Source / Split mode */}
+        {viewMode !== "edit" && slashMenu.visible && filteredSlashCommands.length > 0 && (
           <div
             ref={slashMenuRef}
             className="animate-fade-in"
@@ -1606,8 +1991,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </div>
         )}
 
-        {/* Mention Autocomplete Dropdown Popup */}
-        {mentionPopup.visible && mentionPopup.target === "content" && filteredMembers.length > 0 && (
+        {/* Fallback Mention Autocomplete Dropdown Popup for Source / Split mode */}
+        {viewMode !== "edit" && mentionPopup.visible && mentionPopup.target === "content" && filteredMembers.length > 0 && (
           <div
             ref={mentionPopupRef}
             className="animate-fade-in"
@@ -2075,7 +2460,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         )}
       </aside>
 
-      {/* Share to Web Modal */}
+      {/* Notion-Style Share & Invite Modal */}
       {isShareOpen && (
         <div
           className="modal-overlay"
@@ -2094,19 +2479,20 @@ export const EditorView: React.FC<EditorViewProps> = ({
             className="modal-content animate-fade-in"
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: "440px",
+              width: "500px",
               backgroundColor: "var(--bg-surface)",
               border: "1px solid var(--border-subtle)",
               borderRadius: "var(--radius-lg)",
               padding: "24px",
-              boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.45)",
             }}
           >
+            {/* Modal Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <Globe size={18} color="var(--accent)" />
+                <Share2 size={18} color="var(--accent)" />
                 <h3 style={{ fontSize: "16px", fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>
-                  Publish to Web
+                  Share Document
                 </h3>
               </div>
               <button onClick={() => setIsShareOpen(false)} className="btn-icon">
@@ -2114,100 +2500,328 @@ export const EditorView: React.FC<EditorViewProps> = ({
               </button>
             </div>
 
-            <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "20px", lineHeight: 1.5 }}>
-              Publishing generates an edge-native, read-only public URL hosted on Cloudflare Workers. Anyone with the link can view this document without requiring an account.
-            </div>
-
-            {/* Toggle Switch */}
+            {/* Notion-Style Tab Navigation */}
             <div
               style={{
                 display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "12px 14px",
+                gap: "4px",
+                padding: "3px",
                 backgroundColor: "var(--bg-primary)",
-                border: "1px solid var(--border-subtle)",
                 borderRadius: "var(--radius-md)",
-                marginBottom: "16px",
+                border: "1px solid var(--border-subtle)",
+                marginBottom: "20px",
               }}
             >
-              <div>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
-                  {isPublic ? "Document is Live" : "Private Document"}
-                </div>
-                <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                  {isPublic ? "Public edge link is active" : "Only workspace members can view"}
-                </div>
-              </div>
               <button
-                onClick={() => handleToggleShare(!isPublic)}
+                type="button"
+                onClick={() => setShareTab("invite")}
                 style={{
-                  padding: "6px 14px",
+                  flex: 1,
+                  padding: "7px 12px",
                   borderRadius: "var(--radius-sm)",
                   border: "none",
-                  backgroundColor: isPublic ? "var(--accent)" : "var(--bg-surface)",
-                  color: isPublic ? "#FFF" : "var(--text-primary)",
+                  backgroundColor: shareTab === "invite" ? "var(--bg-surface)" : "transparent",
+                  color: shareTab === "invite" ? "var(--text-primary)" : "var(--text-secondary)",
                   fontSize: "12px",
-                  fontWeight: 600,
+                  fontWeight: shareTab === "invite" ? 600 : 400,
                   cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  boxShadow: shareTab === "invite" ? "var(--shadow-sm)" : "none",
+                  transition: "all 0.15s ease",
                 }}
               >
-                {isPublic ? "Enabled" : "Enable"}
+                <UserPlus size={14} />
+                <span>Share & Invite</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShareTab("publish")}
+                style={{
+                  flex: 1,
+                  padding: "7px 12px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "none",
+                  backgroundColor: shareTab === "publish" ? "var(--bg-surface)" : "transparent",
+                  color: shareTab === "publish" ? "var(--text-primary)" : "var(--text-secondary)",
+                  fontSize: "12px",
+                  fontWeight: shareTab === "publish" ? 600 : 400,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  boxShadow: shareTab === "publish" ? "var(--shadow-sm)" : "none",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <Globe size={14} />
+                <span>Publish to Web</span>
               </button>
             </div>
 
-            {isPublic && publicToken && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
-                <label style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Public Web Link
-                </label>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <input
-                    type="text"
-                    readOnly
-                    value={`${window.location.origin}/?p=${publicToken}`}
-                    style={{
-                      flex: 1,
-                      padding: "8px 10px",
-                      fontSize: "12px",
-                      backgroundColor: "var(--bg-primary)",
-                      border: "1px solid var(--border-subtle)",
-                      borderRadius: "var(--radius-sm)",
-                      color: "var(--text-primary)",
-                      outline: "none",
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/?p=${publicToken}`);
-                      setCopiedShare(true);
-                      setTimeout(() => setCopiedShare(false), 2000);
-                    }}
-                    className="btn-primary"
-                    style={{ padding: "8px 12px", fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}
-                  >
-                    {copiedShare ? <Check size={13} /> : <Copy size={13} />}
-                    <span>{copiedShare ? "Copied" : "Copy"}</span>
-                  </button>
+            {/* Tab 1: Share & Invite */}
+            {shareTab === "invite" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                {/* 1-Click Document Invite Link */}
+                <div
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: "var(--radius-md)",
+                    backgroundColor: "var(--bg-primary)",
+                    border: "1px solid var(--border-subtle)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, color: "var(--text-primary)" }}>
+                      <Link2 size={14} color="var(--accent)" />
+                      <span>Document Invite Link</span>
+                    </div>
+                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                      Opens directly to this page
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${window.location.origin}?join=${workspaceId || "default"}&doc=${docId}`}
+                      style={{
+                        flex: 1,
+                        fontSize: "12px",
+                        padding: "7px 10px",
+                        backgroundColor: "var(--bg-surface)",
+                        border: "1px solid var(--border-subtle)",
+                        borderRadius: "var(--radius-sm)",
+                        color: "var(--text-primary)",
+                        outline: "none",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}?join=${workspaceId || "default"}&doc=${docId}`);
+                        setCopiedDocInvite(true);
+                        setTimeout(() => setCopiedDocInvite(false), 2500);
+                      }}
+                      className="btn-primary"
+                      style={{
+                        padding: "6px 14px",
+                        fontSize: "12px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {copiedDocInvite ? <Check size={13} /> : <Copy size={13} />}
+                      <span>{copiedDocInvite ? "Copied!" : "Copy Link"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Direct Email Invite Form */}
+                <form onSubmit={handleInviteToDoc} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)" }}>
+                    Invite Collaborator by Email
+                  </label>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <input
+                      type="email"
+                      placeholder="teammate@company.com"
+                      value={inviteDocEmail}
+                      onChange={(e) => setInviteDocEmail(e.target.value)}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        fontSize: "12px",
+                        backgroundColor: "var(--bg-primary)",
+                        border: "1px solid var(--border-subtle)",
+                        borderRadius: "var(--radius-sm)",
+                        color: "var(--text-primary)",
+                      }}
+                    />
+                    <select
+                      value={inviteDocRole}
+                      onChange={(e) => setInviteDocRole(e.target.value as any)}
+                      style={{
+                        padding: "8px 10px",
+                        fontSize: "12px",
+                        backgroundColor: "var(--bg-primary)",
+                        border: "1px solid var(--border-subtle)",
+                        borderRadius: "var(--radius-sm)",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      <option value="member">Can edit</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={isDocInviting}
+                      className="btn-primary"
+                      style={{ padding: "8px 16px", fontSize: "12px", whiteSpace: "nowrap" }}
+                    >
+                      {isDocInviting ? "Inviting..." : "Invite"}
+                    </button>
+                  </div>
+                  {docInviteError && (
+                    <span style={{ fontSize: "12px", color: "#ef4444" }}>{docInviteError}</span>
+                  )}
+                  {docInviteSuccess && (
+                    <span style={{ fontSize: "12px", color: "var(--accent)" }}>{docInviteSuccess}</span>
+                  )}
+                </form>
+
+                {/* Member Roster List */}
+                <div>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "8px" }}>
+                    Who has access ({workspaceMembers.length})
+                  </div>
+                  <div style={{ maxHeight: "160px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {workspaceMembers.map((m) => (
+                      <div
+                        key={m.email}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "6px 8px",
+                          borderRadius: "var(--radius-sm)",
+                          backgroundColor: "var(--bg-primary)",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <img
+                            src={m.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(m.email)}`}
+                            alt={m.name}
+                            style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover" }}
+                          />
+                          <div>
+                            <div style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-primary)" }}>{m.name}</div>
+                            <div style={{ fontSize: "10px", color: "var(--text-muted)" }}>{m.email}</div>
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            padding: "2px 8px",
+                            borderRadius: "10px",
+                            backgroundColor: "var(--bg-surface)",
+                            color: "var(--text-secondary)",
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {m.role}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
 
-            <div
-              style={{
-                fontSize: "11px",
-                color: "var(--text-muted)",
-                backgroundColor: "var(--bg-nav-active)",
-                padding: "8px 12px",
-                borderRadius: "var(--radius-sm)",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              <Shield size={12} color="var(--accent)" />
-              <span>Discussion comments and internal workspace files are never exposed.</span>
-            </div>
+            {/* Tab 2: Publish to Web */}
+            {shareTab === "publish" && (
+              <div>
+                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "16px", lineHeight: 1.5 }}>
+                  Publishing generates an edge-native, read-only public URL hosted on Cloudflare Workers. Anyone with the link can view this document without requiring an account.
+                </div>
+
+                {/* Toggle Switch */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "12px 14px",
+                    backgroundColor: "var(--bg-primary)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--radius-md)",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
+                      {isPublic ? "Document is Live" : "Private Document"}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                      {isPublic ? "Public edge link is active" : "Only workspace members can view"}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleToggleShare(!isPublic)}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: "var(--radius-sm)",
+                      border: "none",
+                      backgroundColor: isPublic ? "var(--accent)" : "var(--bg-surface)",
+                      color: isPublic ? "#FFF" : "var(--text-primary)",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {isPublic ? "Enabled" : "Enable"}
+                  </button>
+                </div>
+
+                {isPublic && publicToken && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
+                    <label style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                      Public Web Link
+                    </label>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${window.location.origin}/?p=${publicToken}`}
+                        style={{
+                          flex: 1,
+                          padding: "8px 10px",
+                          fontSize: "12px",
+                          backgroundColor: "var(--bg-primary)",
+                          border: "1px solid var(--border-subtle)",
+                          borderRadius: "var(--radius-sm)",
+                          color: "var(--text-primary)",
+                          outline: "none",
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}/?p=${publicToken}`);
+                          setCopiedShare(true);
+                          setTimeout(() => setCopiedShare(false), 2000);
+                        }}
+                        className="btn-primary"
+                        style={{ padding: "8px 12px", fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}
+                      >
+                        {copiedShare ? <Check size={13} /> : <Copy size={13} />}
+                        <span>{copiedShare ? "Copied" : "Copy"}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--text-muted)",
+                    backgroundColor: "var(--bg-nav-active)",
+                    padding: "8px 12px",
+                    borderRadius: "var(--radius-sm)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <Shield size={12} color="var(--accent)" />
+                  <span>Discussion comments and internal workspace files are never exposed.</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

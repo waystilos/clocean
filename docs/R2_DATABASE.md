@@ -23,18 +23,31 @@ By treating Cloudflare R2 as our primary datastore:
 All application state is organized hierarchically inside the `clocean-storage` R2 bucket:
 
 ```text
-workspaces/{workspaceId}/
+workspaces/registry/
+├── users/
+│   └── {email}.json                   # User's registered workspaces & assigned roles
+└── otp/
+    └── {email}.json                   # 6-digit OTP hash, salt, expiration, attempts
+
+workspaces/{workspaceId}/              # Multi-tenant partitioned team root (e.g. 'default', 'ws-design')
+├── meta.json                          # Workspace metadata (name, icon, owner, createdAt)
+├── members.json                       # Team roster (emails, names, avatars, roles: owner/admin/member)
 ├── tree.json                          # Workspace File & Document Hierarchy
-├── tasks.json                         # Sprint Kanban Board
+├── tasks.json                         # Sprint Kanban Board & calendar deadlines
 ├── photos.json                        # Photos Gallery Index
 ├── activity.json                      # Workspace Changelog
+├── favorites.json                     # Pinned and starred documents per user
+├── public/
+│   └── {token}.json                   # Anonymous read-only document share mappings
 ├── users/
 │   └── {email}.json                   # User Profile & Preferences
 ├── avatars/
 │   └── {email}.png                    # User Profile Picture (Binary)
 ├── docs/
 │   └── {docId}/
-│       └── content.json               # Document Blocks & Attachments
+│       ├── content.json               # Document Blocks & Attachments
+│       ├── revisions.json             # Document version snapshots
+│       └── comments.json              # Comments and @mentions
 └── files/
     └── {fileId}/
         └── {filename}                 # Uploaded Binary File (PDF, ZIP, image)
@@ -109,11 +122,73 @@ Stores display names and avatar links.
 }
 ```
 
+### 4. Verification OTP Record (`workspaces/registry/otp/{email}.json`)
+Stores salted SHA-256 OTP hashes with rate-limiting and replay protection.
+```json
+{
+  "email": "sarah.connor@sky.net",
+  "codeHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "salt": "a4d3f18e-28bb-4b92-8083-d5cecf605d3b",
+  "expiresAt": 1790033600000,
+  "attempts": 0,
+  "lastSentAt": 1790033000000,
+  "metadata": {
+    "purpose": "join",
+    "workspaceId": "ws-engineering"
+  }
+}
+```
+
+### 5. Team Members Roster (`workspaces/{wsId}/members.json`)
+Stores team members and their permission levels.
+```json
+{
+  "workspaceId": "ws-engineering",
+  "members": [
+    {
+      "email": "alex@clocean.co",
+      "name": "Alex Sterling",
+      "role": "owner",
+      "avatar": "/api/user/avatar/alex%40clocean.co",
+      "joinedAt": "2026-09-21T18:00:00.000Z"
+    },
+    {
+      "email": "elena@clocean.co",
+      "name": "Elena Rostova",
+      "role": "admin",
+      "avatar": "/api/user/avatar/elena%40clocean.co",
+      "joinedAt": "2026-09-21T19:30:00.000Z"
+    }
+  ]
+}
+```
+
+### 6. Tasks with Calendar Due Dates (`workspaces/{wsId}/tasks.json`)
+Stores Kanban tasks with assignees and deadline tracking.
+```json
+[
+  {
+    "id": "task-security-audit",
+    "title": "Submit Cloudflare Zero Trust Audit",
+    "status": "in_progress",
+    "priority": "high",
+    "dueDate": "2026-10-15",
+    "assignee": {
+      "name": "Alex Sterling",
+      "email": "alex@clocean.co",
+      "avatar": "/api/user/avatar/alex%40clocean.co"
+    },
+    "tags": ["#security", "#audit"],
+    "lastAlertedAt": "2026-10-14T09:00:00.000Z"
+  }
+]
+```
+
 ---
 
 ## Concurrency Control with HTTP ETags
 
-To prevent race conditions when two users modify the file tree simultaneously, `worker/storage/r2Db.ts` implements optimistic concurrency using **HTTP ETags**:
+To prevent race conditions when two users modify the file tree simultaneously, `worker/storage/r2Db.ts` implements optimistic concurrency using **HTTP ETags**. If the ETag no longer matches, the write fails and the API returns a conflict so the client can reload before retrying. It is never silently downgraded to an unconditional write:
 
 ```typescript
 // 1. Fetch data along with its current ETag

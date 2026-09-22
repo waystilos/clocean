@@ -15,8 +15,99 @@ import {
   Filter,
   LayoutGrid,
   Table as TableIcon,
+  Bell,
+  Calendar,
 } from "lucide-react";
 import { TaskItem, TaskSubtask, UserProfile, WorkspaceMember } from "../types.ts";
+
+export function getTaskDeadlineInfo(dueDate?: string): {
+  display: string;
+  isOverdue: boolean;
+  isDueToday: boolean;
+  isDueSoon: boolean;
+  color: string;
+  bg: string;
+} {
+  if (!dueDate || !dueDate.trim()) {
+    return {
+      display: "No deadline",
+      isOverdue: false,
+      isDueToday: false,
+      isDueSoon: false,
+      color: "var(--text-muted)",
+      bg: "transparent",
+    };
+  }
+
+  const parsed = Date.parse(dueDate);
+  if (isNaN(parsed)) {
+    return {
+      display: dueDate,
+      isOverdue: false,
+      isDueToday: false,
+      isDueSoon: dueDate.toLowerCase().includes("soon") || dueDate.toLowerCase().includes("due"),
+      color: "var(--accent-text)",
+      bg: "var(--accent-light)",
+    };
+  }
+
+  const now = new Date();
+  const todayStr = now.toISOString().split("T")[0];
+  const due = new Date(parsed);
+  const dueStr = due.toISOString().split("T")[0];
+
+  const diffMs = due.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  const options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  if (due.getFullYear() !== now.getFullYear()) {
+    options.year = "numeric";
+  }
+  const formatted = due.toLocaleDateString("en-US", options);
+
+  if (dueStr < todayStr) {
+    const daysAgo = Math.max(1, Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)));
+    return {
+      display: `Overdue (${daysAgo}d ago: ${formatted})`,
+      isOverdue: true,
+      isDueToday: false,
+      isDueSoon: false,
+      color: "#DC2626",
+      bg: "rgba(239, 68, 68, 0.12)",
+    };
+  }
+
+  if (dueStr === todayStr) {
+    return {
+      display: `Due Today (${formatted})`,
+      isOverdue: false,
+      isDueToday: true,
+      isDueSoon: true,
+      color: "#D97706",
+      bg: "rgba(245, 158, 11, 0.12)",
+    };
+  }
+
+  if (diffDays <= 2) {
+    return {
+      display: diffDays === 1 ? `Due Tomorrow (${formatted})` : `Due in 2 days (${formatted})`,
+      isOverdue: false,
+      isDueToday: false,
+      isDueSoon: true,
+      color: "#2563EB",
+      bg: "rgba(37, 99, 235, 0.12)",
+    };
+  }
+
+  return {
+    display: formatted,
+    isOverdue: false,
+    isDueToday: false,
+    isDueSoon: false,
+    color: "var(--text-secondary)",
+    bg: "var(--surface)",
+  };
+}
 
 interface TasksViewProps {
   tasks: TaskItem[];
@@ -31,13 +122,19 @@ export const TasksView: React.FC<TasksViewProps> = ({
   workspaceId = "default",
   onUpdateTasks,
 }) => {
+  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split("T")[0];
   const [filter, setFilter] = useState<"all" | "mine" | "due" | "high">("all");
   const [viewType, setViewType] = useState<"board" | "table">("board");
   const [isAddingIn, setIsAddingIn] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskPriority, setNewTaskPriority] = useState<"urgent" | "high" | "medium" | "low">("medium");
   const [newTaskAssigneeEmail, setNewTaskAssigneeEmail] = useState<string>(currentUser.email);
+  const [newTaskDueDate, setNewTaskDueDate] = useState<string>(tomorrowStr);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
+
+  // Deadline scanner & email alerts
+  const [checkingDeadlines, setCheckingDeadlines] = useState(false);
+  const [deadlineResult, setDeadlineResult] = useState<{ message: string; count: number } | null>(null);
 
   // Drag and Drop state
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -46,6 +143,46 @@ export const TasksView: React.FC<TasksViewProps> = ({
   // Task Detail Modal state
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+
+  const handleCheckDeadlines = async () => {
+    setCheckingDeadlines(true);
+    setDeadlineResult(null);
+    try {
+      const token = localStorage.getItem("clocean_session_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (currentUser?.email) headers["x-user-email"] = currentUser.email;
+
+      const res = await fetch("/api/tasks/check-deadlines", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ workspaceId }),
+      });
+      const data: any = await res.json();
+      if (res.ok) {
+        const count = data.alertedCount ?? data.alerted?.length ?? 0;
+        setDeadlineResult({
+          message: count > 0
+            ? `Scanned ${data.checked} tasks: sent ${count} deadline alert email${count === 1 ? "" : "s"}!`
+            : `Scanned ${data.checked} tasks: all upcoming deadlines are up-to-date.`,
+          count,
+        });
+      } else {
+        setDeadlineResult({
+          message: data.error || "Failed to check deadlines.",
+          count: 0,
+        });
+      }
+    } catch {
+      setDeadlineResult({
+        message: "Failed to connect to deadline alert service.",
+        count: 0,
+      });
+    } finally {
+      setCheckingDeadlines(false);
+      setTimeout(() => setDeadlineResult(null), 6000);
+    }
+  };
 
   // Fetch workspace members for assignee selection
   useEffect(() => {
@@ -60,7 +197,10 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
   const filteredTasks = tasks.filter((t) => {
     if (filter === "mine") return t.assignee.email.toLowerCase() === currentUser.email.toLowerCase();
-    if (filter === "due") return t.dueDate.toLowerCase().includes("due") || t.dueDate.toLowerCase().includes("soon");
+    if (filter === "due") {
+      const info = getTaskDeadlineInfo(t.dueDate);
+      return info.isOverdue || info.isDueToday || info.isDueSoon;
+    }
     if (filter === "high") return t.priority === "urgent" || t.priority === "high";
     return true;
   });
@@ -83,12 +223,14 @@ export const TasksView: React.FC<TasksViewProps> = ({
       avatar: currentUser.avatar,
     };
 
+    const finalDueDate = newTaskDueDate || new Date(Date.now() + 86400000).toISOString().split("T")[0];
+
     const newTask: TaskItem = {
       id: `task-${Date.now()}`,
       title: newTaskTitle.trim(),
       status,
       priority: newTaskPriority,
-      dueDate: "Due soon",
+      dueDate: finalDueDate,
       assignee: {
         name: assignedMember.name,
         email: assignedMember.email,
@@ -102,6 +244,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
     setNewTaskTitle("");
     setNewTaskPriority("medium");
     setNewTaskAssigneeEmail(currentUser.email);
+    setNewTaskDueDate(tomorrowStr);
     setIsAddingIn(null);
   };
 
@@ -338,8 +481,71 @@ export const TasksView: React.FC<TasksViewProps> = ({
               <TableIcon size={13} /> Table
             </button>
           </div>
+
+          <div style={{ width: "1px", height: "20px", backgroundColor: "var(--border-subtle)", margin: "0 4px" }} />
+
+          {/* Check Deadlines & Alert Button */}
+          <button
+            onClick={handleCheckDeadlines}
+            disabled={checkingDeadlines}
+            className="btn-secondary"
+            style={{
+              fontSize: "12px",
+              padding: "6px 12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              backgroundColor: "var(--bg-surface)",
+              color: "var(--text-primary)",
+              cursor: checkingDeadlines ? "wait" : "pointer",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--border-subtle)",
+            }}
+            title="Scan upcoming task deadlines and trigger email alerts to assignees"
+          >
+            <Bell size={13} color="var(--accent)" />
+            {checkingDeadlines ? "Checking Deadlines..." : "Check Deadlines & Alert"}
+          </button>
         </div>
       </div>
+
+      {/* Deadline Alert Result Banner */}
+      {deadlineResult && (
+        <div
+          style={{
+            marginBottom: "24px",
+            padding: "12px 18px",
+            borderRadius: "var(--radius-md)",
+            backgroundColor: deadlineResult.count > 0 ? "rgba(16, 185, 129, 0.1)" : "var(--accent-light)",
+            border: `1px solid ${deadlineResult.count > 0 ? "rgba(16, 185, 129, 0.3)" : "var(--accent)"}`,
+            color: "var(--text-primary)",
+            fontSize: "13px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            animation: "fadeIn 0.2s ease-in-out",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <Bell size={16} color="var(--accent)" />
+            <span>{deadlineResult.message}</span>
+          </div>
+          <button
+            onClick={() => setDeadlineResult(null)}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-muted)",
+              padding: "4px",
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {viewType === "table" ? (
         <div
@@ -448,8 +654,28 @@ export const TasksView: React.FC<TasksViewProps> = ({
                           <span style={{ fontSize: "12px", color: "var(--text-primary)" }}>{t.assignee.name}</span>
                         </div>
                       </td>
-                      <td style={{ padding: "12px 16px", fontSize: "12px", color: "var(--text-secondary)" }}>
-                        {t.dueDate}
+                      <td style={{ padding: "12px 16px", fontSize: "12px" }}>
+                        {(() => {
+                          const info = getTaskDeadlineInfo(t.dueDate);
+                          return (
+                            <span
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 500,
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                backgroundColor: info.bg,
+                                color: info.color,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              <Clock size={11} />
+                              {info.display}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td style={{ padding: "12px 16px", fontSize: "12px", color: "var(--text-muted)" }}>
                         {totalSub > 0 ? `${completedSub}/${totalSub}` : "—"}
@@ -703,18 +929,27 @@ export const TasksView: React.FC<TasksViewProps> = ({
                           borderTop: "1px solid var(--border-subtle)",
                         }}
                       >
-                        <span
-                          style={{
-                            fontSize: "12px",
-                            color: "var(--text-secondary)",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "4px",
-                          }}
-                        >
-                          <Clock size={12} />
-                          {task.dueDate}
-                        </span>
+                        {(() => {
+                          const info = getTaskDeadlineInfo(task.dueDate);
+                          return (
+                            <span
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 500,
+                                color: info.color,
+                                backgroundColor: info.bg,
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              <Clock size={11} />
+                              {info.display}
+                            </span>
+                          );
+                        })()}
 
                         {/* Assignee Avatar */}
                         <div
@@ -820,6 +1055,22 @@ export const TasksView: React.FC<TasksViewProps> = ({
                           ))}
                         </select>
                       )}
+
+                      <input
+                        type="date"
+                        value={newTaskDueDate}
+                        onChange={(e) => setNewTaskDueDate(e.target.value)}
+                        style={{
+                          backgroundColor: "var(--bg-primary)",
+                          border: "1px solid var(--border-subtle)",
+                          borderRadius: "var(--radius-sm)",
+                          color: "var(--text-primary)",
+                          fontSize: "11px",
+                          padding: "3px 6px",
+                          outline: "none",
+                        }}
+                        title="Due Date"
+                      />
                     </div>
 
                     <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
@@ -1058,12 +1309,32 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 </div>
 
                 <div>
-                  <label style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "6px" }}>
-                    Due Date
-                  </label>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                    <label style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Due Date (Calendar)
+                    </label>
+                    {selectedTask.dueDate && (
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 500,
+                          padding: "2px 8px",
+                          borderRadius: "12px",
+                          backgroundColor: getTaskDeadlineInfo(selectedTask.dueDate).bg,
+                          color: getTaskDeadlineInfo(selectedTask.dueDate).color,
+                        }}
+                      >
+                        {getTaskDeadlineInfo(selectedTask.dueDate).display}
+                      </span>
+                    )}
+                  </div>
                   <input
-                    type="text"
-                    value={selectedTask.dueDate}
+                    type="date"
+                    value={
+                      !isNaN(Date.parse(selectedTask.dueDate))
+                        ? new Date(selectedTask.dueDate).toISOString().split("T")[0]
+                        : ""
+                    }
                     onChange={(e) => setSelectedTask({ ...selectedTask, dueDate: e.target.value })}
                     style={{
                       width: "100%",
@@ -1076,6 +1347,98 @@ export const TasksView: React.FC<TasksViewProps> = ({
                       outline: "none",
                     }}
                   />
+                  {/* Quick Preset Date Buttons */}
+                  <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const today = new Date().toISOString().split("T")[0];
+                        setSelectedTask({ ...selectedTask, dueDate: today });
+                      }}
+                      style={{
+                        fontSize: "11px",
+                        padding: "3px 8px",
+                        borderRadius: "4px",
+                        backgroundColor: "var(--surface)",
+                        border: "1px solid var(--border-subtle)",
+                        color: "var(--text-secondary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+                        setSelectedTask({ ...selectedTask, dueDate: tomorrow });
+                      }}
+                      style={{
+                        fontSize: "11px",
+                        padding: "3px 8px",
+                        borderRadius: "4px",
+                        backgroundColor: "var(--surface)",
+                        border: "1px solid var(--border-subtle)",
+                        color: "var(--text-secondary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Tomorrow
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const in3Days = new Date(Date.now() + 3 * 86400000).toISOString().split("T")[0];
+                        setSelectedTask({ ...selectedTask, dueDate: in3Days });
+                      }}
+                      style={{
+                        fontSize: "11px",
+                        padding: "3px 8px",
+                        borderRadius: "4px",
+                        backgroundColor: "var(--surface)",
+                        border: "1px solid var(--border-subtle)",
+                        color: "var(--text-secondary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      +3 Days
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+                        setSelectedTask({ ...selectedTask, dueDate: nextWeek });
+                      }}
+                      style={{
+                        fontSize: "11px",
+                        padding: "3px 8px",
+                        borderRadius: "4px",
+                        backgroundColor: "var(--surface)",
+                        border: "1px solid var(--border-subtle)",
+                        color: "var(--text-secondary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Next Week
+                    </button>
+                    {selectedTask.dueDate && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTask({ ...selectedTask, dueDate: "" })}
+                        style={{
+                          fontSize: "11px",
+                          padding: "3px 8px",
+                          borderRadius: "4px",
+                          backgroundColor: "transparent",
+                          border: "1px dashed var(--border-subtle)",
+                          color: "var(--text-muted)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 

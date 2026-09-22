@@ -70,7 +70,11 @@ export function generateMentionEmailHtml(notification: MentionNotification, appU
     ctaText = "Accept Invitation & Open Workspace →";
     const roleLabel = notification.inviteRole === "admin" ? "an Admin" : "a Member";
     actionDescription = `invited you to join <strong>"${escapeHtml(notification.workspaceName)}"</strong> as <strong>${roleLabel}</strong>`;
-    titleText = `${notification.sender.name} invited you to join ${notification.workspaceName}`;
+  } else if (notification.type === "deadline") {
+    targetUrl = `${baseUrl}?view=tasks&ws=${notification.workspaceId}`;
+    ctaText = "Review Task & Update Status →";
+    actionDescription = `<strong>Deadline Alert:</strong> The sprint task <strong>"${escapeHtml(notification.taskTitle || "Task")}"</strong> is due soon.`;
+    titleText = `⏰ Deadline Alert: "${notification.taskTitle || "Task"}" is due soon`;
   } else if (notification.type === "test") {
     targetUrl = `${baseUrl}?ws=${notification.workspaceId}`;
     ctaText = "Open Clocean Workspace →";
@@ -216,16 +220,22 @@ export async function dispatchMentionNotification(
   notification.emailStatus = status;
 
   // 3. Persist notification to recipient's inbox in Cloudflare R2
-  const userNotificationsKey = `workspaces/registry/users/${encodeURIComponent(notification.recipientEmail)}/notifications.json`;
-  const existingNotifications = await db.getJson<UserNotificationsData>(userNotificationsKey);
+  const cleanEmail = notification.recipientEmail.toLowerCase().trim();
+  const userNotificationsKey = `workspaces/registry/users/${cleanEmail}/notifications.json`;
+  const legacyKey = `workspaces/registry/users/${encodeURIComponent(cleanEmail)}/notifications.json`;
+  let existingNotifications = await db.getJson<UserNotificationsData>(userNotificationsKey);
+  if (!existingNotifications.data) {
+    existingNotifications = await db.getJson<UserNotificationsData>(legacyKey);
+  }
   const notificationsList = existingNotifications.data?.notifications || [];
   notificationsList.unshift(notification);
 
-  // Keep latest 50 notifications
-  await db.putJson(userNotificationsKey, {
-    email: notification.recipientEmail,
+  const notifPayload = {
+    email: cleanEmail,
     notifications: notificationsList.slice(0, 50),
-  });
+  };
+  await db.putJson(userNotificationsKey, notifPayload);
+  await db.putJson(legacyKey, notifPayload);
 
   // 4. Audit in workspace outbox in Cloudflare R2
   const outboxKey = `workspaces/${notification.workspaceId}/notifications/outbox.json`;
@@ -235,4 +245,59 @@ export async function dispatchMentionNotification(
   await db.putJson(outboxKey, { outbox: outboxList.slice(0, 100) });
 
   return { success: true, status };
+}
+
+export function generateOtpEmailHtml(
+  otpCode: string,
+  purpose: "setup" | "login" | "signin" | "join",
+  workspaceName?: string
+): string {
+  const title =
+    purpose === "join"
+      ? `Verify your email to join ${workspaceName || "the workspace"}`
+      : purpose === "setup"
+      ? "Verify your email to set up your workspace"
+      : "Your Clocean verification code";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${escapeHtml(title)}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #FAF8F5; color: #1C1C1A;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #FAF8F5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 520px; background-color: #FFFFFF; border: 1px solid #E5E0D8; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+          <tr>
+            <td style="padding: 24px 32px; border-bottom: 1px solid #E5E0D8; background-color: #F2EDE6;">
+              <span style="font-family: Georgia, serif; font-size: 20px; font-weight: 600; color: #1C1C1A;">
+                clocean
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 36px 32px; text-align: center;">
+              <h2 style="font-family: Georgia, serif; font-size: 22px; margin: 0 0 12px 0; color: #1C1C1A;">
+                ${escapeHtml(title)}
+              </h2>
+              <p style="font-size: 14px; color: #75736E; margin: 0 0 28px 0; line-height: 1.5;">
+                Enter the following 6-digit verification code to confirm your email address. This code expires in 10 minutes.
+              </p>
+              <div style="background-color: #FAF8F5; border: 1.5px solid #1E7D6B; border-radius: 8px; padding: 18px 24px; display: inline-block; margin-bottom: 28px;">
+                <span style="font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #1E7D6B;">
+                  ${escapeHtml(otpCode)}
+                </span>
+              </div>
+              <p style="font-size: 12px; color: #A3A099; margin: 0;">
+                If you did not request this code, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 }

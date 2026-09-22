@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Search, Settings, Cloud, RefreshCw, Bell, Mail, CheckCheck } from "lucide-react";
+import { Search, Settings, Cloud, RefreshCw, Bell, Mail, CheckCheck, UserPlus } from "lucide-react";
 import { MentionNotification } from "../types.ts";
 
 interface HeaderProps {
@@ -8,6 +8,7 @@ interface HeaderProps {
   breadcrumbs?: { label: string; onClick?: () => void }[];
   onOpenSearch: () => void;
   onOpenSettings: () => void;
+  onOpenTeamMembers?: () => void;
   collaborators?: { id: string; name: string; avatar: string; color: string }[];
   isSaving?: boolean;
   notifications?: MentionNotification[];
@@ -21,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   breadcrumbs,
   onOpenSearch,
   onOpenSettings,
+  onOpenTeamMembers,
   collaborators = [],
   isSaving = false,
   notifications = [],
@@ -346,6 +348,27 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
+
+        {/* Invite Action Button */}
+        {onOpenTeamMembers && (
+          <button
+            onClick={onOpenTeamMembers}
+            className="btn-secondary"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 12px",
+              fontSize: "12px",
+              fontWeight: 500,
+              borderRadius: "var(--radius-sm)",
+            }}
+            title="Invite members to workspace"
+          >
+            <UserPlus size={14} />
+            <span>Invite</span>
+          </button>
+        )}
 
         {/* Search Action */}
         <button

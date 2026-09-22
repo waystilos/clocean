@@ -15,7 +15,7 @@ Welcome to **Clocean**! This file serves as the definitive reference and operati
 1. **NO EXTERNAL DATABASES (Zero Database Costs)**:
    - **Never introduce PostgreSQL, MySQL, MongoDB, Supabase, or D1** unless explicitly instructed.
    - **Cloudflare R2 is our database**: All metadata, workspace trees, document content, sprint tasks, and photo registries are stored as structured **JSON files** in the R2 bucket.
-   - Concurrency is managed using **R2 HTTP ETags (`If-Match`)** for optimistic locking.
+   - Concurrency is managed using **R2 HTTP ETags (`If-Match`)** for optimistic locking. Conflicts return HTTP 409; unconditional fallback writes are forbidden.
 
 2. **REAL-TIME MULTIPLAYER COLLABORATION VIA DURABLE OBJECTS**:
    - Multi-user editing is handled by the `DocSessionDO` Cloudflare Durable Object over WebSockets.
@@ -88,7 +88,7 @@ clocean/
     ├── index.ts               # Hono REST API & WebSocket upgrade router
     ├── types.ts               # R2 storage data models & Worker Env
     ├── auth/
-    │   └── cfAccess.ts        # Cloudflare Access JWT validation & local dev mock
+    │   └── cfAccess.ts        # Cloudflare Access JWT signature validation & local dev mock
     ├── durable_objects/
     │   └── DocSessionDO.ts    # Durable Object real-time collaboration engine
     └── storage/
@@ -102,13 +102,16 @@ clocean/
 | Key Pattern | Purpose | Concurrency |
 | :--- | :--- | :--- |
 | `workspaces/registry/users/{email}.json` | User workspace list & assigned roles | Direct JSON write |
+| `workspaces/registry/otp/{email}.json` | 6-digit OTP verification codes & metadata | Direct JSON write |
 | `workspaces/{wsId}/meta.json` | Organization metadata & ownership | Direct JSON write |
 | `workspaces/{wsId}/members.json` | Team members roster & roles | Direct JSON write |
 | `workspaces/{wsId}/tree.json` | File & document hierarchy index | Optimistic locking via `If-Match` ETags |
 | `workspaces/{wsId}/docs/{id}/content.json` | Document body, blocks, attachments | Debounced write from Durable Object |
-| `workspaces/{wsId}/tasks.json` | Sprint Kanban tasks & assignees | Direct JSON write |
+| `workspaces/{wsId}/tasks.json` | Sprint Kanban tasks, assignees & deadlines | Direct JSON write |
 | `workspaces/{wsId}/photos.json` | Photo gallery registry | Direct JSON write |
 | `workspaces/{wsId}/activity.json` | Activity changelog | Appended on upload / edits |
+| `workspaces/{wsId}/favorites.json` | Pinned and starred documents per user | Direct JSON write |
+| `workspaces/{wsId}/public/{token}.json` | Read-only public share mappings | Direct JSON write |
 | `workspaces/registry/users/{email}/notifications.json` | User mention notifications & email log | Direct JSON write |
 | `workspaces/{wsId}/notifications/outbox.json` | Workspace email dispatch audit outbox | Direct JSON write |
 | `workspaces/{wsId}/docs/{id}/comments.json` | Document discussion comments & @mentions | Direct JSON write |
@@ -140,4 +143,3 @@ pnpm dev
 pnpm deploy
 ```
 *(Runs `pnpm build` and then `wrangler deploy` to push static assets to Pages and edge code to Workers).*
-
