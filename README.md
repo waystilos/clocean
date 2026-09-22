@@ -159,6 +159,10 @@ clocean/
 - [Infrastructure as Code (Pulumi)](infra/README.md)
 - [Developer & Contributor Guide](AGENTS.md)
 
+## Feedback and Bug Reports
+
+Please read [Bugs and Feature Feedback](BUGS.md) before opening an issue. Bug reports and feature ideas are welcome; code contributions and pull requests are paused while the project is being consolidated.
+
 ---
 
 ## License
