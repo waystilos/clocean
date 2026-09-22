@@ -33,7 +33,7 @@ workspaces/{workspaceId}/              # Multi-tenant partitioned team root (e.g
 ├── meta.json                          # Workspace metadata (name, icon, owner, createdAt)
 ├── members.json                       # Team roster (emails, names, avatars, roles: owner/admin/member)
 ├── tree.json                          # Workspace File & Document Hierarchy
-├── tasks.json                         # Default Sprint Kanban Board & calendar deadlines
+├── tasks.json                         # Default Sprint Kanban Board and work items
 ├── task-boards.json                   # Task board registry
 ├── task-boards/{boardId}.json         # Tasks for additional boards
 ├── photos.json                        # Photos Gallery Index
@@ -166,7 +166,7 @@ Stores team members and their permission levels.
 ```
 
 ### 6. Tasks with Calendar Due Dates (`workspaces/{wsId}/tasks.json`)
-Stores ADO-style work items with assignees, notes, discussion, and deadline tracking. `type` is one of `task`, `bug`, `feature`, `improvement`, or `question`; older records may omit it and are treated as tasks.
+Stores ADO-style work items with assignees, notes, discussion, and optional due dates. `type` is one of `task`, `bug`, `feature`, `improvement`, or `question`; older records may omit it and are treated as tasks.
 ```json
 [
   {
@@ -191,7 +191,6 @@ Stores ADO-style work items with assignees, notes, discussion, and deadline trac
         "createdAt": "2026-10-14T09:00:00.000Z"
       }
     ],
-    "lastAlertedAt": "2026-10-14T09:00:00.000Z"
   }
 ]
 ```

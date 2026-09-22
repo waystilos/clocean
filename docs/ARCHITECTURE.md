@@ -82,7 +82,6 @@ Powered by [Hono](https://hono.dev/), a lightweight, edge-optimized routing fram
 * `GET /api/task-boards`, `POST /api/task-boards`: Lists and creates independent task boards.
 * `GET /api/tasks?boardId=:id`, `PUT /api/tasks?boardId=:id`: Persists each board's typed ADO-style work items with notes, assignees, priorities, and calendar due dates.
 * `POST /api/tasks/:taskId/comments`, `DELETE /api/tasks/:taskId`: Adds authenticated discussion comments or removes a work item using the board's R2 ETag.
-* `POST /api/tasks/check-deadlines`: Scans tasks for deadlines due within 48 hours and sends email alerts.
 * `GET /api/photos`: Legacy media metadata retained for existing R2 records; media is presented from Documents in the main UI.
 
 #### 2. Durable Objects Real-Time Room Sync (`worker/durable_objects/DocSessionDO.ts`)
@@ -249,18 +248,9 @@ graph TD
 
 ---
 
-### Layer 8: Task Deadlines & Edge Email Alert Engine
+### Layer 8: Task deadlines
 
-To keep teams synchronized on delivery dates, Clocean integrates calendar-based task deadlines with automated edge alerting.
-
-1. **Calendar Due Dates**: Tasks record standardized ISO calendar strings (`YYYY-MM-DD`), rendered with status indicators (`Today`, `Overdue`, `In 2 days`).
-2. **Deadline Scanner Routine (`POST /api/tasks/check-deadlines`)**:
-   - Can be triggered manually or via a Cloudflare Workers Cron Trigger (`[triggers.crons]`).
-   - Scans `tasks.json` in R2 and calculates the delta between current edge timestamp and task due dates.
-   - For any incomplete task due within 48 hours (or overdue) that has not yet been alerted, the engine:
-     - Formats an alert email to the task assignee.
-     - Appends an entry to the user's notifications inbox (`workspaces/registry/users/{email}/notifications.json`).
-     - Updates `lastAlertedAt` on the task item to prevent duplicate emails.
+Tasks store optional ISO calendar dates (`YYYY-MM-DD`). The board renders due-today, due-soon, overdue, and ordinary dates locally so users can plan work without an email alert service or background scanner.
 
 ---
 

@@ -139,7 +139,7 @@ clocean/
 │   ├── storage/r2Db.ts        # R2 JSON database abstraction with ETags
 │   ├── durable_objects/       # DocSessionDO for multiplayer editing
 │   ├── auth/                  # Local OTP, session HMAC, and Cloudflare Access
-│   └── notifications/         # Email notifications & deadline scanner
+│   └── notifications/         # Mention, comment, and invitation notifications
 ├── tests/                     # Vitest integration and security suites
 ├── docs/                      # Architectural deep dives
 │   ├── ARCHITECTURE.md        # Edge layers, WebSockets, and data flow

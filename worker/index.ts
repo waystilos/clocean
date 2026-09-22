@@ -1983,49 +1983,6 @@ app.put("/api/tasks", async (c) => {
   return c.json({ success: true, count: tasks.length });
 });
 
-// Check deadlines and dispatch email alerts for tasks due soon
-app.post("/api/tasks/check-deadlines", async (c) => {
-  const ws = getWorkspaceId(c);
-  const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const wsMeta = await db.getWorkspaceMetadata(ws);
-  const workspaceTitle = wsMeta?.name || "Clocean Workspace";
-
-  const result = await db.checkWorkspaceDeadlines(ws);
-
-  for (const task of result.alerted) {
-    if (task.assignee && task.assignee.email) {
-      const notif: MentionNotification = {
-        id: `notif-deadline-${crypto.randomUUID()}`,
-        workspaceId: ws,
-        workspaceName: workspaceTitle,
-        taskId: task.id,
-        taskTitle: task.title,
-        type: "deadline",
-        sender: {
-          name: "Clocean Deadlines",
-          email: c.env.EMAIL_FROM || "notifications@clocean.co",
-          avatar: "https://api.dicebear.com/7.x/initials/svg?seed=Clocean",
-        },
-        recipientEmail: task.assignee.email,
-        recipientName: task.assignee.name || task.assignee.email,
-        contextSnippet: `Deadline alert: "${task.title}" is due ${task.dueDate}. Priority: ${task.priority || "normal"}.`,
-        timestamp: "Just now",
-        emailStatus: "sent",
-        read: false,
-      };
-      await dispatchMentionNotification(c.env, db, notif, getAppUrl(c));
-    }
-  }
-
-  return c.json({
-    success: true,
-    workspaceId: ws,
-    checkedCount: result.checked,
-    alertedCount: result.alerted.length,
-    alertedTasks: result.alerted,
-  });
-});
-
 // Photos Gallery
 app.get("/api/photos", async (c) => {
   const ws = getWorkspaceId(c);

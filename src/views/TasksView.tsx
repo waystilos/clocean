@@ -15,7 +15,6 @@ import {
   Filter,
   LayoutGrid,
   Table as TableIcon,
-  Bell,
   Calendar,
   Bug,
   Lightbulb,
@@ -145,10 +144,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [newTaskDueDate, setNewTaskDueDate] = useState<string>(tomorrowStr);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
 
-  // Deadline scanner & email alerts
-  const [checkingDeadlines, setCheckingDeadlines] = useState(false);
-  const [deadlineResult, setDeadlineResult] = useState<{ message: string; count: number } | null>(null);
-
   // Drag and Drop state
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -252,43 +247,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
       setBoardError(error instanceof Error ? error.message : "Could not remove task board");
     } finally {
       setIsDeletingBoard(false);
-    }
-  };
-
-  const handleCheckDeadlines = async () => {
-    setCheckingDeadlines(true);
-    setDeadlineResult(null);
-    try {
-      const headers = getAuthHeaders({ "Content-Type": "application/json" });
-
-      const res = await fetch("/api/tasks/check-deadlines", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ workspaceId }),
-      });
-      const data: any = await res.json();
-      if (res.ok) {
-        const count = data.alertedCount ?? data.alerted?.length ?? 0;
-        setDeadlineResult({
-          message: count > 0
-            ? `Scanned ${data.checked} tasks: sent ${count} deadline alert email${count === 1 ? "" : "s"}!`
-            : `Scanned ${data.checked} tasks: all upcoming deadlines are up-to-date.`,
-          count,
-        });
-      } else {
-        setDeadlineResult({
-          message: data.error || "Failed to check deadlines.",
-          count: 0,
-        });
-      }
-    } catch {
-      setDeadlineResult({
-        message: "Failed to connect to deadline alert service.",
-        count: 0,
-      });
-    } finally {
-      setCheckingDeadlines(false);
-      setTimeout(() => setDeadlineResult(null), 6000);
     }
   };
 
@@ -656,69 +614,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
           <div style={{ width: "1px", height: "20px", backgroundColor: "var(--border-subtle)", margin: "0 4px" }} />
 
-          {/* Check Deadlines & Alert Button */}
-          <button
-            onClick={handleCheckDeadlines}
-            disabled={checkingDeadlines}
-            className="btn-secondary"
-            style={{
-              fontSize: "12px",
-              padding: "6px 12px",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              backgroundColor: "var(--bg-surface)",
-              color: "var(--text-primary)",
-              cursor: checkingDeadlines ? "wait" : "pointer",
-              borderRadius: "var(--radius-md)",
-              border: "1px solid var(--border-subtle)",
-            }}
-            title="Scan upcoming task deadlines and trigger email alerts to assignees"
-          >
-            <Bell size={13} color="var(--accent)" />
-            {checkingDeadlines ? "Checking Deadlines..." : "Check Deadlines & Alert"}
-          </button>
         </div>
       </div>
-
-      {/* Deadline Alert Result Banner */}
-      {deadlineResult && (
-        <div
-          className="tasks-table-wrapper"
-          style={{
-            marginBottom: "24px",
-            padding: "12px 18px",
-            borderRadius: "var(--radius-md)",
-            backgroundColor: deadlineResult.count > 0 ? "rgba(16, 185, 129, 0.1)" : "var(--accent-light)",
-            border: `1px solid ${deadlineResult.count > 0 ? "rgba(16, 185, 129, 0.3)" : "var(--accent)"}`,
-            color: "var(--text-primary)",
-            fontSize: "13px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            animation: "fadeIn 0.2s ease-in-out",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <Bell size={16} color="var(--accent)" />
-            <span>{deadlineResult.message}</span>
-          </div>
-          <button
-            onClick={() => setDeadlineResult(null)}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--text-muted)",
-              padding: "4px",
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
 
       {loadedBoardId !== activeBoardId ? (
         <div style={{ minHeight: 300, display: "grid", placeItems: "center", color: "var(--text-muted)", fontSize: 13 }}>

@@ -232,54 +232,6 @@ export class R2Database {
     await this.deleteKey(`workspaces/registry/otp/${encodeURIComponent(cleanEmail)}.json`);
   }
 
-  // --- Sprint Task Deadline Scanner ---
-  async checkWorkspaceDeadlines(workspaceId: string): Promise<{ checked: number; alerted: TaskItem[] }> {
-    const key = `workspaces/${workspaceId}/tasks.json`;
-    const res = await this.getJson<TasksData>(key);
-    if (!res.data || !res.data.tasks || !res.data.tasks.length) {
-      return { checked: 0, alerted: [] };
-    }
-
-    const tasks = res.data.tasks;
-    const alerted: TaskItem[] = [];
-    const now = Date.now();
-    const DAY_MS = 24 * 60 * 60 * 1000;
-    let modified = false;
-
-    for (const task of tasks) {
-      if (task.status === "done" || !task.dueDate) continue;
-
-      const dueTimestamp = Date.parse(task.dueDate);
-      if (isNaN(dueTimestamp)) continue;
-
-      const timeRemaining = dueTimestamp - now;
-      // Alert if due within 48 hours or overdue up to 72 hours
-      const isApproachingOrOverdue = timeRemaining <= 48 * 60 * 60 * 1000 && timeRemaining >= -72 * 60 * 60 * 1000;
-
-      if (isApproachingOrOverdue) {
-        if (task.lastAlertedAt) {
-          const lastAlertTime = Date.parse(task.lastAlertedAt);
-          if (!isNaN(lastAlertTime) && now - lastAlertTime < DAY_MS) {
-            continue; // Skip, already alerted recently
-          }
-        }
-
-        task.lastAlertedAt = new Date().toISOString();
-        alerted.push({ ...task });
-        modified = true;
-      }
-    }
-
-    if (modified) {
-      await this.putJson(key, {
-        tasks,
-        updatedAt: new Date().toISOString(),
-      });
-    }
-
-    return { checked: tasks.length, alerted };
-  }
-
   // --- Organization & Team Workspaces ---
   async getUserWorkspaces(email: string): Promise<UserWorkspaceReference[]> {
     const cleanEmail = email.toLowerCase().trim();
