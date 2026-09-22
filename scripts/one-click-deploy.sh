@@ -84,6 +84,7 @@ echo "Provisioning Cloudflare Access for $APP_URL..."
   pulumi config set domain "${APP_URL#https://}"
   pulumi config set allowedEmails "[\"$CLOCEAN_ACCESS_EMAIL\"]"
   pulumi config set allowedEmailDomains '[]'
+  pulumi config set --secret cloudflare:apiToken "$CLOUDFLARE_API_TOKEN"
   pulumi up --yes
 )
 
