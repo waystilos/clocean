@@ -69,7 +69,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div
-      className="animate-fade-in"
+      className="animate-fade-in dashboard-view"
       style={{
         maxWidth: "960px",
         margin: "0 auto",
@@ -246,6 +246,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         >
           {activities.map((item, idx) => (
             <div
+              className="dashboard-activity-row"
               key={item.id || idx}
               onClick={() => {
                 if (item.type === "doc") onNavigateDoc("doc-manifesto");

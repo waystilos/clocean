@@ -480,6 +480,51 @@ describe("Clocean R2 Edge REST API & Database Tests", () => {
       expect(found.status).toBe("done");
     });
 
+    it("should support typed work items, notes, comments, and direct deletion", async () => {
+      const taskId = `work-item-${Date.now()}`;
+      const workItem = {
+        id: taskId,
+        title: "Preview upload fails on mobile",
+        type: "bug",
+        description: "Document previews should open without horizontal scrolling.",
+        status: "todo",
+        priority: "high",
+        dueDate: "",
+        assignee: { name: "Test User", email: testUserEmail, avatar: "" },
+        comments: [],
+        subtasks: [],
+      };
+
+      const tasks = await (await fetch(`${BASE_URL}/api/tasks`)).json() as any[];
+      const putRes = await fetch(`${BASE_URL}/api/tasks`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([...tasks, workItem]),
+      });
+      expect(putRes.status).toBe(200);
+
+      const commentRes = await fetch(`${BASE_URL}/api/tasks/${encodeURIComponent(taskId)}/comments?user=${encodeURIComponent(testUserEmail)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "I can reproduce this on Safari mobile." }),
+      });
+      expect(commentRes.status).toBe(201);
+      const comment = await commentRes.json() as any;
+      expect(comment.text).toContain("Safari mobile");
+      expect(comment.user.email).toBe(testUserEmail);
+
+      const saved = await (await fetch(`${BASE_URL}/api/tasks`)).json() as any[];
+      const savedItem = saved.find((item) => item.id === taskId);
+      expect(savedItem.type).toBe("bug");
+      expect(savedItem.description).toContain("horizontal scrolling");
+      expect(savedItem.comments).toHaveLength(1);
+
+      const deleteRes = await fetch(`${BASE_URL}/api/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+      expect(deleteRes.status).toBe(200);
+      const afterDelete = await (await fetch(`${BASE_URL}/api/tasks`)).json() as any[];
+      expect(afterDelete.some((item) => item.id === taskId)).toBe(false);
+    });
+
     it("should fetch workspace activity changelog", async () => {
       const res = await fetch(`${BASE_URL}/api/activity`);
       expect(res.status).toBe(200);

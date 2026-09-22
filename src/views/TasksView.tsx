@@ -17,8 +17,11 @@ import {
   Table as TableIcon,
   Bell,
   Calendar,
+  Bug,
+  Lightbulb,
+  MessageSquare,
 } from "lucide-react";
-import { TaskBoard, TaskItem, TaskSubtask, UserProfile, WorkspaceMember } from "../types.ts";
+import { TaskBoard, TaskComment, TaskItem, TaskSubtask, TaskType, UserProfile, WorkspaceMember } from "../types.ts";
 
 export function getTaskDeadlineInfo(dueDate?: string): {
   display: string;
@@ -135,6 +138,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [viewType, setViewType] = useState<"board" | "table">("board");
   const [isAddingIn, setIsAddingIn] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [newTaskType, setNewTaskType] = useState<TaskType>("task");
   const [newTaskPriority, setNewTaskPriority] = useState<"urgent" | "high" | "medium" | "low">("medium");
   const [newTaskAssigneeEmail, setNewTaskAssigneeEmail] = useState<string>(currentUser.email);
   const [newTaskDueDate, setNewTaskDueDate] = useState<string>(tomorrowStr);
@@ -151,6 +156,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
   // Task Detail Modal state
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [newCommentText, setNewCommentText] = useState("");
+  const [isPostingComment, setIsPostingComment] = useState(false);
   const [boards, setBoards] = useState<TaskBoard[]>([]);
   const [activeBoardId, setActiveBoardId] = useState("default");
   const [newBoardName, setNewBoardName] = useState("");
@@ -287,6 +294,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
     const newTask: TaskItem = {
       id: `task-${Date.now()}`,
       title: newTaskTitle.trim(),
+      type: newTaskType,
+      description: newTaskDescription.trim() || undefined,
       status,
       priority: newTaskPriority,
       dueDate: finalDueDate,
@@ -301,6 +310,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
     const updated = [...tasks, newTask];
     await onUpdateTasks(updated, activeBoardId);
     setNewTaskTitle("");
+    setNewTaskDescription("");
+    setNewTaskType("task");
     setNewTaskPriority("medium");
     setNewTaskAssigneeEmail(currentUser.email);
     setNewTaskDueDate(tomorrowStr);
@@ -316,10 +327,43 @@ export const TasksView: React.FC<TasksViewProps> = ({
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    const updated = tasks.filter((t) => t.id !== taskId);
-    await onUpdateTasks(updated, activeBoardId);
-    setSelectedTask(null);
+    if (!window.confirm("Delete this work item? This cannot be undone.")) return;
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}?boardId=${encodeURIComponent(activeBoardId)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not delete work item");
+      onLoadTasks?.(tasks.filter((task) => task.id !== taskId), activeBoardId);
+      setSelectedTask(null);
+    } catch (error: unknown) {
+      setBoardError(error instanceof Error ? error.message : "Could not delete work item");
+    }
   };
+
+  const handlePostComment = async () => {
+    if (!selectedTask || !newCommentText.trim() || isPostingComment) return;
+    setIsPostingComment(true);
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(selectedTask.id)}/comments?boardId=${encodeURIComponent(activeBoardId)}`, {
+        method: "POST",
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ text: newCommentText.trim() }),
+      });
+      const data = await response.json().catch(() => ({})) as TaskComment & { error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not add comment");
+      setSelectedTask({ ...selectedTask, comments: [...(selectedTask.comments || []), data] });
+      setNewCommentText("");
+    } catch (error: unknown) {
+      setBoardError(error instanceof Error ? error.message : "Could not add comment");
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
+
+  const getTaskTypeLabel = (type?: TaskType) => ({ task: "Task", bug: "Bug", feature: "Feature", improvement: "Improvement", question: "Question" }[type || "task"]);
+  const getTaskTypeIcon = (type?: TaskType) => type === "bug" ? <Bug size={12} /> : type === "feature" || type === "improvement" ? <Lightbulb size={12} /> : type === "question" ? <MessageSquare size={12} /> : <CheckSquare size={12} />;
 
   const handleSaveSelectedTask = async () => {
     if (!selectedTask) return;
@@ -401,7 +445,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
   return (
     <div
-      className="animate-fade-in"
+      className="animate-fade-in tasks-view"
       style={{
         maxWidth: "1200px",
         margin: "0 auto",
@@ -410,6 +454,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
     >
       {/* Header Row */}
       <div
+        className="tasks-header"
         style={{
           display: "flex",
           alignItems: "center",
@@ -445,7 +490,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
         </div>
 
         {/* Filters */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div className="tasks-filters" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <button
             onClick={() => setFilter("all")}
             className="btn-secondary"
@@ -581,6 +626,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
       {/* Deadline Alert Result Banner */}
       {deadlineResult && (
         <div
+          className="tasks-table-wrapper"
           style={{
             marginBottom: "24px",
             padding: "12px 18px",
@@ -915,21 +961,26 @@ export const TasksView: React.FC<TasksViewProps> = ({
                     >
                       {/* Priority Tag & Quick Status Transition */}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span
-                          style={{
-                            fontSize: "11px",
-                            fontWeight: 600,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.04em",
-                            padding: "2px 8px",
-                            borderRadius: "10px",
-                            backgroundColor: pBadge.bg,
-                            color: pBadge.color,
-                            border: pBadge.border,
-                          }}
-                        >
-                          {pBadge.label}
-                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", padding: "2px 7px", borderRadius: "10px", background: "var(--bg-nav-active)", color: "var(--text-secondary)" }}>
+                            {getTaskTypeIcon(task.type)} {getTaskTypeLabel(task.type)}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.04em",
+                              padding: "2px 8px",
+                              borderRadius: "10px",
+                              backgroundColor: pBadge.bg,
+                              color: pBadge.color,
+                              border: pBadge.border,
+                            }}
+                          >
+                            {pBadge.label}
+                          </span>
+                        </div>
 
                         <div style={{ display: "flex", alignItems: "center", gap: "2px" }} onClick={(e) => e.stopPropagation()}>
                           {colIdx > 0 && (
@@ -1078,7 +1129,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                     <input
                       type="text"
                       autoFocus
-                      placeholder="Task title... (Type @ to mention)"
+                      placeholder="Title..."
                       value={newTaskTitle}
                       onChange={(e) => setNewTaskTitle(e.target.value)}
                       onKeyDown={(e) => {
@@ -1094,8 +1145,28 @@ export const TasksView: React.FC<TasksViewProps> = ({
                       }}
                     />
 
+                    <textarea
+                      value={newTaskDescription}
+                      onChange={(e) => setNewTaskDescription(e.target.value)}
+                      placeholder="Add notes or acceptance criteria (optional)"
+                      rows={2}
+                      style={{ background: "transparent", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", outline: "none", color: "var(--text-primary)", fontSize: "12px", padding: "7px 8px", resize: "vertical" }}
+                    />
+
                     {/* Quick selectors for Priority and Assignee */}
                     <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <select
+                        value={newTaskType}
+                        onChange={(e) => setNewTaskType(e.target.value as TaskType)}
+                        aria-label="Work item type"
+                        style={{ backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: "11px", padding: "3px 6px", outline: "none" }}
+                      >
+                        <option value="task">Task</option>
+                        <option value="bug">Bug</option>
+                        <option value="feature">Feature</option>
+                        <option value="improvement">Improvement</option>
+                        <option value="question">Question</option>
+                      </select>
                       <select
                         value={newTaskPriority}
                         onChange={(e) => setNewTaskPriority(e.target.value as any)}
@@ -1290,6 +1361,36 @@ export const TasksView: React.FC<TasksViewProps> = ({
                     fontSize: "14px",
                     outline: "none",
                   }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "6px" }}>
+                  Work item type
+                </label>
+                <select
+                  value={selectedTask.type || "task"}
+                  onChange={(e) => setSelectedTask({ ...selectedTask, type: e.target.value as TaskType })}
+                  style={{ width: "100%", padding: "8px 12px", backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: "13px", outline: "none" }}
+                >
+                  <option value="task">Task</option>
+                  <option value="bug">Bug</option>
+                  <option value="feature">Feature</option>
+                  <option value="improvement">Improvement</option>
+                  <option value="question">Question</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "6px" }}>
+                  Notes and acceptance criteria
+                </label>
+                <textarea
+                  value={selectedTask.description || ""}
+                  onChange={(e) => setSelectedTask({ ...selectedTask, description: e.target.value })}
+                  rows={4}
+                  placeholder="Describe the work, context, or definition of done..."
+                  style={{ width: "100%", padding: "8px 12px", backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: "13px", outline: "none", resize: "vertical" }}
                 />
               </div>
 
@@ -1521,6 +1622,37 @@ export const TasksView: React.FC<TasksViewProps> = ({
                       </button>
                     )}
                   </div>
+                </div>
+              </div>
+
+              {/* Discussion */}
+              <div>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>
+                  <MessageSquare size={13} /> Discussion ({selectedTask.comments?.length || 0})
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "180px", overflowY: "auto", marginBottom: "8px" }}>
+                  {(selectedTask.comments || []).map((comment) => (
+                    <div key={comment.id} style={{ padding: "8px 10px", background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", marginBottom: "3px" }}>
+                        <strong style={{ fontSize: "11px", color: "var(--text-primary)" }}>{comment.user.name}</strong>
+                        <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{new Date(comment.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <div style={{ fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.4 }}>{comment.text}</div>
+                    </div>
+                  ))}
+                  {(selectedTask.comments || []).length === 0 && <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>No discussion yet.</span>}
+                </div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <input
+                    value={newCommentText}
+                    onChange={(e) => setNewCommentText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handlePostComment(); } }}
+                    placeholder="Write a comment..."
+                    aria-label="Write a comment"
+                    maxLength={5000}
+                    style={{ flex: 1, minWidth: 0, padding: "7px 9px", background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: "12px", outline: "none" }}
+                  />
+                  <button onClick={() => void handlePostComment()} className="btn-secondary" disabled={isPostingComment || !newCommentText.trim()} style={{ padding: "6px 10px", fontSize: "12px" }}>{isPostingComment ? "Posting…" : "Comment"}</button>
                 </div>
               </div>
 

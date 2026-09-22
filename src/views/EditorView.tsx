@@ -153,7 +153,7 @@ const STARTER_TEMPLATES = [
     title: "Weekly Team Sync Notes",
     icon: "file-text",
     tags: ["#meetings", "#notes"],
-    content: `# Weekly Team Sync Notes\n\n> [!NOTE]\n> **Meeting Goal**: Align on sprint deliverables, address roadblocks, and finalize deployment plan.\n\n### Attendees\n- @Alex Bailey (Lead)\n- @Elena Rostova (Engineering)\n- @Marcus Vance (Design)\n\n### Agenda\n1. Review sprint burndown and outstanding PRs\n2. Database architecture on Cloudflare R2\n3. Zero Trust Access configuration\n\n### Discussion Points\n- Performance benchmarks show sub-millisecond edge latency with Durable Objects.\n- ETag optimistic locking successfully prevents concurrent write collisions.\n\n### Action Items\n- [ ] Finalize production R2 bucket bindings\n- [ ] Invite QA engineers to workspace roster\n- [ ] Deploy v2-dashboard update\n`,
+    content: `# Weekly Team Sync Notes\n\n> [!NOTE]\n> **Meeting Goal**: Align on sprint deliverables, address roadblocks, and finalize deployment plan.\n\n### Attendees\n- Workspace lead\n- Engineering lead\n- Design lead\n\n### Agenda\n1. Review sprint burndown and outstanding PRs\n2. Database architecture on Cloudflare R2\n3. Zero Trust Access configuration\n\n### Discussion Points\n- Performance benchmarks show sub-millisecond edge latency with Durable Objects.\n- ETag optimistic locking successfully prevents concurrent write collisions.\n\n### Action Items\n- [ ] Finalize production R2 bucket bindings\n- [ ] Invite QA engineers to workspace roster\n- [ ] Deploy the next dashboard update\n`,
   },
   {
     id: "prd",
@@ -167,7 +167,7 @@ const STARTER_TEMPLATES = [
     title: "Sprint Planning",
     icon: "target",
     tags: ["#sprint", "#planning"],
-    content: `# Sprint 15 Planning & Goals\n\n> [!IMPORTANT]\n> **Sprint Theme**: Core Workspace Enhancements (Slash Menu, Multi-View Kanban/Table, Public Sharing).\n\n## Sprint Objectives\n1. Release fluid Slash command menu for rich document authoring.\n2. Add Table View alongside Kanban board in Tasks view.\n3. Complete Red-Team security verification of all edge routes.\n\n## Workstream Breakdown\n| Workstream | Owner | Estimated Days | Risk Level |\n| :--- | :--- | :---: | ---: |\n| Document Engine | @Elena | 3 days | Low |\n| Kanban & Table Multi-View | @Marcus | 2 days | Low |\n| Edge Auth & Public Sharing | @Alex | 2 days | Medium |\n\n## Identified Risks & Mitigations\n> [!WARNING]\n> Public document sharing must strictly isolate internal workspace metadata, preventing ID enumeration or member leakage.\n`,
+    content: `# Sprint 15 Planning & Goals\n\n> [!IMPORTANT]\n> **Sprint Theme**: Core Workspace Enhancements (Slash Menu, Multi-View Kanban/Table, Public Sharing).\n\n## Sprint Objectives\n1. Release fluid Slash command menu for rich document authoring.\n2. Add Table View alongside Kanban board in Tasks view.\n3. Complete Red-Team security verification of all edge routes.\n\n## Workstream Breakdown\n| Workstream | Owner | Estimated Days | Risk Level |\n| :--- | :--- | :---: | ---: |\n| Document Engine | Engineering lead | 3 days | Low |\n| Kanban & Table Multi-View | Product team | 2 days | Low |\n| Edge Auth & Public Sharing | Workspace lead | 2 days | Medium |\n\n## Identified Risks & Mitigations\n> [!WARNING]\n> Public document sharing must strictly isolate internal workspace metadata, preventing ID enumeration or member leakage.\n`,
   },
   {
     id: "wiki",
@@ -181,7 +181,7 @@ const STARTER_TEMPLATES = [
     title: "Engineering Design Doc",
     icon: "cpu",
     tags: ["#architecture", "#engineering"],
-    content: `# RFC: Edge-Native Transactional Email & Mentions\n\n> [!NOTE]\n> **Author**: Alex Bailey\n> **Status**: Accepted & Implemented\n\n## 1. Context & Motivation\nWhen collaborators are @ mentioned in documents, comments, or sprint tasks, they need immediate email notifications with deep-links to the exact document.\n\n## 2. Technical Design\n\`\`\`typescript\ninterface MentionNotification {\n  id: string;\n  workspaceId: string;\n  recipientEmail: string;\n  documentId: string;\n  contextSnippet: string;\n}\n\`\`\`\n\n## 3. Security Considerations\n> [!CAUTION]\n> Ensure recipient emails are verified against the workspace members roster to prevent arbitrary relay of unsolicited emails.\n`,
+    content: `# RFC: Edge-Native Transactional Email & Mentions\n\n> [!NOTE]\n> **Author**: Workspace team\n> **Status**: Accepted & Implemented\n\n## 1. Context & Motivation\nWhen collaborators are @ mentioned in documents, comments, or sprint tasks, they need immediate email notifications with deep-links to the exact document.\n\n## 2. Technical Design\n\`\`\`typescript\ninterface MentionNotification {\n  id: string;\n  workspaceId: string;\n  recipientEmail: string;\n  documentId: string;\n  contextSnippet: string;\n}\n\`\`\`\n\n## 3. Security Considerations\n> [!CAUTION]\n> Ensure recipient emails are verified against the workspace members roster to prevent arbitrary relay of unsolicited emails.\n`,
   },
 ];
 
@@ -758,7 +758,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
       icon: <TableIcon size={16} />,
       execute: () =>
         executeSlashCommand(
-          "\n| Feature | Status | Assignee |\n| :--- | :---: | ---: |\n| Document Sync | Done | @Elena |\n| Kanban Tasks | In Progress | @Marcus |\n| Moodboard Photos | Todo | @Alex |\n\n"
+          "\n| Feature | Status | Assignee |\n| :--- | :---: | ---: |\n| Document Sync | Done | Engineering lead |\n| Kanban Tasks | In Progress | Product team |\n| Workspace Media | Todo | Unassigned |\n\n"
         ),
     },
     {
@@ -2125,7 +2125,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
           <button
             onClick={() =>
               executeSlashCommand(
-                "\n| Feature | Status | Assignee |\n| :--- | :---: | ---: |\n| Document Sync | Done | @Elena |\n| Kanban Tasks | In Progress | @Marcus |\n| Moodboard Photos | Todo | @Alex |\n\n"
+                "\n| Feature | Status | Assignee |\n| :--- | :---: | ---: |\n| Document Sync | Done | Engineering lead |\n| Kanban Tasks | In Progress | Product team |\n| Workspace Media | Todo | Unassigned |\n\n"
               )
             }
             className="btn-icon"

@@ -87,10 +87,26 @@ export const TaskSubtaskSchema = z.object({
 });
 export type TaskSubtask = z.infer<typeof TaskSubtaskSchema>;
 
+export const TaskTypeSchema = z.enum(["task", "bug", "feature", "improvement", "question"]);
+export type TaskType = z.infer<typeof TaskTypeSchema>;
+
+export const TaskCommentSchema = z.object({
+  id: z.string().min(1),
+  text: z.string().min(1).max(5000),
+  user: z.object({
+    name: z.string().max(200),
+    email: z.string().email(),
+    avatar: z.string().max(2000).optional(),
+  }),
+  createdAt: z.string(),
+});
+export type TaskComment = z.infer<typeof TaskCommentSchema>;
+
 export const TaskItemSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1).max(300),
   description: z.string().max(10000).optional(),
+  type: TaskTypeSchema.optional(),
   status: z.enum(["todo", "inprogress", "in_progress", "done"]),
   priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
   dueDate: z.string().optional(),
@@ -104,6 +120,7 @@ export const TaskItemSchema = z.object({
   ]).optional(),
   tags: z.array(z.string().max(50)).max(50).optional(),
   subtasks: z.array(TaskSubtaskSchema).max(100).optional(),
+  comments: z.array(TaskCommentSchema).max(200).optional(),
   lastAlertedAt: z.string().optional(),
 });
 export type TaskItem = z.infer<typeof TaskItemSchema>;

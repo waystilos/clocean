@@ -97,10 +97,24 @@ export interface TaskSubtask {
   completed: boolean;
 }
 
+export type TaskType = "task" | "bug" | "feature" | "improvement" | "question";
+
+export interface TaskComment {
+  id: string;
+  text: string;
+  user: {
+    name: string;
+    email: string;
+    avatar?: string;
+  };
+  createdAt: string;
+}
+
 export interface TaskItem {
   id: string;
   title: string;
   description?: string;
+  type?: TaskType;
   status: "todo" | "inprogress" | "done";
   priority?: "urgent" | "high" | "medium" | "low";
   dueDate: string;
@@ -111,6 +125,7 @@ export interface TaskItem {
   };
   tags?: string[];
   subtasks?: TaskSubtask[];
+  comments?: TaskComment[];
   lastAlertedAt?: string;
 }
 

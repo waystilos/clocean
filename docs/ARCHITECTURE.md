@@ -80,7 +80,8 @@ Powered by [Hono](https://hono.dev/), a lightweight, edge-optimized routing fram
 * `POST /api/user/avatar`: Uploads and validates custom profile avatar pictures directly to R2.
 * `GET /api/user/avatar/:email`: Edge-cached streaming of user avatar images with Dicebear fallback.
 * `GET /api/task-boards`, `POST /api/task-boards`: Lists and creates independent task boards.
-* `GET /api/tasks?boardId=:id`, `PUT /api/tasks?boardId=:id`: Persists each board's Kanban tasks with calendar due dates.
+* `GET /api/tasks?boardId=:id`, `PUT /api/tasks?boardId=:id`: Persists each board's typed ADO-style work items with notes, assignees, priorities, and calendar due dates.
+* `POST /api/tasks/:taskId/comments`, `DELETE /api/tasks/:taskId`: Adds authenticated discussion comments or removes a work item using the board's R2 ETag.
 * `POST /api/tasks/check-deadlines`: Scans tasks for deadlines due within 48 hours and sends email alerts.
 * `GET /api/photos`: Legacy media metadata retained for existing R2 records; media is presented from Documents in the main UI.
 

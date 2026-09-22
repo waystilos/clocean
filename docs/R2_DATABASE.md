@@ -166,14 +166,16 @@ Stores team members and their permission levels.
 ```
 
 ### 6. Tasks with Calendar Due Dates (`workspaces/{wsId}/tasks.json`)
-Stores Kanban tasks with assignees and deadline tracking.
+Stores ADO-style work items with assignees, notes, discussion, and deadline tracking. `type` is one of `task`, `bug`, `feature`, `improvement`, or `question`; older records may omit it and are treated as tasks.
 ```json
 [
   {
     "id": "task-security-audit",
     "title": "Submit Cloudflare Zero Trust Audit",
+    "type": "task",
     "status": "in_progress",
     "priority": "high",
+    "description": "Capture the current Access policy and attach the review notes.",
     "dueDate": "2026-10-15",
     "assignee": {
       "name": "Alex Sterling",
@@ -181,10 +183,20 @@ Stores Kanban tasks with assignees and deadline tracking.
       "avatar": "/api/user/avatar/alex%40clocean.co"
     },
     "tags": ["#security", "#audit"],
+    "comments": [
+      {
+        "id": "comment-1",
+        "text": "The evidence folder is ready for review.",
+        "user": { "name": "Workspace owner", "email": "owner@example.com" },
+        "createdAt": "2026-10-14T09:00:00.000Z"
+      }
+    ],
     "lastAlertedAt": "2026-10-14T09:00:00.000Z"
   }
 ]
 ```
+
+The authenticated API supports `POST /api/tasks/:taskId/comments` for discussion and `DELETE /api/tasks/:taskId` for direct work-item removal. Both routes enforce workspace membership and use the board's R2 ETag for optimistic concurrency.
 
 Additional boards are registered in `workspaces/{wsId}/task-boards.json` and store their tasks under `workspaces/{wsId}/task-boards/{boardId}.json`. The default board remains compatible with `tasks.json`, allowing existing installations to migrate without changing their current task data.
 

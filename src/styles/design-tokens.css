@@ -241,6 +241,17 @@ body {
   }
   .mobile-bottom-nav button.active { color: var(--accent-text); background: var(--accent-light); }
   .database-view { padding: 20px 14px !important; }
+  .dashboard-view, .tasks-view { padding: 24px 14px !important; gap: 24px !important; }
+  .tasks-header { align-items: stretch !important; flex-direction: column; margin-bottom: 24px !important; }
+  .tasks-header > div:first-child { min-width: 0; }
+  .tasks-header > div:first-child > div { flex-wrap: wrap; }
+  .tasks-filters { flex-wrap: wrap; align-items: stretch !important; }
+  .tasks-filters > button { flex: 1 1 auto; }
+  .tasks-table-wrapper { overflow-x: auto !important; }
+  .tasks-table-wrapper table { min-width: 760px; }
+  .dashboard-activity-row { min-width: 0; gap: 10px; }
+  .dashboard-activity-row > div:first-child { min-width: 0; }
+  .dashboard-activity-row > div:first-child span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .database-heading { align-items: stretch !important; flex-direction: column; }
   .database-create, .database-actions { flex-wrap: wrap; }
   .database-create input, .database-actions input { min-width: 0; flex: 1 1 140px; }

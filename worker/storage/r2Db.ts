@@ -506,6 +506,30 @@ export class R2Database {
       });
     if (changed) await this.putJson(key, { workspaceId: "default", members });
 
+    // Remove historical demo work items and activity from the production default workspace.
+    // Local development keeps these fixtures so the open-source test environment remains useful.
+    const demoNames = new Set(["Alex Sterling", "Marcus Vance", "Elena Rostova", "Sofia Chen"]);
+    const tasksKey = "workspaces/default/tasks.json";
+    const tasksResult = await this.getJson<TasksData>(tasksKey);
+    if (tasksResult.data?.tasks) {
+      const productionTasks = tasksResult.data.tasks.filter((task) => {
+        const assigneeEmail = typeof task.assignee === "object" && task.assignee ? task.assignee.email?.toLowerCase() : "";
+        return !demoEmails.has(assigneeEmail || "") && !/^task-[1-6]$/.test(task.id);
+      });
+      if (productionTasks.length !== tasksResult.data.tasks.length) {
+        await this.putJson(tasksKey, { tasks: productionTasks, updatedAt: new Date().toISOString() }, tasksResult.etag || undefined);
+      }
+    }
+
+    const activityKey = "workspaces/default/activity.json";
+    const activityResult = await this.getJson<ActivitiesData>(activityKey);
+    if (activityResult.data?.activities) {
+      const productionActivities = activityResult.data.activities.filter((activity) => !demoNames.has(activity.user));
+      if (productionActivities.length !== activityResult.data.activities.length) {
+        await this.putJson(activityKey, { activities: productionActivities }, activityResult.etag || undefined);
+      }
+    }
+
     const meta = await this.getWorkspaceMetadata("default");
     if (meta && owner && meta.ownerEmail !== owner.email) {
       meta.ownerEmail = owner.email;
@@ -777,42 +801,42 @@ Clocean replaces heavy SQL servers with structured JSON documents backed by Clou
             title: "Define ocean palette values",
             status: "todo",
             dueDate: "Due Oct 29",
-            assignee: { name: "Alex Sterling", email: "alex@clocean.co" },
+            assignee: { name: "Unassigned", email: "" },
           },
           {
             id: "task-2",
             title: "Configure baseline grid",
             status: "todo",
             dueDate: "Due Nov 2",
-            assignee: { name: "Marcus Vance", email: "marcus@clocean.co" },
+            assignee: { name: "Unassigned", email: "" },
           },
           {
             id: "task-3",
             title: "Draft typography manifesto",
             status: "inprogress",
             dueDate: "Due Oct 27",
-            assignee: { name: "Elena Rostova", email: "elena@clocean.co" },
+            assignee: { name: "Unassigned", email: "" },
           },
           {
             id: "task-4",
             title: "Implement warm parchment assets",
             status: "inprogress",
             dueDate: "Due Oct 28",
-            assignee: { name: "Alex Sterling", email: "alex@clocean.co" },
+            assignee: { name: "Unassigned", email: "" },
           },
           {
             id: "task-5",
             title: "Create Skog-inspired design blueprint",
             status: "done",
             dueDate: "Completed Oct 24",
-            assignee: { name: "Alex Sterling", email: "alex@clocean.co" },
+            assignee: { name: "Unassigned", email: "" },
           },
           {
             id: "task-6",
             title: "Setup core file structures",
             status: "done",
             dueDate: "Completed Oct 23",
-            assignee: { name: "Sofia Chen", email: "sofia@clocean.co" },
+            assignee: { name: "Unassigned", email: "" },
           },
         ],
       };
@@ -898,35 +922,35 @@ Clocean replaces heavy SQL servers with structured JSON documents backed by Clou
             title: "Project ocean launch overview",
             type: "doc",
             timestamp: "2 hours ago",
-            user: "Alex Sterling",
+            user: "Workspace",
           },
           {
             id: "act-2",
             title: "Brand system guidelines.pdf",
             type: "file",
             timestamp: "Yesterday",
-            user: "Alex Sterling",
+            user: "Workspace",
           },
           {
             id: "act-3",
             title: "Review interactive prototypes",
             type: "task",
             timestamp: "Yesterday",
-            user: "Marcus Vance",
+            user: "Workspace",
           },
           {
             id: "act-4",
             title: "Moodboard_v2.jpg",
             type: "photo",
             timestamp: "Oct 24",
-            user: "Elena Rostova",
+            user: "Workspace",
           },
           {
             id: "act-5",
             title: "Sprint 14 planning scratchpad",
             type: "doc",
             timestamp: "Oct 23",
-            user: "Alex Sterling",
+            user: "Workspace",
           },
         ],
       };

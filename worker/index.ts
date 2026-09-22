@@ -6,6 +6,7 @@ import {
   TreeNode,
   DocContent,
   TaskItem,
+  TaskComment,
   TasksData,
   TaskBoard,
   PhotosData,
@@ -780,7 +781,7 @@ app.get("/api/workspaces/:wsId/invite-info", async (c) => {
     name: meta.name,
     icon: meta.icon,
     memberCount: members.length,
-    ownerName: owner ? owner.name : "A team member",
+    ownerName: c.env.ENVIRONMENT === "production" ? "Workspace owner" : owner ? owner.name : "A team member",
   });
 });
 
@@ -1792,6 +1793,58 @@ app.get("/api/tasks", async (c) => {
   const key = boardId === "default" ? `workspaces/${ws}/tasks.json` : `workspaces/${ws}/task-boards/${boardId}.json`;
   const { data } = await db.getJson<TasksData>(key);
   return c.json(data?.tasks || []);
+});
+
+app.post("/api/tasks/:taskId/comments", async (c) => {
+  const ws = getWorkspaceId(c);
+  const boardId = c.req.query("boardId") || "default";
+  const taskId = c.req.param("taskId");
+  const body = await c.req.json().catch(() => null) as { text?: unknown } | null;
+  const text = typeof body?.text === "string" ? body.text.trim().slice(0, 5000) : "";
+  if (!isValidId(taskId) || !text) return c.json({ error: "A valid comment is required" }, 400);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  if (boardId !== "default") {
+    const registry = await db.getJson<{ boards: TaskBoard[] }>(`workspaces/${ws}/task-boards.json`);
+    if (!registry.data?.boards.some((board) => board.id === boardId)) return c.json({ error: "Task board not found" }, 404);
+  }
+  const tasksKey = boardId === "default" ? `workspaces/${ws}/tasks.json` : `workspaces/${ws}/task-boards/${boardId}.json`;
+  const existing = await db.getJson<TasksData>(tasksKey);
+  const tasks = existing.data?.tasks || [];
+  const task = tasks.find((item) => item.id === taskId);
+  if (!task) return c.json({ error: "Task not found" }, 404);
+  const email = getRequesterEmail(c);
+  const members = await db.getWorkspaceMembers(ws);
+  const member = members.find((item) => item.email.toLowerCase() === email.toLowerCase());
+  const profile = await db.getUserProfile(email);
+  const comment: TaskComment = {
+    id: `comment-${crypto.randomUUID()}`,
+    text,
+    user: { name: member?.name || profile.name, email, avatar: member?.avatar || profile.avatar },
+    createdAt: new Date().toISOString(),
+  };
+  const updatedTasks = tasks.map((item) => item.id === taskId ? { ...item, comments: [...(item.comments || []), comment] } : item);
+  const write = await db.putJson(tasksKey, { tasks: updatedTasks, updatedAt: new Date().toISOString() }, existing.etag || undefined);
+  if (!write.ok) return c.json({ error: "Task changed concurrently; please retry" }, 409);
+  return c.json(comment, 201);
+});
+
+app.delete("/api/tasks/:taskId", async (c) => {
+  const ws = getWorkspaceId(c);
+  const boardId = c.req.query("boardId") || "default";
+  const taskId = c.req.param("taskId");
+  if (!isValidId(taskId)) return c.json({ error: "Invalid task ID" }, 400);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  if (boardId !== "default") {
+    const registry = await db.getJson<{ boards: TaskBoard[] }>(`workspaces/${ws}/task-boards.json`);
+    if (!registry.data?.boards.some((board) => board.id === boardId)) return c.json({ error: "Task board not found" }, 404);
+  }
+  const tasksKey = boardId === "default" ? `workspaces/${ws}/tasks.json` : `workspaces/${ws}/task-boards/${boardId}.json`;
+  const existing = await db.getJson<TasksData>(tasksKey);
+  const tasks = existing.data?.tasks || [];
+  if (!tasks.some((item) => item.id === taskId)) return c.json({ error: "Task not found" }, 404);
+  const write = await db.putJson(tasksKey, { tasks: tasks.filter((item) => item.id !== taskId), updatedAt: new Date().toISOString() }, existing.etag || undefined);
+  if (!write.ok) return c.json({ error: "Task changed concurrently; please retry" }, 409);
+  return c.json({ success: true });
 });
 
 app.put("/api/tasks", async (c) => {
