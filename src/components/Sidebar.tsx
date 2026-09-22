@@ -4,7 +4,6 @@ import {
   ListCheck,
   FileText,
   Folder,
-  Image as ImageIcon,
   Layout,
   Layers,
   Download,
@@ -99,7 +98,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: "notes", label: "Notes", icon: <FileText size={18} /> },
     { id: "documents", label: "Documents", icon: <Folder size={18} /> },
     { id: "databases", label: "Databases", icon: <Table2 size={18} /> },
-    { id: "photos", label: "Photos", icon: <ImageIcon size={18} /> },
   ];
 
   const secondaryNavItems: { id: ViewMode; label: string; icon: React.ReactNode }[] = [

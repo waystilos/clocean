@@ -7,6 +7,7 @@ import {
   DocContent,
   TaskItem,
   TasksData,
+  TaskBoard,
   PhotosData,
   ActivitiesData,
   DocComment,
@@ -1689,10 +1690,42 @@ app.get("/api/files/:id/:filename", async (c) => {
 });
 
 // Kanban Tasks
+app.get("/api/task-boards", async (c) => {
+  const ws = getWorkspaceId(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const key = `workspaces/${ws}/task-boards.json`;
+  const existing = await db.getJson<{ boards: TaskBoard[] }>(key);
+  if (existing.data?.boards) return c.json(existing.data.boards);
+  const current = await db.getJson<TasksData>(`workspaces/${ws}/tasks.json`);
+  const now = new Date().toISOString();
+  const board: TaskBoard = { id: "default", name: "Sprint board", createdAt: now, updatedAt: now };
+  await db.putJson(key, { boards: [board] });
+  if (current.data) await db.putJson(`workspaces/${ws}/task-boards/default.json`, current.data);
+  return c.json([board]);
+});
+
+app.post("/api/task-boards", async (c) => {
+  const json = await c.req.json().catch(() => null) as { name?: unknown } | null;
+  const name = typeof json?.name === "string" ? json.name.trim().slice(0, 100) : "";
+  if (!name) return c.json({ error: "Board name is required" }, 400);
+  const ws = getWorkspaceId(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const key = `workspaces/${ws}/task-boards.json`;
+  const current = await db.getJson<{ boards: TaskBoard[] }>(key);
+  const now = new Date().toISOString();
+  const board: TaskBoard = { id: `board-${crypto.randomUUID()}`, name, createdAt: now, updatedAt: now };
+  const write = await db.putJson(key, { boards: [...(current.data?.boards || []), board] }, current.etag || undefined);
+  if (!write.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
+  await db.putJson(`workspaces/${ws}/task-boards/${board.id}.json`, { tasks: [], updatedAt: now });
+  return c.json(board, 201);
+});
+
 app.get("/api/tasks", async (c) => {
   const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const { data } = await db.getJson<TasksData>(`workspaces/${ws}/tasks.json`);
+  const boardId = c.req.query("boardId") || "default";
+  const key = boardId === "default" ? `workspaces/${ws}/tasks.json` : `workspaces/${ws}/task-boards/${boardId}.json`;
+  const { data } = await db.getJson<TasksData>(key);
   return c.json(data?.tasks || []);
 });
 
@@ -1706,7 +1739,9 @@ app.put("/api/tasks", async (c) => {
   const tasks = parsed.data;
   const senderEmail = getRequesterEmail(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
-  const existing = await db.getJson<TasksData>(`workspaces/${ws}/tasks.json`);
+  const boardId = c.req.query("boardId") || "default";
+  const tasksKey = boardId === "default" ? `workspaces/${ws}/tasks.json` : `workspaces/${ws}/task-boards/${boardId}.json`;
+  const existing = await db.getJson<TasksData>(tasksKey);
   const previousTasks = existing.data?.tasks || [];
   const prevMap = new Map<string, TaskItem>(previousTasks.map((t) => [t.id, t]));
 
@@ -1795,7 +1830,7 @@ app.put("/api/tasks", async (c) => {
     }
   }
 
-  const taskWrite = await db.putJson(`workspaces/${ws}/tasks.json`, {
+  const taskWrite = await db.putJson(tasksKey, {
     tasks,
     updatedAt: new Date().toISOString(),
   }, existing.etag || undefined);

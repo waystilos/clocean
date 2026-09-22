@@ -110,6 +110,13 @@ export interface TaskItem {
   lastAlertedAt?: string;
 }
 
+export interface TaskBoard {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PhotoItem {
   id: string;
   name: string;

@@ -1,28 +1,68 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { X, Download, FileText, ExternalLink } from "lucide-react";
 import { TreeNode, DocAttachment } from "../types.ts";
+import { fetchAuthenticatedFile } from "../lib/filePreview.ts";
 
 interface FilePreviewModalProps {
   file: TreeNode | DocAttachment | null;
   onClose: () => void;
+  sessionToken?: string | null;
 }
 
-export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClose }) => {
+export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClose, sessionToken = null }) => {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fileUrl = file
+    ? "url" in file && file.url
+      ? file.url
+      : `/api/files/${file.id}/${encodeURIComponent(file.name)}`
+    : null;
+
+  useEffect(() => {
+    if (!fileUrl) {
+      setPreviewUrl(null);
+      setPreviewError(null);
+      return;
+    }
+
+    let active = true;
+    let objectUrl: string | null = null;
+    setIsLoading(true);
+    setPreviewError(null);
+    setPreviewUrl(null);
+
+    fetchAuthenticatedFile(fileUrl, sessionToken)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewUrl(objectUrl);
+      })
+      .catch((error: unknown) => {
+        if (active) setPreviewError(error instanceof Error ? error.message : "Unable to load file preview");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [fileUrl, sessionToken]);
+
   if (!file) return null;
 
-  const fileUrl =
-    "url" in file && file.url
-      ? file.url
-      : `/api/files/${file.id}/${encodeURIComponent(file.name)}`;
-
+  const mimeType = "mimeType" in file ? file.mimeType : file.type;
+  const filename = file.name.toLowerCase();
   const isImage =
-    file.name.endsWith(".png") ||
-    file.name.endsWith(".jpg") ||
-    file.name.endsWith(".jpeg") ||
-    file.name.endsWith(".webp") ||
-    file.name.endsWith(".svg");
+    mimeType?.startsWith("image/") ||
+    [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"].some((ext) => filename.endsWith(ext));
 
-  const isPdf = file.name.endsWith(".pdf");
+  const isPdf = mimeType === "application/pdf" || filename.endsWith(".pdf");
+  const isText = mimeType?.startsWith("text/") || [".txt", ".md", ".csv", ".json"].some((ext) => filename.endsWith(ext));
+  const renderedUrl = previewUrl || fileUrl;
 
   return (
     <div
@@ -74,7 +114,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
 
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <a
-              href={fileUrl}
+              href={renderedUrl || undefined}
               download={file.name}
               className="btn-secondary"
               style={{ padding: "6px 12px", fontSize: "12px" }}
@@ -82,7 +122,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
               <Download size={14} /> Download
             </a>
             <a
-              href={fileUrl}
+              href={renderedUrl || undefined}
               target="_blank"
               rel="noreferrer"
               className="btn-icon"
@@ -108,9 +148,19 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
             backgroundColor: "var(--bg-primary)",
           }}
         >
-          {isImage ? (
+          {isLoading ? (
+            <p style={{ color: "var(--text-secondary)" }}>Loading preview…</p>
+          ) : previewError ? (
+            <div style={{ textAlign: "center", color: "var(--text-secondary)" }}>
+              <p style={{ color: "var(--text-primary)", fontWeight: 500 }}>Preview unavailable</p>
+              <p style={{ marginTop: "6px", fontSize: "13px" }}>{previewError}</p>
+              <a href={fileUrl || undefined} download={file.name} className="btn-primary" style={{ marginTop: "16px" }}>
+                <Download size={14} /> Download File
+              </a>
+            </div>
+          ) : isImage ? (
             <img
-              src={fileUrl}
+              src={renderedUrl || undefined}
               alt={file.name}
               style={{
                 maxWidth: "100%",
@@ -121,7 +171,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
             />
           ) : isPdf ? (
             <iframe
-              src={fileUrl}
+              src={renderedUrl || undefined}
               title={file.name}
               sandbox="allow-scripts"
               style={{
@@ -130,6 +180,13 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
                 border: "none",
                 borderRadius: "var(--radius-md)",
               }}
+            />
+          ) : isText ? (
+            <iframe
+              src={renderedUrl || undefined}
+              title={file.name}
+              sandbox=""
+              style={{ width: "100%", height: "65vh", border: "none", backgroundColor: "var(--bg-surface)" }}
             />
           ) : (
             <div
@@ -164,7 +221,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
                 </p>
               </div>
               <a
-                href={fileUrl}
+                href={renderedUrl || undefined}
                 download={file.name}
                 className="btn-primary"
                 style={{ marginTop: "8px" }}

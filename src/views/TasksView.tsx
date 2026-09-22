@@ -18,7 +18,7 @@ import {
   Bell,
   Calendar,
 } from "lucide-react";
-import { TaskItem, TaskSubtask, UserProfile, WorkspaceMember } from "../types.ts";
+import { TaskBoard, TaskItem, TaskSubtask, UserProfile, WorkspaceMember } from "../types.ts";
 
 export function getTaskDeadlineInfo(dueDate?: string): {
   display: string;
@@ -113,7 +113,7 @@ interface TasksViewProps {
   tasks: TaskItem[];
   currentUser: UserProfile;
   workspaceId?: string;
-  onUpdateTasks: (tasks: TaskItem[]) => Promise<void>;
+  onUpdateTasks: (tasks: TaskItem[], boardId?: string) => Promise<void>;
   sessionToken?: string | null;
 }
 
@@ -149,6 +149,37 @@ export const TasksView: React.FC<TasksViewProps> = ({
   // Task Detail Modal state
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [boards, setBoards] = useState<TaskBoard[]>([]);
+  const [activeBoardId, setActiveBoardId] = useState("default");
+  const [newBoardName, setNewBoardName] = useState("");
+
+  useEffect(() => {
+    fetch("/api/task-boards", { headers: getAuthHeaders() })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setBoards(data as TaskBoard[]))
+      .catch(() => {});
+  }, [workspaceId]);
+
+  useEffect(() => {
+    fetch(`/api/tasks?boardId=${encodeURIComponent(activeBoardId)}`, { headers: getAuthHeaders() })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => onUpdateTasks(data as TaskItem[], activeBoardId))
+      .catch(() => {});
+  }, [activeBoardId]);
+
+  const createBoard = async () => {
+    if (!newBoardName.trim()) return;
+    const response = await fetch("/api/task-boards", {
+      method: "POST",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ name: newBoardName.trim() }),
+    });
+    if (!response.ok) return;
+    const board = await response.json() as TaskBoard;
+    setBoards((current) => [...current, board]);
+    setNewBoardName("");
+    setActiveBoardId(board.id);
+  };
 
   const handleCheckDeadlines = async () => {
     setCheckingDeadlines(true);
@@ -243,7 +274,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
     };
 
     const updated = [...tasks, newTask];
-    await onUpdateTasks(updated);
+    await onUpdateTasks(updated, activeBoardId);
     setNewTaskTitle("");
     setNewTaskPriority("medium");
     setNewTaskAssigneeEmail(currentUser.email);
@@ -253,7 +284,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
   const handleMoveTask = async (taskId: string, nextStatus: "todo" | "inprogress" | "done") => {
     const updated = tasks.map((t) => (t.id === taskId ? { ...t, status: nextStatus } : t));
-    await onUpdateTasks(updated);
+    await onUpdateTasks(updated, activeBoardId);
     if (selectedTask && selectedTask.id === taskId) {
       setSelectedTask({ ...selectedTask, status: nextStatus });
     }
@@ -261,14 +292,14 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
   const handleDeleteTask = async (taskId: string) => {
     const updated = tasks.filter((t) => t.id !== taskId);
-    await onUpdateTasks(updated);
+    await onUpdateTasks(updated, activeBoardId);
     setSelectedTask(null);
   };
 
   const handleSaveSelectedTask = async () => {
     if (!selectedTask) return;
     const updated = tasks.map((t) => (t.id === selectedTask.id ? selectedTask : t));
-    await onUpdateTasks(updated);
+    await onUpdateTasks(updated, activeBoardId);
     setSelectedTask(null);
   };
 
@@ -280,7 +311,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
       );
       return { ...t, subtasks };
     });
-    await onUpdateTasks(updated);
+    await onUpdateTasks(updated, activeBoardId);
     if (selectedTask && selectedTask.id === taskId) {
       setSelectedTask({
         ...selectedTask,
@@ -374,8 +405,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
             Sprint Task Board
           </h1>
           <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "4px" }}>
-            Drag-and-drop Kanban execution backed by zero-cost Cloudflare R2
+            Choose a board and keep each project’s work organized in its own Kanban view.
           </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14 }}>
+            <select value={activeBoardId} onChange={(e) => setActiveBoardId(e.target.value)} aria-label="Task board">
+              {(boards.length ? boards : [{ id: "default", name: "Sprint board" } as TaskBoard]).map((board) => (
+                <option key={board.id} value={board.id}>{board.name}</option>
+              ))}
+            </select>
+            <input value={newBoardName} onChange={(e) => setNewBoardName(e.target.value)} placeholder="New board name" aria-label="New board name" maxLength={100} />
+            <button className="btn-secondary" onClick={createBoard}><Plus size={14} /> Board</button>
+          </div>
         </div>
 
         {/* Filters */}

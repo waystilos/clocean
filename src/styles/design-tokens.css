@@ -206,6 +206,8 @@ body {
   .database-create, .database-actions { flex-wrap: wrap; }
   .database-create input, .database-actions input { min-width: 0; flex: 1 1 140px; }
   .database-layout { display: flex !important; flex-direction: column; gap: 14px !important; }
+  .notes-workspace { display: flex !important; flex-direction: column; }
+  .notes-workspace > aside { border-right: 0 !important; border-bottom: 1px solid var(--border-subtle); max-height: 260px; overflow-y: auto; }
   .database-panel { min-width: 0; }
   .database-toolbar { align-items: stretch; flex-direction: column; }
   .database-actions { width: 100%; }

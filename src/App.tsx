@@ -5,7 +5,7 @@ import { DashboardView } from "./views/DashboardView.tsx";
 import { EditorView } from "./views/EditorView.tsx";
 import { DocumentsView } from "./views/DocumentsView.tsx";
 import { TasksView } from "./views/TasksView.tsx";
-import { PhotosView } from "./views/PhotosView.tsx";
+import { NotesView } from "./views/NotesView.tsx";
 import { DatabasesView } from "./views/DatabasesView.tsx";
 import { SearchModal } from "./components/SearchModal.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
@@ -322,11 +322,11 @@ export const App: React.FC = () => {
     setTree((prev) => prev.filter((n) => n.id !== fileId));
   };
 
-  const handleUpdateTasks = async (newTasks: TaskItem[]) => {
+  const handleUpdateTasks = async (newTasks: TaskItem[], boardId = "default") => {
     if (!currentUser?.email) return;
     const previousTasks = tasks;
     setTasks(newTasks);
-    const res = await fetch("/api/tasks", {
+    const res = await fetch(`/api/tasks?boardId=${encodeURIComponent(boardId)}`, {
       method: "PUT",
       headers: getAuthHeaders({
         "Content-Type": "application/json",
@@ -344,6 +344,18 @@ export const App: React.FC = () => {
   const handleNavigateDoc = (docId: string) => {
     setActiveDocId(docId);
     setCurrentView("notes");
+  };
+
+  const handleCreateTreeNode = async (type: "doc" | "folder", parentId: string | null, name: string) => {
+    const res = await fetch("/api/tree/node", {
+      method: "POST",
+      headers: getAuthHeaders({ "Content-Type": "application/json", "x-workspace-id": currentWorkspace.id }),
+      body: JSON.stringify({ type, parentId, name }),
+    });
+    if (!res.ok) return null;
+    const node = await res.json() as TreeNode;
+    setTree((current) => [node, ...current]);
+    return node;
   };
 
   const handleAcceptInvite = async () => {
@@ -598,11 +610,14 @@ export const App: React.FC = () => {
           )}
 
           {currentView === "notes" && (
-            <EditorView
-              docId={activeDocId}
+            <NotesView
+              tree={tree}
+              activeDocId={activeDocId}
               currentUser={currentUser}
               workspaceId={currentWorkspace.id}
               sessionToken={sessionToken}
+              onSelectDoc={handleNavigateDoc}
+              onCreateNode={handleCreateTreeNode}
               onOpenFilePreview={(att) => setPreviewFile(att)}
             />
           )}
@@ -630,12 +645,6 @@ export const App: React.FC = () => {
             <DatabasesView workspaceId={currentWorkspace.id} currentUser={currentUser} getAuthHeaders={getAuthHeaders} />
           )}
 
-          {currentView === "photos" && (
-            <PhotosView
-              photos={photos}
-              onUploadPhoto={(file) => handleUploadFile(file)}
-            />
-          )}
 
           {(currentView === "templates" || currentView === "import" || currentView === "trash") && (
             <div
@@ -711,7 +720,7 @@ export const App: React.FC = () => {
         sessionToken={sessionToken}
       />
 
-      <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+      <FilePreviewModal file={previewFile} sessionToken={sessionToken} onClose={() => setPreviewFile(null)} />
 
       {/* Pending Workspace Invite Banner for Authenticated User */}
       {pendingInvite && (
