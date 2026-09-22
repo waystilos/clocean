@@ -217,3 +217,33 @@ export const MentionNotificationPayloadSchema = z.object({
   type: z.enum(["doc", "comment", "task", "invite", "test"]).optional(),
 });
 export type MentionNotificationPayload = z.infer<typeof MentionNotificationPayloadSchema>;
+
+export const UpdateUserProfileSchema = z.object({
+  name: z.string().trim().max(100).optional(),
+  bio: z.string().trim().max(500).optional(),
+});
+export type UpdateUserProfileInput = z.infer<typeof UpdateUserProfileSchema>;
+
+export const CreateTreeNodeSchema = z.object({
+  id: z.string().max(100).optional(),
+  name: z.string().trim().min(1, "Name is required").max(200),
+  type: z.enum(["doc", "file", "folder"]).default("doc"),
+  parentId: z.string().nullable().optional(),
+  size: z.number().nonnegative().optional(),
+  mimeType: z.string().max(100).optional(),
+  tags: z.array(z.string().max(50)).optional(),
+});
+export type CreateTreeNodeInput = z.infer<typeof CreateTreeNodeSchema>;
+
+export const UpdateTreeNodeSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  parentId: z.string().nullable().optional(),
+  tags: z.array(z.string().max(50)).optional(),
+});
+export type UpdateTreeNodeInput = z.infer<typeof UpdateTreeNodeSchema>;
+
+export const ToggleFavoriteSchema = z.object({
+  docId: z.string().trim().min(1, "docId is required").max(100),
+});
+export type ToggleFavoriteInput = z.infer<typeof ToggleFavoriteSchema>;
+

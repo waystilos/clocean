@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # ==============================================================================
 # Pulumi Cloudflare R2 State Backend Login
@@ -8,10 +8,10 @@ set -e
 # Zero external database or backend costs.
 # ==============================================================================
 
-ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-${CF_ACCOUNT_ID}}"
+ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-${CF_ACCOUNT_ID:-}}"
 BUCKET_NAME="${PULUMI_R2_BUCKET:-clocean-pulumi-state}"
-R2_KEY_ID="${AWS_ACCESS_KEY_ID:-${R2_ACCESS_KEY_ID}}"
-R2_SECRET="${AWS_SECRET_ACCESS_KEY:-${R2_SECRET_ACCESS_KEY}}"
+R2_KEY_ID="${AWS_ACCESS_KEY_ID:-${R2_ACCESS_KEY_ID:-}}"
+R2_SECRET="${AWS_SECRET_ACCESS_KEY:-${R2_SECRET_ACCESS_KEY:-}}"
 REGION="${AWS_REGION:-auto}"
 
 if [ -z "$ACCOUNT_ID" ]; then
@@ -43,13 +43,19 @@ export AWS_ACCESS_KEY_ID="$R2_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$R2_SECRET"
 export AWS_REGION="$REGION"
 
+if [ -z "${PULUMI_CONFIG_PASSPHRASE:-}" ]; then
+  echo "Note: PULUMI_CONFIG_PASSPHRASE is not set in environment."
+  echo "Pulumi will prompt for a passphrase when creating or updating stacks."
+fi
+
 ENDPOINT="${ACCOUNT_ID}.r2.cloudflarestorage.com"
 LOGIN_URL="s3://${BUCKET_NAME}?endpoint=${ENDPOINT}&region=${REGION}"
 
 # Optional: Attempt to auto-create the state bucket via wrangler if logged in
 if command -v npx >/dev/null 2>&1; then
-  echo "Checking R2 state bucket: $BUCKET_NAME..."
-  if npx wrangler r2 bucket list 2>/dev/null | grep -q "$BUCKET_NAME"; then
+  echo "Verifying R2 state bucket: $BUCKET_NAME..."
+  EXISTING_BUCKETS=$(npx wrangler r2 bucket list 2>/dev/null || true)
+  if echo "$EXISTING_BUCKETS" | grep -Eq "(^|[[:space:]]|\")$BUCKET_NAME([[:space:]]|\"|$)"; then
     echo "Bucket '$BUCKET_NAME' verified."
   else
     echo "Attempting to create R2 bucket '$BUCKET_NAME' via Wrangler..."

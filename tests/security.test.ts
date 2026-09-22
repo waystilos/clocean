@@ -390,6 +390,40 @@ describe("Clocean Enterprise Security Regression Test Suite", () => {
       const data = (await res.json()) as any;
       expect(data.error).toContain("Invalid tasks array payload");
     });
+
+    it("should reject user profile update with non-string fields", async () => {
+      const res = await fetch(`${BASE_URL}/api/user/profile?user=alex`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: 12345 }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Invalid profile payload");
+    });
+
+    it("should reject tree node creation with empty name or invalid type", async () => {
+      const res = await fetch(`${BASE_URL}/api/tree/node?user=alex`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "   ", type: "invalid_type" }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Invalid tree node payload");
+    });
+
+    it("should reject favorites toggle with missing or empty docId", async () => {
+      const res = await fetch(`${BASE_URL}/api/workspaces/default/favorites?user=alex`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docId: "" }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Invalid favorites payload");
+    });
   });
 });
+
 

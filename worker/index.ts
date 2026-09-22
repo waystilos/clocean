@@ -31,6 +31,10 @@ import {
   TaskItemSchema,
   AddCommentSchema,
   MentionNotificationPayloadSchema,
+  UpdateUserProfileSchema,
+  CreateTreeNodeSchema,
+  UpdateTreeNodeSchema,
+  ToggleFavoriteSchema,
 } from "./schemas.ts";
 
 export { DocSessionDO };
@@ -133,11 +137,16 @@ app.get("/api/me", async (c) => {
 
 app.put("/api/user/profile", async (c) => {
   const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
-  const body = await c.req.json<{ name?: string; bio?: string }>();
+  const json = await c.req.json().catch(() => null);
+  const parsed = UpdateUserProfileSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid profile payload", details: parsed.error.issues }, 400);
+  }
+
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const profile = await db.getUserProfile(email);
-  if (body.name) profile.name = body.name.slice(0, 100);
-  if (body.bio !== undefined) profile.bio = body.bio.slice(0, 500);
+  if (parsed.data.name !== undefined) profile.name = parsed.data.name;
+  if (parsed.data.bio !== undefined) profile.bio = parsed.data.bio;
   profile.updatedAt = new Date().toISOString();
   await db.putUserProfile(profile);
   return c.json(profile);
@@ -347,15 +356,21 @@ app.get("/api/tree", async (c) => {
 
 app.post("/api/tree/node", async (c) => {
   const ws = getWorkspaceId(c);
-  const body = await c.req.json<Partial<TreeNode>>();
+  const json = await c.req.json().catch(() => null);
+  const parsed = CreateTreeNodeSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid tree node payload", details: parsed.error.issues }, 400);
+  }
+
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const { data, etag } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
   if (!data) return c.json({ error: "Tree not found" }, 404);
 
+  const body = parsed.data;
   const newNode: TreeNode = {
-    id: body.id || `node-${crypto.randomUUID()}`,
-    name: body.name ? sanitizeFilename(body.name) : "Untitled",
-    type: body.type || "doc",
+    id: body.id && isValidId(body.id) ? body.id : `node-${crypto.randomUUID()}`,
+    name: sanitizeFilename(body.name),
+    type: body.type,
     parentId: body.parentId || null,
     size: body.size || 0,
     mimeType: body.mimeType,
@@ -389,7 +404,12 @@ app.put("/api/tree/node/:id", async (c) => {
   if (!isValidId(id)) return c.json({ error: "Invalid node ID parameter" }, 400);
   const ws = getWorkspaceId(c);
 
-  const body = await c.req.json<Partial<TreeNode>>();
+  const json = await c.req.json().catch(() => null);
+  const parsed = UpdateTreeNodeSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid tree node update payload", details: parsed.error.issues }, 400);
+  }
+
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const { data, etag } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
   if (!data) return c.json({ error: "Tree not found" }, 404);
@@ -397,6 +417,7 @@ app.put("/api/tree/node/:id", async (c) => {
   const node = data.nodes.find((n) => n.id === id);
   if (!node) return c.json({ error: "Node not found" }, 404);
 
+  const body = parsed.data;
   if (body.name) node.name = sanitizeFilename(body.name);
   if (body.parentId !== undefined) node.parentId = body.parentId;
   if (body.tags) node.tags = body.tags;
@@ -668,15 +689,21 @@ app.get("/api/workspaces/:ws/favorites", async (c) => {
 app.post("/api/workspaces/:ws/favorites", async (c) => {
   const ws = c.req.param("ws") || getWorkspaceId(c);
   if (!isValidId(ws)) return c.json({ error: "Invalid workspace ID" }, 400);
-  const body = await c.req.json<{ docId: string }>();
-  if (!body.docId || !isValidId(body.docId)) return c.json({ error: "Invalid doc ID" }, 400);
+
+  const json = await c.req.json().catch(() => null);
+  const parsed = ToggleFavoriteSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid favorites payload", details: parsed.error.issues }, 400);
+  }
+  if (!isValidId(parsed.data.docId)) return c.json({ error: "Invalid doc ID" }, 400);
+
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const res = await db.getJson<WorkspaceFavoritesData>(`workspaces/${ws}/favorites.json`);
   const favs = res.data || { workspaceId: ws, docIds: [] };
-  if (favs.docIds.includes(body.docId)) {
-    favs.docIds = favs.docIds.filter((id) => id !== body.docId);
+  if (favs.docIds.includes(parsed.data.docId)) {
+    favs.docIds = favs.docIds.filter((id) => id !== parsed.data.docId);
   } else {
-    favs.docIds.push(body.docId);
+    favs.docIds.push(parsed.data.docId);
   }
   await db.putJson(`workspaces/${ws}/favorites.json`, favs);
   return c.json(favs.docIds);

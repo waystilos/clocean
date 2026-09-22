@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # ==============================================================================
 # Clocean — Automated Cloudflare R2 Provisioning
@@ -20,7 +20,7 @@ if ! command -v npx >/dev/null 2>&1; then
 fi
 
 echo "Verifying Cloudflare credentials..."
-ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-${CF_ACCOUNT_ID}}"
+ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-${CF_ACCOUNT_ID:-}}"
 
 if [ -z "$ACCOUNT_ID" ]; then
   DETECTED_ID=$(npx wrangler whoami 2>/dev/null | grep -oE '[a-f0-9]{32}' | head -n 1 || true)
@@ -35,6 +35,9 @@ if [ -z "$ACCOUNT_ID" ]; then
   echo "Please log in with 'npx wrangler login' or export CLOUDFLARE_ACCOUNT_ID."
 fi
 
+# Query existing buckets once upfront
+EXISTING_BUCKETS=$(npx wrangler r2 bucket list 2>/dev/null || true)
+
 # Step 2: Function to safely check and create an R2 bucket
 create_r2_bucket() {
   local bucket="$1"
@@ -44,10 +47,7 @@ create_r2_bucket() {
   echo "Target: $bucket"
   echo "Purpose: $description"
 
-  # Check existing buckets
-  EXISTING_BUCKETS=$(npx wrangler r2 bucket list 2>/dev/null || true)
-
-  if echo "$EXISTING_BUCKETS" | grep -q "\"$bucket\"" || echo "$EXISTING_BUCKETS" | grep -q "$bucket"; then
+  if echo "$EXISTING_BUCKETS" | grep -Eq "(^|[[:space:]]|\")$bucket([[:space:]]|\"|$)"; then
     echo "Status: [EXISTS] Bucket '$bucket' is already provisioned."
   else
     echo "Status: [CREATING] Provisioning '$bucket'..."
