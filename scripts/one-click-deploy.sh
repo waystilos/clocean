@@ -29,6 +29,13 @@ require_value() {
   fi
 }
 
+require_variable() {
+  if [ "${!1+x}" != x ]; then
+    echo "Error: define $1 before running one-click deployment." >&2
+    exit 1
+  fi
+}
+
 require_command npx
 require_command pnpm
 require_command pulumi
@@ -37,7 +44,9 @@ require_command openssl
 require_value CLOCEAN_ACCESS_EMAIL
 require_value CLOUDFLARE_ACCESS_TEAM_DOMAIN
 require_value CLOUDFLARE_API_TOKEN
-require_value PULUMI_CONFIG_PASSPHRASE
+# The existing stack may intentionally use an empty passphrase. The variable
+# must still be present so an accidental local default is never assumed.
+require_variable PULUMI_CONFIG_PASSPHRASE
 
 ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-${CF_ACCOUNT_ID:-}}"
 if [ -z "$ACCOUNT_ID" ]; then
