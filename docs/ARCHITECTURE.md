@@ -72,6 +72,7 @@ Powered by [Hono](https://hono.dev/), a lightweight, edge-optimized routing fram
 * `GET /api/tree`: Returns workspace folder and document tree.
 * `POST /api/tree/node`: Creates a note or folder with an optional parent folder.
 * `PUT /api/tree/node/:id`: Renames or moves a note or folder.
+  * Moves validate that the destination is a folder and reject self or descendant cycles.
 * `POST /api/upload`: Direct streaming multipart upload to R2 without buffering in RAM.
 * `GET /api/files/:id/:filename`: Streams authenticated binary files from R2 with byte-range requests for documents and media.
 * `POST /api/user/avatar`: Uploads and validates custom profile avatar pictures directly to R2.

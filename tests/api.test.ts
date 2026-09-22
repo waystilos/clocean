@@ -130,6 +130,13 @@ describe("Clocean R2 Edge REST API & Database Tests", () => {
       const nestedDoc = (await docRes.json()) as any;
       expect(nestedDoc.parentId).toBe(folder.id);
 
+      const invalidParentRes = await fetch(`${BASE_URL}/api/tree/node/${folder.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentId: nestedDoc.id }),
+      });
+      expect(invalidParentRes.status).toBe(400);
+
       // 3. Move Document back to Root
       const moveRes = await fetch(`${BASE_URL}/api/tree/node/${nestedDoc.id}`, {
         method: "PUT",

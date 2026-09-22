@@ -362,6 +362,18 @@ export const App: React.FC = () => {
     return node;
   };
 
+  const handleMoveTreeNode = async (nodeId: string, parentId: string | null) => {
+    const res = await fetch(`/api/tree/node/${encodeURIComponent(nodeId)}`, {
+      method: "PUT",
+      headers: getAuthHeaders({ "Content-Type": "application/json", "x-workspace-id": currentWorkspace.id }),
+      body: JSON.stringify({ parentId }),
+    });
+    if (!res.ok) return null;
+    const moved = await res.json() as TreeNode;
+    setTree((current) => current.map((node) => node.id === moved.id ? moved : node));
+    return moved;
+  };
+
   const handleAcceptInvite = async () => {
     if (!pendingInvite) return;
     try {
@@ -622,6 +634,7 @@ export const App: React.FC = () => {
               sessionToken={sessionToken}
               onSelectDoc={handleNavigateDoc}
               onCreateNode={handleCreateTreeNode}
+              onMoveNode={handleMoveTreeNode}
               onOpenFilePreview={(att) => setPreviewFile(att)}
             />
           )}

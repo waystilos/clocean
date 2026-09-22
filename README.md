@@ -12,7 +12,7 @@ Because it runs on Cloudflare's serverless edge and R2 has zero egress fees, you
 
 - **Collaborative Document Editor**: Write documents with rich markdown, interactive checklists, code blocks, and linked attachments. Multi-user editing is powered by Cloudflare Durable Objects over WebSockets with live cursor tracking.
 - **Notion-Style Workspace & Doc Invites**: Share a workspace or document with a link (`?join=workspaceId` or `?join=ws&doc=docId`). Teammates authenticate through the Cloudflare Access protected application before joining.
-- **Workspace Navigation**: Organize notes and documents in nested folders, create notes from the tree, and move between workspace resources without losing context.
+- **Workspace Navigation**: Organize notes and documents in nested folders, create notes from the tree, drag items between folders, and move between workspace resources without losing context.
 - **Sprint Tasks & Boards**: Create separate Kanban boards, switch between projects, and use board or table views with assignees, tags, and calendar due dates.
 - **Cloudflare Drive & Media**: Upload PDFs, design specs, text files, and images directly to R2. Documents owns the file and media experience, with authenticated previews and no bandwidth egress charges.
 - **Custom Profile Avatars**: Upload profile photos directly to R2 with instant client preview and edge-cached streaming.

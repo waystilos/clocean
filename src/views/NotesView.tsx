@@ -11,6 +11,7 @@ interface NotesViewProps {
   sessionToken?: string | null;
   onSelectDoc: (docId: string) => void;
   onCreateNode: (type: "doc" | "folder", parentId: string | null, name: string) => Promise<TreeNode | null>;
+  onMoveNode: (nodeId: string, parentId: string | null) => Promise<TreeNode | null>;
   onOpenFilePreview?: (attachment: DocAttachment) => void;
 }
 
@@ -22,10 +23,14 @@ export const NotesView: React.FC<NotesViewProps> = ({
   sessionToken,
   onSelectDoc,
   onCreateNode,
+  onMoveNode,
   onOpenFilePreview,
 }) => {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const nodes = useMemo(() => tree.filter((node) => node.type === "doc" || node.type === "folder"), [tree]);
   const childrenOf = (parentId: string | null) => nodes.filter((node) => node.parentId === parentId);
 
@@ -42,6 +47,15 @@ export const NotesView: React.FC<NotesViewProps> = ({
     await onCreateNode("folder", null, name);
   };
 
+  const moveNode = async (nodeId: string, parentId: string | null) => {
+    if (nodeId === parentId) return;
+    setMoveError(null);
+    const moved = await onMoveNode(nodeId, parentId);
+    if (!moved) setMoveError("Could not move that item. Try again.");
+    setDraggedNodeId(null);
+    setDropTargetId(null);
+  };
+
   const renderTree = (parentId: string | null, depth = 0): React.ReactNode =>
     childrenOf(parentId).map((node) => {
       const children = childrenOf(node.id);
@@ -50,6 +64,29 @@ export const NotesView: React.FC<NotesViewProps> = ({
       return (
         <React.Fragment key={node.id}>
           <button
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", node.id);
+              setDraggedNodeId(node.id);
+              setMoveError(null);
+            }}
+            onDragEnd={() => {
+              setDraggedNodeId(null);
+              setDropTargetId(null);
+            }}
+            onDragOver={(event) => {
+              if (node.type !== "folder" || node.id === draggedNodeId) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              setDropTargetId(node.id);
+            }}
+            onDragLeave={() => setDropTargetId((current) => current === node.id ? null : current)}
+            onDrop={(event) => {
+              event.preventDefault();
+              const nodeId = event.dataTransfer.getData("text/plain") || draggedNodeId;
+              if (nodeId && node.type === "folder") void moveNode(nodeId, node.id);
+            }}
             onClick={() => {
               if (node.type === "folder") setExpanded((current) => {
                 const next = new Set(current);
@@ -61,7 +98,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
             style={{
               display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 8px",
               paddingLeft: 8 + depth * 16, border: 0, borderRadius: 6, textAlign: "left", cursor: "pointer",
-              background: isSelected ? "var(--bg-nav-active)" : "transparent", color: "var(--text-primary)",
+              background: dropTargetId === node.id ? "var(--accent-light)" : isSelected ? "var(--bg-nav-active)" : "transparent", color: "var(--text-primary)",
             }}
           >
             {node.type === "folder" ? (isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <span style={{ width: 14 }} />}
@@ -86,7 +123,25 @@ export const NotesView: React.FC<NotesViewProps> = ({
         <button className="btn-primary" onClick={() => createNote()} disabled={creating} style={{ width: "100%", justifyContent: "center", marginBottom: 12 }}>
           <Plus size={15} /> New note
         </button>
-        <div>{renderTree(null)}</div>
+        {moveError && <div role="alert" style={{ color: "var(--danger, #b42318)", fontSize: 12, marginBottom: 8 }}>{moveError}</div>}
+        <div
+          onDragOver={(event) => {
+            if (!draggedNodeId) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setDropTargetId("root");
+          }}
+          onDragLeave={() => setDropTargetId((current) => current === "root" ? null : current)}
+          onDrop={(event) => {
+            event.preventDefault();
+            const nodeId = event.dataTransfer.getData("text/plain") || draggedNodeId;
+            if (nodeId) void moveNode(nodeId, null);
+          }}
+          style={{ minHeight: 80, borderRadius: 8, outline: dropTargetId === "root" ? "1px dashed var(--accent)" : undefined }}
+          aria-label="Workspace root drop target"
+        >
+          {renderTree(null)}
+        </div>
       </aside>
       <section style={{ minWidth: 0 }}>
         <EditorView docId={activeDocId} currentUser={currentUser} workspaceId={workspaceId} sessionToken={sessionToken} onOpenFilePreview={onOpenFilePreview} />

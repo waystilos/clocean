@@ -1048,8 +1048,24 @@ app.put("/api/tree/node/:id", async (c) => {
   if (!node) return c.json({ error: "Node not found" }, 404);
 
   const body = parsed.data;
+  if (body.parentId !== undefined && body.parentId !== null) {
+    const parent = data.nodes.find((candidate) => candidate.id === body.parentId);
+    if (!parent) return c.json({ error: "Parent folder not found" }, 400);
+    if (parent.type !== "folder") return c.json({ error: "Notes and files can only be placed in folders" }, 400);
+  }
   if (body.name) node.name = sanitizeFilename(body.name);
-  if (body.parentId !== undefined) node.parentId = body.parentId;
+  if (body.parentId !== undefined) {
+    if (body.parentId === id) return c.json({ error: "A node cannot contain itself" }, 400);
+    const visited = new Set<string>();
+    let cursor = body.parentId;
+    while (cursor) {
+      if (cursor === id) return c.json({ error: "A folder cannot be moved into its own descendant" }, 400);
+      if (visited.has(cursor)) return c.json({ error: "Invalid folder hierarchy" }, 400);
+      visited.add(cursor);
+      cursor = data.nodes.find((candidate) => candidate.id === cursor)?.parentId || null;
+    }
+    node.parentId = body.parentId;
+  }
   if (body.tags) node.tags = body.tags;
   node.updatedAt = "Just now";
 
