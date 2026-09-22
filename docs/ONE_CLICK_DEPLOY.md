@@ -1,23 +1,12 @@
-# One-Click Deployment Guide
+# Deployment Guide
 
-This guide walks you through deploying **Clocean** to your Cloudflare account in under 5 minutes with zero database setup required.
+> [!IMPORTANT]
+> **Work in Progress (WIP)**: The 1-click deployment button is temporarily disabled during testing. Use the command-line deployment steps below.
 
----
-
-## 🚀 Option 1: Deploy with Workers Button (Fastest)
-
-Click the official Cloudflare Workers deployment button below:
-
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ardonbailey/clocean)
-
-### What this automated flow does:
-1. Prompts you to authorize Cloudflare with your GitHub account.
-2. Creates a private fork of the Clocean repository in your GitHub account.
-3. Provisions the required Cloudflare R2 bucket (`clocean-storage`).
-4. Compiles the React 19 frontend and builds the Cloudflare Worker.
-5. Deploys the application live on a `*.workers.dev` subdomain.
+This guide walks you through deploying **Clocean** to your Cloudflare account with zero database setup required.
 
 ---
+
 
 ## 🛠️ Option 2: Command-Line Deployment (Wrangler)
 

@@ -1,8 +1,10 @@
 # Clocean — Notion + Google Drive Platform on Cloudflare
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ardonbailey/clocean)
+> [!IMPORTANT]
+> **Work in Progress (WIP)**: Clocean is currently under active development and undergoing testing. One-click deploy will be enabled once full production readiness is finalized.
 
 **Clocean** is a unified workspace combining rich block document editing (Notion-style) with asset storage and file management (Google Drive-style), built specifically for Cloudflare's serverless edge ecosystem.
+
 
 By replacing traditional relational or NoSQL databases with **Cloudflare R2 as both the file store and the JSON database**, Clocean operates at virtually **$0/month in database costs** with **zero egress fees**.
 
@@ -91,17 +93,14 @@ The user interface strictly replicates the **Figma Design System** (`Clocean - A
 
 ---
 
-## 📦 One-Click Deployment
+## 📦 Deployment (Command Line / Wrangler)
 
-### Method 1: Deploy with Workers Button
-Click the button below to fork and deploy directly to your Cloudflare account:
+> [!NOTE]
+> The automated 1-Click "Deploy with Workers" button is temporarily disabled while the platform is under active development. You can deploy directly via the command line below.
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ardonbailey/clocean)
-
-### Method 2: Command Line (Wrangler)
 1. Clone the repository and install dependencies:
    ```bash
-   git clone https://github.com/ardonbailey/clocean.git
+   git clone https://github.com/waystilos/clocean.git
    cd clocean
    npm install
    ```
@@ -117,9 +116,10 @@ Click the button below to fork and deploy directly to your Cloudflare account:
    npm run deploy
    ```
 
-Your application is now live globally on Cloudflare Workers and Pages!
+Your application will be live globally on Cloudflare Workers and Pages!
 
 ---
+
 
 ## 💻 Local Development
 
