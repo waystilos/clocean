@@ -37,6 +37,7 @@ interface SidebarProps {
   tree?: TreeNode[];
   onSelectDoc?: (docId: string) => void;
   onSignOut?: () => void;
+  sessionToken?: string | null;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -54,6 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   tree = [],
   onSelectDoc,
   onSignOut,
+  sessionToken,
 }) => {
   const [isWsDropdownOpen, setIsWsDropdownOpen] = useState(false);
   const [favoriteDocIds, setFavoriteDocIds] = useState<string[]>([]);
@@ -62,7 +64,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Load favorites for current workspace
   useEffect(() => {
     if (!currentWorkspace?.id) return;
-    fetch(`/api/workspaces/${currentWorkspace.id}/favorites`)
+    fetch(`/api/workspaces/${currentWorkspace.id}/favorites`, {
+      headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {},
+    })
       .then((res) => (res.ok ? res.json() : []))
       .then((favs: any) => {
         if (Array.isArray(favs)) {

@@ -23,6 +23,7 @@ interface CreateWorkspaceModalProps {
   onClose: () => void;
   onCreated: (newWorkspace: UserWorkspaceReference) => void;
   currentUser: UserProfile;
+  sessionToken?: string | null;
 }
 
 interface PresetIconItem {
@@ -50,6 +51,7 @@ export const CreateWorkspaceModal: React.FC<CreateWorkspaceModalProps> = ({
   onClose,
   onCreated,
   currentUser,
+  sessionToken,
 }) => {
   const [name, setName] = useState("");
   const [selectedIcon, setSelectedIcon] = useState("layers");
@@ -72,7 +74,10 @@ export const CreateWorkspaceModal: React.FC<CreateWorkspaceModalProps> = ({
     try {
       const res = await fetch(`/api/workspaces?user=${encodeURIComponent(currentUser.email)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+        },
         body: JSON.stringify({
           name: name.trim(),
           icon: selectedIcon,

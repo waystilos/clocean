@@ -70,6 +70,7 @@ interface EditorViewProps {
   workspaceId?: string;
   onUpdateAttachments?: () => void;
   onOpenFilePreview?: (attachment: DocAttachment) => void;
+  sessionToken?: string | null;
 }
 
 interface RemoteCursor {
@@ -187,7 +188,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
   currentUser,
   workspaceId = "default",
   onOpenFilePreview,
+  sessionToken,
 }) => {
+  const getAuthHeaders = (extra: Record<string, string> = {}) => {
+    const token = sessionToken || localStorage.getItem("clocean_session_token");
+    return { ...extra, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  };
   const [doc, setDoc] = useState<DocContent | null>(null);
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -258,7 +264,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // Load initial document from API
   useEffect(() => {
     fetch(`/api/docs/${docId}`, {
-      headers: { "x-workspace-id": workspaceId },
+      headers: getAuthHeaders({ "x-workspace-id": workspaceId }),
     })
       .then((res) => res.json())
       .then((raw) => {
@@ -278,7 +284,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   // Load favorites
   useEffect(() => {
-    fetch(`/api/workspaces/${workspaceId}/favorites`)
+    fetch(`/api/workspaces/${workspaceId}/favorites`, { headers: getAuthHeaders() })
       .then((res) => (res.ok ? res.json() : []))
       .then((favs: any) => {
         if (Array.isArray(favs)) {
@@ -290,7 +296,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   // Load workspace members for @ mention autocompletion
   useEffect(() => {
-    fetch(`/api/workspaces/${workspaceId}/members?user=${encodeURIComponent(currentUser.email)}`)
+    fetch(`/api/workspaces/${workspaceId}/members?user=${encodeURIComponent(currentUser.email)}`, { headers: getAuthHeaders() })
       .then((res) => (res.ok ? res.json() : []))
       .then((data: any) => {
         setMembers(Array.isArray(data) ? data : data?.members || []);
@@ -301,7 +307,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // Load comments
   const loadComments = () => {
     fetch(`/api/docs/${docId}/comments`, {
-      headers: { "x-workspace-id": workspaceId },
+      headers: getAuthHeaders({ "x-workspace-id": workspaceId }),
     })
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => {
@@ -417,10 +423,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
     const timeout = setTimeout(() => {
       fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
         method: "PUT",
-        headers: {
+        headers: getAuthHeaders({
           "Content-Type": "application/json",
           "x-workspace-id": workspaceId,
-        },
+        }),
         body: JSON.stringify({
           title,
           content: newContent,
@@ -453,10 +459,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
     fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
       method: "PUT",
-      headers: {
+      headers: getAuthHeaders({
         "Content-Type": "application/json",
         "x-workspace-id": workspaceId,
-      },
+      }),
       body: JSON.stringify({
         title: newTitle,
         content,
@@ -473,10 +479,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
     setIsEmojiPickerOpen(false);
     fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
       method: "PUT",
-      headers: {
+      headers: getAuthHeaders({
         "Content-Type": "application/json",
         "x-workspace-id": workspaceId,
-      },
+      }),
       body: JSON.stringify({ title, content, tags, attachments, icon: newIcon, cover }),
     });
   };
@@ -486,10 +492,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
     setIsCoverPickerOpen(false);
     fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
       method: "PUT",
-      headers: {
+      headers: getAuthHeaders({
         "Content-Type": "application/json",
         "x-workspace-id": workspaceId,
-      },
+      }),
       body: JSON.stringify({ title, content, tags, attachments, icon, cover: newCover }),
     });
   };
@@ -499,7 +505,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     try {
       const res = await fetch(`/api/workspaces/${workspaceId}/favorites`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json", "x-workspace-id": workspaceId }),
         body: JSON.stringify({ docId }),
       });
       if (res.ok) {
@@ -516,10 +522,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
     try {
       const res = await fetch(`/api/docs/${docId}/share`, {
         method: "POST",
-        headers: {
+        headers: getAuthHeaders({
           "Content-Type": "application/json",
           "x-workspace-id": workspaceId,
-        },
+        }),
         body: JSON.stringify({ isPublic: nextPublic }),
       });
       if (res.ok) {
@@ -536,10 +542,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   useEffect(() => {
     if (!isShareOpen) return;
     const ws = workspaceId || "default";
-    const token = localStorage.getItem("clocean_session_token");
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    if (currentUser?.email) headers["x-user-email"] = currentUser.email;
+    const headers = getAuthHeaders();
 
     fetch(`/api/workspaces/${ws}/members?user=${encodeURIComponent(currentUser.email)}`, { headers })
       .then((res) => (res.ok ? res.json() : []))
@@ -561,10 +564,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     setDocInviteSuccess(null);
     try {
       const ws = workspaceId || "default";
-      const token = localStorage.getItem("clocean_session_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      if (currentUser?.email) headers["x-user-email"] = currentUser.email;
+      const headers = getAuthHeaders({ "Content-Type": "application/json" });
 
       const res = await fetch(`/api/workspaces/${ws}/members?user=${encodeURIComponent(currentUser.email)}`, {
         method: "POST",
@@ -595,7 +595,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     setIsLoadingRevisions(true);
     try {
       const res = await fetch(`/api/docs/${docId}/revisions`, {
-        headers: { "x-workspace-id": workspaceId },
+        headers: getAuthHeaders({ "x-workspace-id": workspaceId }),
       });
       if (res.ok) {
         const list: any = await res.json();
@@ -613,7 +613,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     try {
       const res = await fetch(`/api/docs/${docId}/revisions/${revId}/restore`, {
         method: "POST",
-        headers: { "x-workspace-id": workspaceId },
+        headers: getAuthHeaders({ "x-workspace-id": workspaceId }),
       });
       if (res.ok) {
         const restored: any = await res.json();
@@ -990,10 +990,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
         `/api/docs/${docId}/comments?user=${encodeURIComponent(currentUser.email)}`,
         {
           method: "POST",
-          headers: {
+          headers: getAuthHeaders({
             "Content-Type": "application/json",
             "x-workspace-id": workspaceId,
-          },
+          }),
           body: JSON.stringify({
             text: commentText.trim(),
             documentTitle: title,
@@ -2304,10 +2304,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   setAttachments(updated);
                   fetch(`/api/docs/${docId}`, {
                     method: "PUT",
-                    headers: {
+                    headers: getAuthHeaders({
                       "Content-Type": "application/json",
                       "x-workspace-id": workspaceId,
-                    },
+                    }),
                     body: JSON.stringify({ title, content, tags, attachments: updated, icon, cover }),
                   });
                 }

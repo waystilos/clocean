@@ -25,6 +25,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onDeleteAccount,
   sessionToken,
 }) => {
+  const getAuthHeaders = (extra: Record<string, string> = {}) => {
+    const token = sessionToken || localStorage.getItem("clocean_session_token");
+    return { ...extra, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  };
   const [activeTab, setActiveTab] = useState<
     "profile" | "storage" | "access" | "notifications" | "appearance"
   >("profile");
@@ -44,7 +48,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     if (activeTab === "notifications" && isOpen) {
-      fetch(`/api/notifications?user=${encodeURIComponent(currentUser.email)}`)
+      fetch(`/api/notifications?user=${encodeURIComponent(currentUser.email)}`, { headers: getAuthHeaders() })
         .then((res) => (res.ok ? res.json() : []))
         .then((data) => setRecentNotifications(Array.isArray(data) ? data : []))
         .catch(() => {});
@@ -57,7 +61,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     try {
       const res = await fetch(
         `/api/notifications/test?user=${encodeURIComponent(currentUser.email)}`,
-        { method: "POST" }
+        { method: "POST", headers: getAuthHeaders() }
       );
       if (!res.ok) throw new Error("Failed to send test email");
       const data = (await res.json()) as any;
@@ -65,7 +69,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         `Test notification dispatched via ${data.deliveryStatus || "R2 notification inbox"}! Check your notifications bell.`
       );
       // Reload notifications list
-      const notifRes = await fetch(`/api/notifications?user=${encodeURIComponent(currentUser.email)}`);
+      const notifRes = await fetch(`/api/notifications?user=${encodeURIComponent(currentUser.email)}`, { headers: getAuthHeaders() });
       if (notifRes.ok) {
         const notifData = await notifRes.json();
         setRecentNotifications(Array.isArray(notifData) ? notifData : []);

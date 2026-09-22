@@ -114,6 +114,7 @@ interface TasksViewProps {
   currentUser: UserProfile;
   workspaceId?: string;
   onUpdateTasks: (tasks: TaskItem[]) => Promise<void>;
+  sessionToken?: string | null;
 }
 
 export const TasksView: React.FC<TasksViewProps> = ({
@@ -121,7 +122,12 @@ export const TasksView: React.FC<TasksViewProps> = ({
   currentUser,
   workspaceId = "default",
   onUpdateTasks,
+  sessionToken,
 }) => {
+  const getAuthHeaders = (extra: Record<string, string> = {}) => {
+    const token = sessionToken || localStorage.getItem("clocean_session_token");
+    return { ...extra, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  };
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split("T")[0];
   const [filter, setFilter] = useState<"all" | "mine" | "due" | "high">("all");
   const [viewType, setViewType] = useState<"board" | "table">("board");
@@ -148,10 +154,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
     setCheckingDeadlines(true);
     setDeadlineResult(null);
     try {
-      const token = localStorage.getItem("clocean_session_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      if (currentUser?.email) headers["x-user-email"] = currentUser.email;
+      const headers = getAuthHeaders({ "Content-Type": "application/json" });
 
       const res = await fetch("/api/tasks/check-deadlines", {
         method: "POST",
@@ -186,7 +189,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
   // Fetch workspace members for assignee selection
   useEffect(() => {
-    fetch(`/api/workspaces/${workspaceId}/members?user=${encodeURIComponent(currentUser.email)}`)
+    fetch(`/api/workspaces/${workspaceId}/members?user=${encodeURIComponent(currentUser.email)}`, { headers: getAuthHeaders() })
       .then((res) => (res.ok ? res.json() : []))
       .then((data: any) => {
         const list = Array.isArray(data) ? data : data?.members || [];

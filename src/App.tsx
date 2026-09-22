@@ -315,8 +315,9 @@ export const App: React.FC = () => {
 
   const handleUpdateTasks = async (newTasks: TaskItem[]) => {
     if (!currentUser?.email) return;
+    const previousTasks = tasks;
     setTasks(newTasks);
-    await fetch("/api/tasks", {
+    const res = await fetch("/api/tasks", {
       method: "PUT",
       headers: getAuthHeaders({
         "Content-Type": "application/json",
@@ -324,6 +325,11 @@ export const App: React.FC = () => {
       }),
       body: JSON.stringify(newTasks),
     });
+    if (!res.ok) {
+      setTasks(previousTasks);
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      throw new Error(data.error || "Failed to save tasks");
+    }
   };
 
   const handleNavigateDoc = (docId: string) => {
@@ -536,6 +542,7 @@ export const App: React.FC = () => {
         tree={tree}
         onSelectDoc={handleNavigateDoc}
         onSignOut={handleSignOut}
+        sessionToken={sessionToken}
       />
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         <button className={currentView === "home" ? "active" : ""} onClick={() => setCurrentView("home")}><Home size={18} /><span>Home</span></button>
@@ -585,6 +592,7 @@ export const App: React.FC = () => {
               docId={activeDocId}
               currentUser={currentUser}
               workspaceId={currentWorkspace.id}
+              sessionToken={sessionToken}
               onOpenFilePreview={(att) => setPreviewFile(att)}
             />
           )}
@@ -604,6 +612,7 @@ export const App: React.FC = () => {
               currentUser={currentUser}
               workspaceId={currentWorkspace.id}
               onUpdateTasks={handleUpdateTasks}
+              sessionToken={sessionToken}
             />
           )}
 
@@ -662,6 +671,7 @@ export const App: React.FC = () => {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         currentUser={currentUser}
+        sessionToken={sessionToken}
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onUpdateProfile={(profile) => {
@@ -670,7 +680,6 @@ export const App: React.FC = () => {
         }}
         onSignOut={handleSignOut}
         onDeleteAccount={handleSignOut}
-        sessionToken={sessionToken}
       />
 
       <CreateWorkspaceModal
@@ -681,6 +690,7 @@ export const App: React.FC = () => {
           setCurrentWorkspace(newWs);
         }}
         currentUser={currentUser}
+        sessionToken={sessionToken}
       />
 
       <TeamMembersModal
