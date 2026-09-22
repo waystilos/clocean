@@ -83,6 +83,13 @@ describe("Clocean Enterprise Security Regression Test Suite", () => {
   describe("Stored XSS Prevention & Defense-in-Depth Headers", () => {
     let htmlFileId: string;
 
+    it("allows blob URLs required by authenticated previews in the app CSP", async () => {
+      const res = await fetch(`${BASE_URL}/`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-security-policy")).toContain("img-src 'self' blob:");
+      expect(res.headers.get("content-security-policy")).toContain("frame-src 'self' blob:");
+    });
+
     it("should upload an HTML file and force Content-Disposition: attachment to prevent stored XSS", async () => {
       const maliciousHtml = "<html><body><script>alert(document.cookie)</script></body></html>";
       const blob = new Blob([maliciousHtml], { type: "text/html" });

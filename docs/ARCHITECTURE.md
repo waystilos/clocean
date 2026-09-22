@@ -375,7 +375,7 @@ sequenceDiagram
     * `X-Content-Type-Options: nosniff`: Prevents MIME-confusion attacks.
     * `X-Frame-Options: SAMEORIGIN`: Prevents clickjacking.
   * **Safe Format Gating**: Only safe non-executable image formats (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`) and `.pdf` may be served with `Content-Disposition: inline`. All active or executable formats (HTML, SVG, XML, JS, etc.) are forced to `Content-Disposition: attachment`, preventing arbitrary script execution.
-  * File previews fetch through the authenticated API with the current session token, render from temporary blob URLs, and revoke those URLs when the modal closes. PDF and text previews use sandboxed iframes; unsafe formats remain downloads.
+  * File previews fetch through the authenticated API with the current session token, render from temporary blob URLs, and revoke those URLs when the modal closes. The app CSP explicitly permits blob images and frames for this preview path while scripts remain restricted. PDF and text previews use sandboxed iframes; unsafe formats remain downloads.
 
 ```mermaid
 graph TD
