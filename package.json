@@ -9,6 +9,8 @@
     "worker:dev": "wrangler dev",
     "worker:deploy": "wrangler deploy",
     "deploy": "pnpm build && wrangler deploy",
+    "deploy:app": "pnpm build && wrangler deploy",
+    "ship": "pnpm build && wrangler deploy",
     "setup:r2": "bash scripts/setup-r2.sh",
     "login:local": "pulumi login --local",
     "infra:login:local": "pulumi login --local",
