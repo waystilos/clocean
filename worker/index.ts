@@ -389,6 +389,12 @@ app.post("/api/auth/send-otp", async (c) => {
     }
   }
 
+  if (c.env.ENVIRONMENT === "production" && !emailSent) {
+    return c.json({
+      error: "Email delivery is not configured. Configure a Cloudflare Email Service binding or RESEND_API_KEY before requesting verification codes.",
+    }, 503);
+  }
+
   const responsePayload: any = {
     success: true,
     message: `Verification code sent to ${cleanEmail}.`,
