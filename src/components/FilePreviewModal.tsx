@@ -8,9 +8,10 @@ interface FilePreviewModalProps {
   onClose: () => void;
   sessionToken?: string | null;
   userEmail?: string;
+  workspaceId?: string;
 }
 
-export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClose, sessionToken = null, userEmail }) => {
+export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClose, sessionToken = null, userEmail, workspaceId = "default" }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,7 +35,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
     setPreviewError(null);
     setPreviewUrl(null);
 
-    fetchAuthenticatedFile(fileUrl, sessionToken, fetch, userEmail)
+    fetchAuthenticatedFile(fileUrl, sessionToken, fetch, userEmail, workspaceId)
       .then((blob) => {
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
@@ -51,7 +52,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [fileUrl, sessionToken, userEmail]);
+  }, [fileUrl, sessionToken, userEmail, workspaceId]);
 
   if (!file) return null;
 

@@ -738,7 +738,7 @@ export const App: React.FC = () => {
         sessionToken={sessionToken}
       />
 
-      <FilePreviewModal file={previewFile} sessionToken={sessionToken} userEmail={currentUser?.email} onClose={() => setPreviewFile(null)} />
+      <FilePreviewModal file={previewFile} sessionToken={sessionToken} userEmail={currentUser?.email} workspaceId={currentWorkspace.id} onClose={() => setPreviewFile(null)} />
 
       {/* Pending Workspace Invite Banner for Authenticated User */}
       {pendingInvite && (

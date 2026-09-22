@@ -25,4 +25,19 @@ describe("authenticated file previews", () => {
       headers: { "x-user-email": "tester@clocean.co" },
     });
   });
+
+  it("sends the active workspace so custom workspace files resolve from the correct R2 prefix", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Blob(["image"]), { status: 200 }));
+
+    await fetchAuthenticatedFile("/api/files/file-1/moodboard.png", "session-token", fetchImpl, "owner@example.com", "ws-design");
+
+    expect(fetchImpl).toHaveBeenCalledWith("/api/files/file-1/moodboard.png", {
+      credentials: "same-origin",
+      headers: {
+        Authorization: "Bearer session-token",
+        "x-user-email": "owner@example.com",
+        "x-workspace-id": "ws-design",
+      },
+    });
+  });
 });
