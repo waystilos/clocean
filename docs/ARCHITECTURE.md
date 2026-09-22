@@ -69,6 +69,8 @@ Powered by [Hono](https://hono.dev/), a lightweight, edge-optimized routing fram
 * `POST /api/auth/verify-otp`: Validates the OTP code, issues session token, and provisions profile.
 * `GET /api/workspaces/:wsId/invite-info`: Unauthenticated endpoint returning public workspace name, icon, and member count for Notion-style share links.
 * `POST /api/workspaces/:wsId/join`: Authenticated endpoint that completes a previously issued invitation; knowing a workspace ID alone is insufficient.
+* `GET /api/workspaces/:wsId/members`: Lists the authenticated workspace roster.
+* `DELETE /api/workspaces/:wsId/members/:email`: Removes a member for an owner or admin; owners and the current user cannot be removed.
 * `GET /api/tree`: Returns workspace folder and document tree.
 * `POST /api/tree/node`: Creates a note or folder with an optional parent folder.
 * `PUT /api/tree/node/:id`: Renames or moves a note or folder.

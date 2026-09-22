@@ -188,6 +188,8 @@ Stores Kanban tasks with assignees and deadline tracking.
 
 Additional boards are registered in `workspaces/{wsId}/task-boards.json` and store their tasks under `workspaces/{wsId}/task-boards/{boardId}.json`. The default board remains compatible with `tasks.json`, allowing existing installations to migrate without changing their current task data.
 
+In production, the first authenticated Cloudflare Access request removes the historical demo roster from the default workspace and registers the real Access identity. Subsequent roster changes are stored in `members.json`; owners and admins can remove non-owner members through the authenticated API.
+
 ### 7. Notes, folders, and authenticated file previews
 
 Notes and folders share `tree.json`. Each node stores a `parentId`, allowing arbitrary nesting while document content remains in `docs/{docId}/content.json`. Uploaded files use `files/{fileId}/{filename}` and are served through authenticated API requests. The browser fetches files with its session token, creates temporary blob URLs for image, PDF, or text previews, and revokes those URLs after use.

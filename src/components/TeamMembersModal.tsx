@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Users, UserPlus, Shield, ShieldCheck, Mail, Check, AlertCircle, Layers, Link2, Copy } from "lucide-react";
+import { X, Users, UserPlus, Shield, ShieldCheck, Mail, Check, AlertCircle, Layers, Link2, Copy, UserMinus } from "lucide-react";
 import { UserWorkspaceReference, WorkspaceMember, UserProfile } from "../types.ts";
 
 interface TeamMembersModalProps {
@@ -24,6 +24,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
   const [isInviting, setIsInviting] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [updatingMemberEmail, setUpdatingMemberEmail] = useState<string | null>(null);
+  const [removingMemberEmail, setRemovingMemberEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -43,7 +44,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
     setIsLoading(true);
     setError(null);
 
-    fetch(`/api/workspaces/${workspace.id}/members?user=${encodeURIComponent(currentUser.email)}`, {
+    fetch(`/api/workspaces/${workspace.id}/members`, {
       headers: getAuthHeaders(),
     })
       .then((res) => {
@@ -83,7 +84,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
 
     try {
       const res = await fetch(
-        `/api/workspaces/${workspace.id}/members?user=${encodeURIComponent(currentUser.email)}`,
+        `/api/workspaces/${workspace.id}/members`,
         {
           method: "POST",
           headers: getAuthHeaders({ "Content-Type": "application/json" }),
@@ -118,7 +119,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
 
     try {
       const res = await fetch(
-        `/api/workspaces/${workspace.id}/members/${encodeURIComponent(memberEmail)}/role?user=${encodeURIComponent(currentUser.email)}`,
+        `/api/workspaces/${workspace.id}/members/${encodeURIComponent(memberEmail)}/role`,
         {
           method: "PUT",
           headers: getAuthHeaders({ "Content-Type": "application/json" }),
@@ -141,6 +142,28 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
       setError(err.message || "Failed to update member role");
     } finally {
       setUpdatingMemberEmail(null);
+    }
+  };
+
+  const handleRemoveMember = async (member: WorkspaceMember) => {
+    if (!window.confirm(`Remove ${member.name || member.email} from ${workspace.name}?`)) return;
+    setRemovingMemberEmail(member.email);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = await fetch(`/api/workspaces/${workspace.id}/members/${encodeURIComponent(member.email)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) throw new Error(data.error || "Failed to remove member");
+      setMembers(Array.isArray(data) ? data : data.members || []);
+      setSuccessMsg(`Removed ${member.email} from ${workspace.name}.`);
+      setTimeout(() => setSuccessMsg(null), 3500);
+    } catch (err: any) {
+      setError(err.message || "Failed to remove member");
+    } finally {
+      setRemovingMemberEmail(null);
     }
   };
 
@@ -296,7 +319,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
                 </span>
               </div>
               <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                Anyone with link can join as a member
+                Only invited people can join
               </span>
             </div>
             <div style={{ display: "flex", gap: "8px" }}>
@@ -603,6 +626,17 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
                               Saving...
                             </span>
                           )}
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            title={`Remove ${member.email}`}
+                            aria-label={`Remove ${member.email}`}
+                            disabled={removingMemberEmail === member.email}
+                            onClick={() => handleRemoveMember(member)}
+                            style={{ width: "28px", height: "28px", color: "var(--danger)" }}
+                          >
+                            <UserMinus size={14} />
+                          </button>
                         </div>
                       ) : (
                         <span

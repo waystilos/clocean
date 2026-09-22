@@ -7,9 +7,10 @@ interface FilePreviewModalProps {
   file: TreeNode | DocAttachment | null;
   onClose: () => void;
   sessionToken?: string | null;
+  userEmail?: string;
 }
 
-export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClose, sessionToken = null }) => {
+export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClose, sessionToken = null, userEmail }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +34,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
     setPreviewError(null);
     setPreviewUrl(null);
 
-    fetchAuthenticatedFile(fileUrl, sessionToken)
+    fetchAuthenticatedFile(fileUrl, sessionToken, fetch, userEmail)
       .then((blob) => {
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
@@ -50,7 +51,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [fileUrl, sessionToken]);
+  }, [fileUrl, sessionToken, userEmail]);
 
   if (!file) return null;
 

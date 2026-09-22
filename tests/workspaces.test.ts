@@ -201,6 +201,17 @@ describe("Clocean Organizations & Team Workspaces Test Suite", () => {
       const data = await res.json() as any;
       expect(data.error).toContain("Only workspace owners and admins can update member roles");
     });
+
+    it("should allow the owner to remove a member", async () => {
+      const res = await fetch(`${BASE_URL}/api/workspaces/${createdWsId}/members/${encodeURIComponent(testInvitee)}`, {
+        method: "DELETE",
+        headers: { "x-user-email": testOwner },
+      });
+
+      expect(res.status).toBe(200);
+      const members = await res.json() as any[];
+      expect(members.some((member) => member.email === testInvitee)).toBe(false);
+    });
   });
 
   // 4. Strict Multi-Tenant Data Isolation

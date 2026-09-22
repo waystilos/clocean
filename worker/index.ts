@@ -204,10 +204,11 @@ export async function verifyWorkspaceAccess(
   c: any,
   wsId: string,
   db: R2Database,
-  requesterEmail: string
+  requesterEmail: string,
+  allowSharedDefault = false
 ): Promise<Response | null> {
   // 'default' workspace is shared and accessible to all authenticated users
-  if (wsId === "default") return null;
+  if (wsId === "default" && allowSharedDefault) return null;
 
   const meta = await db.getWorkspaceMetadata(wsId);
   if (!meta) {
@@ -267,15 +268,17 @@ app.use("/api/*", async (c, next) => {
   // still go through this membership gate.
   const isMemberManagementMutation =
     (/^\/api\/workspaces\/[^/]+\/members$/.test(c.req.path) && c.req.method === "POST") ||
-    (/^\/api\/workspaces\/[^/]+\/members\/[^/]+\/role$/.test(c.req.path) && c.req.method === "PUT");
+    (/^\/api\/workspaces\/[^/]+\/members\/[^/]+\/role$/.test(c.req.path) && c.req.method === "PUT") ||
+    (/^\/api\/workspaces\/[^/]+\/members\/[^/]+$/.test(c.req.path) && c.req.method === "DELETE");
   if (requestedWs && !isJoinRoute && !isMemberManagementMutation) {
     const db = new R2Database(c.env.CLOCEAN_STORAGE);
-    const access = await verifyWorkspaceAccess(c, requestedWs, db, authRes.email);
+    const access = await verifyWorkspaceAccess(c, requestedWs, db, authRes.email, c.env.ENVIRONMENT !== "production");
     if (access) return access;
   }
 
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   await db.ensureSeeded();
+  if (c.env.ENVIRONMENT === "production") await db.ensureProductionDefaultMember(authRes.email);
 
   await next();
 });
@@ -287,8 +290,16 @@ app.get("/api/me", async (c) => {
     return c.json({ authenticated: false, accessRequired: c.env.ENVIRONMENT === "production" }, 200);
   }
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  if (c.env.ENVIRONMENT === "production") await db.ensureProductionDefaultMember(email);
   const profile = await db.getUserProfile(email);
-  const workspaces = await db.getUserWorkspaces(email);
+  let workspaces = await db.getUserWorkspaces(email);
+  if (c.env.ENVIRONMENT === "production") {
+    const members = await db.getWorkspaceMembers("default");
+    if (!members.some((member) => member.email.toLowerCase() === email.toLowerCase())) {
+      workspaces = workspaces.filter((workspace) => workspace.id !== "default");
+      await db.saveUserRegistry(email, workspaces);
+    }
+  }
   return c.json({ ...profile, authenticated: true, user: profile, workspaces }, 200);
 });
 
@@ -910,6 +921,27 @@ app.put("/api/workspaces/:wsId/members/:email/role", async (c) => {
     return c.json({ error: result.error || "Failed to update member role" }, 400);
   }
 
+  return c.json(result.members);
+});
+
+app.delete("/api/workspaces/:wsId/members/:email", async (c) => {
+  const wsId = c.req.param("wsId");
+  if (!isValidId(wsId)) return c.json({ error: "Invalid workspace ID" }, 400);
+
+  const targetEmail = decodeURIComponent(c.req.param("email")).trim().toLowerCase();
+  const requesterEmail = getRequesterEmail(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const members = await db.getWorkspaceMembers(wsId);
+  const requester = members.find((member) => member.email.toLowerCase() === requesterEmail.toLowerCase());
+  if (!requester || (requester.role !== "owner" && requester.role !== "admin")) {
+    return c.json({ error: "Only workspace owners and admins can remove members" }, 403);
+  }
+  if (targetEmail === requesterEmail.toLowerCase()) {
+    return c.json({ error: "You cannot remove yourself from the workspace" }, 400);
+  }
+
+  const result = await db.removeWorkspaceMember(wsId, targetEmail);
+  if (!result.success) return c.json({ error: result.error || "Failed to remove member" }, 400);
   return c.json(result.members);
 });
 

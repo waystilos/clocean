@@ -14,4 +14,15 @@ describe("authenticated file previews", () => {
     });
     expect(result.type).toBe("image/png");
   });
+
+  it("uses the local development identity when no session token is available", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Blob(["image"]), { status: 200 }));
+
+    await fetchAuthenticatedFile("/api/files/file-1/moodboard.png", null, fetchImpl, "tester@clocean.co");
+
+    expect(fetchImpl).toHaveBeenCalledWith("/api/files/file-1/moodboard.png", {
+      credentials: "same-origin",
+      headers: { "x-user-email": "tester@clocean.co" },
+    });
+  });
 });

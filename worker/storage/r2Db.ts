@@ -463,6 +463,64 @@ export class R2Database {
     return [];
   }
 
+  /** Remove the historical demo roster from production and register the Access identity. */
+  async ensureProductionDefaultMember(email: string): Promise<void> {
+    const cleanEmail = email.toLowerCase().trim();
+    const key = "workspaces/default/members.json";
+    const result = await this.getJson<WorkspaceMembersData>(key);
+    const demoEmails = new Set([
+      "alex@clocean.co",
+      "marcus@clocean.co",
+      "elena@clocean.co",
+      "sofia@clocean.co",
+    ]);
+    const existingMembers = result.data?.members || [];
+    const isDemoOnlyRoster = existingMembers.length === 0 || existingMembers.every((member) => demoEmails.has(member.email.toLowerCase()));
+    const members = existingMembers.filter((member) => !demoEmails.has(member.email.toLowerCase()));
+    const profile = await this.getUserProfile(cleanEmail);
+    let current = members.find((member) => member.email.toLowerCase() === cleanEmail);
+    if (!current && isDemoOnlyRoster) {
+      current = {
+        email: cleanEmail,
+        name: profile.name,
+        role: members.length === 0 ? "owner" : "member",
+        avatar: profile.avatar,
+        joinedAt: new Date().toISOString(),
+      };
+      members.push(current);
+    }
+
+    let owner = members.find((member) => member.role === "owner");
+    if (!owner) {
+      const fallbackOwner = current || members[0];
+      if (fallbackOwner) {
+        fallbackOwner.role = "owner";
+        owner = fallbackOwner;
+      }
+    }
+
+    const changed = !result.data || result.data.members.length !== members.length ||
+      result.data.members.some((member, index) => {
+        const next = members[index];
+        return !next || member.email !== next.email || member.role !== next.role;
+      });
+    if (changed) await this.putJson(key, { workspaceId: "default", members });
+
+    const meta = await this.getWorkspaceMetadata("default");
+    if (meta && owner && meta.ownerEmail !== owner.email) {
+      meta.ownerEmail = owner.email;
+      meta.updatedAt = new Date().toISOString();
+      await this.putJson("workspaces/default/workspace.json", meta);
+    }
+
+    const workspaces = await this.getUserWorkspaces(cleanEmail);
+    const defaultWorkspace = workspaces.find((workspace) => workspace.id === "default");
+    if (defaultWorkspace && current && defaultWorkspace.role !== current.role) {
+      defaultWorkspace.role = current.role;
+      await this.saveUserRegistry(cleanEmail, workspaces);
+    }
+  }
+
   async addWorkspaceMember(
     wsId: string,
     email: string,
@@ -530,6 +588,25 @@ export class R2Database {
     }
 
     return { success: true, members };
+  }
+
+  async removeWorkspaceMember(
+    wsId: string,
+    email: string
+  ): Promise<{ success: boolean; error?: string; members: WorkspaceMember[] }> {
+    const cleanEmail = email.toLowerCase().trim();
+    const members = await this.getWorkspaceMembers(wsId);
+    const target = members.find((member) => member.email.toLowerCase() === cleanEmail);
+    if (!target) return { success: false, error: "Member not found in workspace", members };
+    if (target.role === "owner") return { success: false, error: "The workspace owner cannot be removed", members };
+
+    const remaining = members.filter((member) => member.email.toLowerCase() !== cleanEmail);
+    await this.putJson(`workspaces/${wsId}/members.json`, { workspaceId: wsId, members: remaining });
+
+    const workspaces = await this.getUserWorkspaces(cleanEmail);
+    const updatedWorkspaces = workspaces.filter((workspace) => workspace.id !== wsId);
+    await this.saveUserRegistry(cleanEmail, updatedWorkspaces);
+    return { success: true, members: remaining };
   }
 
   async appendActivity(
