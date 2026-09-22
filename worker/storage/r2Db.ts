@@ -855,6 +855,37 @@ Clocean replaces heavy SQL servers with structured JSON documents backed by Clou
       };
       await this.putJson("workspaces/default/activity.json", initialActivities);
     }
+
+    // Older seeds advertised demo files without storing their binary R2
+    // objects. Remove only those known seed references when the object is
+    // absent; user uploads and any real replacement objects are preserved.
+    const repairMarker = await this.getJson<{ version: number }>("workspaces/default/.seed-file-repair.json");
+    if (!repairMarker.data) {
+      const seedFiles = [
+        { id: "file-archive-zip", key: "workspaces/default/files/file-archive-zip/Archive.zip" },
+        { id: "file-brand-guidelines", key: "workspaces/default/files/file-brand-guidelines/Brand system guidelines.pdf" },
+        { id: "file-dev-roadmap", key: "workspaces/default/files/file-dev-roadmap/Development roadmap.xlsx" },
+        { id: "file-manifesto-docx", key: "workspaces/default/files/file-manifesto-docx/manifesto_v2.docx" },
+        { id: "file-wireframes-pdf", key: "workspaces/default/files/file-wireframes-pdf/Wireframe layouts.pdf" },
+        { id: "file-moodboard", key: "workspaces/default/files/file-moodboard/moodboard.png" },
+      ];
+      const missingIds = new Set(
+        (await Promise.all(seedFiles.map(async (file) => (await this.bucket.head(file.key)) ? null : file.id))).filter(Boolean) as string[],
+      );
+      if (missingIds.size > 0) {
+        const treeRes = await this.getJson<WorkspaceTree>("workspaces/default/tree.json");
+        if (treeRes.data) {
+          treeRes.data.nodes = treeRes.data.nodes.filter((node) => !missingIds.has(node.id));
+          await this.putJson("workspaces/default/tree.json", treeRes.data, treeRes.etag || undefined);
+        }
+        const docRes = await this.getJson<DocContent>("workspaces/default/docs/doc-manifesto/content.json");
+        if (docRes.data) {
+          docRes.data.attachments = docRes.data.attachments.filter((attachment) => !missingIds.has(attachment.id));
+          await this.putJson("workspaces/default/docs/doc-manifesto/content.json", docRes.data, docRes.etag || undefined);
+        }
+      }
+      await this.putJson("workspaces/default/.seed-file-repair.json", { version: 1 });
+    }
   }
 
   async deleteWorkspace(wsId: string): Promise<void> {
