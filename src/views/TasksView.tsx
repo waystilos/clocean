@@ -136,6 +136,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
   };
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split("T")[0];
   const [filter, setFilter] = useState<"all" | "mine" | "due" | "high">("all");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [viewType, setViewType] = useState<"board" | "table">("board");
   const [isAddingIn, setIsAddingIn] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -519,60 +520,36 @@ export const TasksView: React.FC<TasksViewProps> = ({
           <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "4px" }}>
             Choose a board and keep each project’s work organized in its own Kanban view.
           </p>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-secondary)" }}>
-              Board
-              <select value={activeBoardId} onChange={(e) => setActiveBoardId(e.target.value)} aria-label="Switch task board">
-              {(boards.length ? boards : [{ id: "default", name: "Sprint board" } as TaskBoard]).map((board) => (
-                <option key={board.id} value={board.id}>{board.name}</option>
-              ))}
-              </select>
-            </label>
-            {isBoardLoading && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading board…</span>}
-            <div style={{ position: "relative" }}>
-              <button className="btn-secondary" onClick={openBoardSettings} aria-haspopup="menu" aria-expanded={isBoardSettingsOpen} aria-label="Open board settings">
-                <Settings2 size={14} /> Settings
-              </button>
-              {isBoardSettingsOpen && (
-                <div role="menu" aria-label={`${activeBoard.name} settings`} style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20, width: 260, padding: 8, backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)" }}>
-                  <div style={{ padding: "8px 10px 10px", borderBottom: "1px solid var(--border-subtle)" }}>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Board settings</div>
-                    <div style={{ marginTop: 3, fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeBoard.name}</div>
-                  </div>
-                  {activeBoard.id !== "default" && !isRenamingBoard && (
-                    <button type="button" role="menuitem" onClick={() => setIsRenamingBoard(true)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 10px", marginTop: 4, background: "transparent", border: 0, borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 12, textAlign: "left", cursor: "pointer" }}>
-                      <MoreHorizontal size={14} /> Rename board
-                    </button>
-                  )}
-                  {isRenamingBoard && (
-                    <div style={{ padding: "10px 2px 4px" }}>
-                      <input autoFocus value={renameBoardName} onChange={(e) => setRenameBoardName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void handleRenameBoard(); if (e.key === "Escape") setIsRenamingBoard(false); }} aria-label="Board name" maxLength={100} style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 12 }} />
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 7 }}>
-                        <button type="button" className="btn-secondary" onClick={() => setIsRenamingBoard(false)} disabled={isSavingBoard} style={{ padding: "5px 8px", fontSize: 11 }}>Cancel</button>
-                        <button type="button" className="btn-primary" onClick={() => void handleRenameBoard()} disabled={isSavingBoard || !renameBoardName.trim()} style={{ padding: "5px 8px", fontSize: 11 }}>{isSavingBoard ? "Saving…" : "Save"}</button>
-                      </div>
-                    </div>
-                  )}
-                  <div style={{ margin: "6px 4px 2px", paddingTop: 6, borderTop: "1px solid var(--border-subtle)" }}>
-                    {activeBoard.id === "default" ? (
-                      <div style={{ padding: "7px 6px", fontSize: 11, color: "var(--text-muted)" }}>The default board is always available.</div>
-                    ) : (
-                      <button type="button" role="menuitem" onClick={() => { setIsBoardSettingsOpen(false); setBoardToDelete(activeBoard); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 6px", background: "transparent", border: 0, color: "#dc2626", fontSize: 12, textAlign: "left", cursor: "pointer" }}>
-                        <Trash2 size={14} /> Remove board…
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            <input value={newBoardName} onChange={(e) => setNewBoardName(e.target.value)} placeholder="New board name" aria-label="New board name" maxLength={100} />
-            <button className="btn-secondary" onClick={createBoard}><Plus size={14} /> Add board</button>
-          </div>
-          {boardError && <div role="alert" style={{ color: "var(--danger, #b42318)", fontSize: 12, marginTop: 8 }}>{boardError}</div>}
         </div>
 
-        {/* Filters */}
-        <div className="tasks-filters" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      </div>
+
+        {/* Board toolbar */}
+        <div className="tasks-filters" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", padding: "10px 12px", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-sm)" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-secondary)" }}>
+            Board
+            <select value={activeBoardId} onChange={(e) => setActiveBoardId(e.target.value)} aria-label="Switch task board">
+              {(boards.length ? boards : [{ id: "default", name: "Sprint board" } as TaskBoard]).map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
+            </select>
+          </label>
+          {isBoardLoading && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading…</span>}
+          <input value={newBoardName} onChange={(e) => setNewBoardName(e.target.value)} placeholder="New board name" aria-label="New board name" maxLength={100} style={{ minWidth: 120 }} />
+          <button className="btn-secondary" onClick={createBoard} style={{ padding: "6px 10px" }}><Plus size={14} /> Add board</button>
+          <div style={{ flex: 1, minWidth: 8 }} />
+          <div style={{ position: "relative" }}>
+            <button className="btn-secondary" onClick={openBoardSettings} aria-haspopup="menu" aria-expanded={isBoardSettingsOpen} aria-label="Open board settings" style={{ padding: "6px 10px" }}><Settings2 size={14} /> Settings</button>
+            {isBoardSettingsOpen && (
+              <div role="menu" aria-label={`${activeBoard.name} settings`} style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20, width: 260, padding: 8, backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)" }}>
+                <div style={{ padding: "8px 10px 10px", borderBottom: "1px solid var(--border-subtle)" }}><div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Board settings</div><div style={{ marginTop: 3, fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeBoard.name}</div></div>
+                {activeBoard.id !== "default" && !isRenamingBoard && <button type="button" role="menuitem" onClick={() => setIsRenamingBoard(true)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 10px", marginTop: 4, background: "transparent", border: 0, borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 12, textAlign: "left", cursor: "pointer" }}><MoreHorizontal size={14} /> Rename board</button>}
+                {isRenamingBoard && <div style={{ padding: "10px 2px 4px" }}><input autoFocus value={renameBoardName} onChange={(e) => setRenameBoardName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void handleRenameBoard(); if (e.key === "Escape") setIsRenamingBoard(false); }} aria-label="Board name" maxLength={100} style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 12 }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 7 }}><button type="button" className="btn-secondary" onClick={() => setIsRenamingBoard(false)} disabled={isSavingBoard} style={{ padding: "5px 8px", fontSize: 11 }}>Cancel</button><button type="button" className="btn-primary" onClick={() => void handleRenameBoard()} disabled={isSavingBoard || !renameBoardName.trim()} style={{ padding: "5px 8px", fontSize: 11 }}>{isSavingBoard ? "Saving…" : "Save"}</button></div></div>}
+                <div style={{ margin: "6px 4px 2px", paddingTop: 6, borderTop: "1px solid var(--border-subtle)" }}>{activeBoard.id === "default" ? <div style={{ padding: "7px 6px", fontSize: 11, color: "var(--text-muted)" }}>The default board is always available.</div> : <button type="button" role="menuitem" onClick={() => { setIsBoardSettingsOpen(false); setBoardToDelete(activeBoard); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 6px", background: "transparent", border: 0, color: "#dc2626", fontSize: 12, textAlign: "left", cursor: "pointer" }}><Trash2 size={14} /> Remove board…</button>}</div>
+              </div>
+            )}
+          </div>
+          <div style={{ position: "relative" }}>
+            <button className="btn-secondary" onClick={() => setIsFilterOpen((open) => !open)} aria-haspopup="menu" aria-expanded={isFilterOpen} style={{ padding: "6px 10px", color: filter === "all" ? "var(--text-secondary)" : "var(--accent-text)", borderColor: filter === "all" ? "var(--border-subtle)" : "var(--accent)" }}><Filter size={14} /> Filter{filter !== "all" ? `: ${filter === "mine" ? "Mine" : filter === "due" ? "Due soon" : "High priority"}` : ""}</button>
+            {isFilterOpen && <div role="menu" aria-label="Task filters" style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20, width: 190, padding: 6, backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)" }}>
           <button
             onClick={() => setFilter("all")}
             className="btn-secondary"
@@ -625,6 +602,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
           >
             High Priority
           </button>
+            </div>}
+          </div>
 
           <div style={{ width: "1px", height: "20px", backgroundColor: "var(--border-subtle)", margin: "0 4px" }} />
 
@@ -680,7 +659,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
           <div style={{ width: "1px", height: "20px", backgroundColor: "var(--border-subtle)", margin: "0 4px" }} />
 
-        </div>
       </div>
 
       {loadedBoardId !== activeBoardId ? (
