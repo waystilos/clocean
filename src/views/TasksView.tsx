@@ -162,7 +162,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [boards, setBoards] = useState<TaskBoard[]>([]);
   const [activeBoardId, setActiveBoardId] = useState("default");
+  const [loadedBoardId, setLoadedBoardId] = useState<string | null>(null);
+  const [isBoardLoading, setIsBoardLoading] = useState(false);
   const [newBoardName, setNewBoardName] = useState("");
+  const [boardToDelete, setBoardToDelete] = useState<TaskBoard | null>(null);
+  const [isDeletingBoard, setIsDeletingBoard] = useState(false);
   const [boardError, setBoardError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -183,13 +187,27 @@ export const TasksView: React.FC<TasksViewProps> = ({
   }, [workspaceId]);
 
   useEffect(() => {
+    let cancelled = false;
+    setIsBoardLoading(true);
+    setLoadedBoardId(null);
     fetch(`/api/tasks?boardId=${encodeURIComponent(activeBoardId)}`, { headers: getAuthHeaders() })
       .then(async (res) => {
         if (!res.ok) throw new Error("Could not load tasks");
         return res.json();
       })
-      .then((data) => onLoadTasks?.(data as TaskItem[], activeBoardId))
-      .catch((error: unknown) => setBoardError(error instanceof Error ? error.message : "Could not load tasks"));
+      .then((data) => {
+        if (cancelled) return;
+        onLoadTasks?.(data as TaskItem[], activeBoardId);
+        setLoadedBoardId(activeBoardId);
+        setBoardError(null);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setBoardError(error instanceof Error ? error.message : "Could not load tasks");
+      })
+      .finally(() => {
+        if (!cancelled) setIsBoardLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [activeBoardId, workspaceId, onLoadTasks]);
 
   const createBoard = async () => {
@@ -212,6 +230,28 @@ export const TasksView: React.FC<TasksViewProps> = ({
       setActiveBoardId(board.id);
     } catch (error: unknown) {
       setBoardError(error instanceof Error ? error.message : "Could not create task board");
+    }
+  };
+
+  const handleDeleteBoard = async () => {
+    if (!boardToDelete || boardToDelete.id === "default") return;
+    setIsDeletingBoard(true);
+    try {
+      const response = await fetch(`/api/task-boards/${encodeURIComponent(boardToDelete.id)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not remove task board");
+      const remaining = boards.filter((board) => board.id !== boardToDelete.id);
+      setBoards(remaining);
+      setBoardToDelete(null);
+      setActiveBoardId(remaining.find((board) => board.id === "default")?.id || remaining[0]?.id || "default");
+      setBoardError(null);
+    } catch (error: unknown) {
+      setBoardError(error instanceof Error ? error.message : "Could not remove task board");
+    } finally {
+      setIsDeletingBoard(false);
     }
   };
 
@@ -486,14 +526,23 @@ export const TasksView: React.FC<TasksViewProps> = ({
           <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "4px" }}>
             Choose a board and keep each project’s work organized in its own Kanban view.
           </p>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14 }}>
-            <select value={activeBoardId} onChange={(e) => setActiveBoardId(e.target.value)} aria-label="Task board">
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-secondary)" }}>
+              Board
+              <select value={activeBoardId} onChange={(e) => setActiveBoardId(e.target.value)} aria-label="Switch task board">
               {(boards.length ? boards : [{ id: "default", name: "Sprint board" } as TaskBoard]).map((board) => (
                 <option key={board.id} value={board.id}>{board.name}</option>
               ))}
-            </select>
+              </select>
+            </label>
+            {isBoardLoading && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading board…</span>}
+            {activeBoardId !== "default" && (
+              <button className="btn-secondary" onClick={() => setBoardToDelete(boards.find((board) => board.id === activeBoardId) || null)} style={{ color: "#dc2626", borderColor: "rgba(239, 68, 68, 0.35)" }}>
+                <Trash2 size={14} /> Remove board
+              </button>
+            )}
             <input value={newBoardName} onChange={(e) => setNewBoardName(e.target.value)} placeholder="New board name" aria-label="New board name" maxLength={100} />
-            <button className="btn-secondary" onClick={createBoard}><Plus size={14} /> Board</button>
+            <button className="btn-secondary" onClick={createBoard}><Plus size={14} /> Add board</button>
           </div>
           {boardError && <div role="alert" style={{ color: "var(--danger, #b42318)", fontSize: 12, marginTop: 8 }}>{boardError}</div>}
         </div>
@@ -671,7 +720,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
         </div>
       )}
 
-      {viewType === "table" ? (
+      {loadedBoardId !== activeBoardId ? (
+        <div style={{ minHeight: 300, display: "grid", placeItems: "center", color: "var(--text-muted)", fontSize: 13 }}>
+          {isBoardLoading ? "Loading board…" : "This board could not be loaded."}
+        </div>
+      ) : viewType === "table" ? (
         <div
           style={{
             backgroundColor: "var(--bg-surface)",
@@ -1855,6 +1908,23 @@ export const TasksView: React.FC<TasksViewProps> = ({
               <button type="button" onClick={() => void handleDeleteTask(deleteTarget.id)} className="btn-primary" disabled={isDeleting} style={{ backgroundColor: "#dc2626", borderColor: "#dc2626" }}>
                 {isDeleting ? "Deleting…" : "Delete work item"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {boardToDelete && (
+        <div
+          role="presentation"
+          onClick={() => !isDeletingBoard && setBoardToDelete(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backgroundColor: "rgba(0, 0, 0, 0.55)" }}
+        >
+          <div role="alertdialog" aria-modal="true" aria-labelledby="delete-board-title" onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, padding: 22, backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)" }}>
+            <h2 id="delete-board-title" style={{ margin: 0, fontSize: 16, color: "var(--text-primary)" }}>Remove “{boardToDelete.name}”?</h2>
+            <p style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.5, color: "var(--text-secondary)" }}>The board and all work items on it will be permanently removed.</p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 22 }}>
+              <button type="button" className="btn-secondary" onClick={() => setBoardToDelete(null)} disabled={isDeletingBoard}>Cancel</button>
+              <button type="button" className="btn-primary" onClick={() => void handleDeleteBoard()} disabled={isDeletingBoard} style={{ backgroundColor: "#dc2626", borderColor: "#dc2626" }}>{isDeletingBoard ? "Removing…" : "Remove board"}</button>
             </div>
           </div>
         </div>

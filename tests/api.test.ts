@@ -403,6 +403,13 @@ describe("Clocean R2 Edge REST API & Database Tests", () => {
       expect(boardTasks[0].title).toBe(task.title);
       expect(defaultTasks.some((item) => item.id === task.id)).toBe(false);
 
+      const deleteRes = await fetch(`${BASE_URL}/api/task-boards/${encodeURIComponent(board.id)}?user=alex%40clocean.co`, {
+        method: "DELETE",
+      });
+      expect(deleteRes.status).toBe(200);
+      const deletedBoardRes = await fetch(`${BASE_URL}/api/tasks?boardId=${encodeURIComponent(board.id)}`);
+      expect(deletedBoardRes.status).toBe(404);
+
       const missingBoardRes = await fetch(`${BASE_URL}/api/tasks?boardId=board-missing`);
       expect(missingBoardRes.status).toBe(404);
     });

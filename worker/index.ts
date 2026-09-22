@@ -1780,6 +1780,27 @@ app.post("/api/task-boards", async (c) => {
   return c.json(board, 201);
 });
 
+app.delete("/api/task-boards/:boardId", async (c) => {
+  const boardId = c.req.param("boardId");
+  if (!isValidId(boardId) || boardId === "default") return c.json({ error: "The default board cannot be removed" }, 400);
+  const ws = getWorkspaceId(c);
+  const email = getRequesterEmail(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const members = await db.getWorkspaceMembers(ws);
+  const requester = members.find((member) => member.email.toLowerCase() === email.toLowerCase());
+  if (!requester || (requester.role !== "owner" && requester.role !== "admin")) {
+    return c.json({ error: "Only workspace owners and admins can remove task boards" }, 403);
+  }
+  const key = `workspaces/${ws}/task-boards.json`;
+  const current = await db.getJson<{ boards: TaskBoard[] }>(key);
+  if (!current.data?.boards?.some((board) => board.id === boardId)) return c.json({ error: "Task board not found" }, 404);
+  const boards = current.data.boards.filter((board) => board.id !== boardId);
+  const write = await db.putJson(key, { boards }, current.etag || undefined);
+  if (!write.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
+  await db.deleteKey(`workspaces/${ws}/task-boards/${boardId}.json`);
+  return c.json({ success: true });
+});
+
 app.get("/api/tasks", async (c) => {
   const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
