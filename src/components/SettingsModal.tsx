@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { X, User, Shield, HardDrive, Palette, Check } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, User, Shield, HardDrive, Palette, Check, Mail, Bell, Send, ExternalLink } from "lucide-react";
 import { UserProfile } from "../types.ts";
 
 interface SettingsModalProps {
@@ -19,14 +19,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onToggleTheme,
   onUpdateProfile,
 }) => {
-  const [activeTab, setActiveTab] = useState<"profile" | "storage" | "access" | "appearance">(
-    "profile"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "profile" | "storage" | "access" | "notifications" | "appearance"
+  >("profile");
   const [name, setName] = useState(currentUser.name);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [testEmailMsg, setTestEmailMsg] = useState<string | null>(null);
+  const [recentNotifications, setRecentNotifications] = useState<any[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (activeTab === "notifications" && isOpen) {
+      fetch(`/api/notifications?user=${encodeURIComponent(currentUser.email)}`)
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setRecentNotifications(Array.isArray(data) ? data : []))
+        .catch(() => {});
+    }
+  }, [activeTab, isOpen, currentUser.email]);
+
+  const handleSendTestEmail = async () => {
+    setIsSendingTestEmail(true);
+    setTestEmailMsg(null);
+    try {
+      const res = await fetch(
+        `/api/notifications/test?user=${encodeURIComponent(currentUser.email)}`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error("Failed to send test email");
+      const data = (await res.json()) as any;
+      setTestEmailMsg(
+        `Test notification dispatched via ${data.deliveryStatus || "simulated R2"}! Check your notifications bell.`
+      );
+      // Reload notifications list
+      const notifRes = await fetch(`/api/notifications?user=${encodeURIComponent(currentUser.email)}`);
+      if (notifRes.ok) {
+        const notifData = await notifRes.json();
+        setRecentNotifications(Array.isArray(notifData) ? notifData : []);
+      }
+      setTimeout(() => setTestEmailMsg(null), 5000);
+    } catch (err: any) {
+      setTestEmailMsg(`Error: ${err.message || "Failed to dispatch test notification"}`);
+    } finally {
+      setIsSendingTestEmail(false);
+    }
+  };
 
   React.useEffect(() => {
     setName(currentUser.name);
@@ -199,6 +238,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               }}
             >
               <Shield size={15} /> Zero Trust Auth
+            </button>
+            <button
+              onClick={() => setActiveTab("notifications")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 12px",
+                borderRadius: "var(--radius-sm)",
+                border: "none",
+                background: activeTab === "notifications" ? "var(--bg-nav-active)" : "transparent",
+                color: activeTab === "notifications" ? "var(--text-primary)" : "var(--text-secondary)",
+                fontSize: "13px",
+                fontWeight: activeTab === "notifications" ? 600 : 400,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <Mail size={15} /> Notifications & Email
             </button>
             <button
               onClick={() => setActiveTab("appearance")}
@@ -464,6 +522,174 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div style={{ fontSize: "11px", color: "#75736E" }}>
                       Figma Light Mode
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Notifications & Email Tab */}
+            {activeTab === "notifications" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div>
+                  <h3
+                    className="font-serif"
+                    style={{ fontSize: "16px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}
+                  >
+                    Email & Mention Notifications
+                  </h3>
+                  <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                    Automated email delivery whenever a teammate @mentions you or assigns you to a task
+                  </p>
+                </div>
+
+                {/* Email Address & Channel Status */}
+                <div
+                  style={{
+                    backgroundColor: "var(--bg-primary)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--radius-md)",
+                    padding: "16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "10px",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Delivery Recipient
+                      </div>
+                      <div style={{ fontSize: "14px", fontWeight: 500, color: "var(--text-primary)", marginTop: "2px" }}>
+                        {currentUser.email}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleSendTestEmail}
+                      disabled={isSendingTestEmail}
+                      className="btn-primary"
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: "12px",
+                        opacity: isSendingTestEmail ? 0.6 : 1,
+                      }}
+                    >
+                      <Send size={12} />
+                      <span>{isSendingTestEmail ? "Sending..." : "Send Test Email"}</span>
+                    </button>
+                  </div>
+
+                  {testEmailMsg && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "11px",
+                        color: testEmailMsg.startsWith("Error") ? "#ef4444" : "var(--accent-text)",
+                        backgroundColor: testEmailMsg.startsWith("Error") ? "rgba(239, 68, 68, 0.15)" : "var(--accent-light)",
+                        padding: "8px 12px",
+                        borderRadius: "var(--radius-sm)",
+                      }}
+                    >
+                      <Check size={12} /> {testEmailMsg}
+                    </div>
+                  )}
+                </div>
+
+                {/* Engine Info Cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div
+                    style={{
+                      padding: "12px",
+                      backgroundColor: "var(--bg-primary)",
+                      border: "1px solid var(--border-subtle)",
+                      borderRadius: "var(--radius-md)",
+                    }}
+                  >
+                    <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>
+                      Cloudflare Email Routing
+                    </div>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.4 }}>
+                      Zero-cost edge delivery via Worker <code>send_email</code> binding.
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: "12px",
+                      backgroundColor: "var(--bg-primary)",
+                      border: "1px solid var(--border-subtle)",
+                      borderRadius: "var(--radius-md)",
+                    }}
+                  >
+                    <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>
+                      Transactional API / Resend
+                    </div>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.4 }}>
+                      Direct API fallback with instant verified inbox delivery.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recent Notifications Audit Stream */}
+                <div>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>
+                    Recent Notifications Log ({recentNotifications.length})
+                  </div>
+                  <div
+                    style={{
+                      maxHeight: "180px",
+                      overflowY: "auto",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "6px",
+                    }}
+                  >
+                    {recentNotifications.length === 0 ? (
+                      <div style={{ fontSize: "12px", color: "var(--text-muted)", padding: "12px 0", textAlign: "center" }}>
+                        No recent notifications logged.
+                      </div>
+                    ) : (
+                      recentNotifications.slice(0, 5).map((n) => (
+                        <div
+                          key={n.id}
+                          style={{
+                            padding: "8px 10px",
+                            backgroundColor: "var(--bg-primary)",
+                            border: "1px solid var(--border-subtle)",
+                            borderRadius: "var(--radius-sm)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                            <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-primary)" }}>
+                              {n.sender.name}: {n.taskTitle || n.documentTitle || n.workspaceName}
+                            </span>
+                            <span style={{ fontSize: "11px", color: "var(--text-muted)", fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              "{n.contextSnippet}"
+                            </span>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                              backgroundColor: "var(--accent-light)",
+                              color: "var(--accent-text)",
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              flexShrink: 0,
+                              marginLeft: "8px",
+                            }}
+                          >
+                            {n.emailStatus || "Sent"}
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>

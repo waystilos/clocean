@@ -5,6 +5,7 @@ import {
   WorkspaceTree,
   TreeNode,
   DocContent,
+  TaskItem,
   TasksData,
   PhotosData,
   ActivitiesData,
@@ -12,6 +13,9 @@ import {
   DocCommentsData,
   MentionNotification,
   UserNotificationsData,
+  DocRevision,
+  DocRevisionsData,
+  WorkspaceFavoritesData,
 } from "./types.ts";
 import { R2Database } from "./storage/r2Db.ts";
 import { getAuthEmail, requireAuth } from "./auth/cfAccess.ts";
@@ -92,6 +96,11 @@ export function getWorkspaceId(c: any): string {
 
 // Middleware: Auto-seed R2 database on first run and enforce auth in production
 app.use("/api/*", async (c, next) => {
+  // Public document viewing endpoints are accessible without Zero Trust auth
+  if (c.req.path.startsWith("/api/public/")) {
+    return next();
+  }
+
   // Enforce Cloudflare Zero Trust authentication in production
   const authRes = requireAuth(c.req.raw, c.env);
   if (authRes instanceof Response) {
@@ -232,6 +241,44 @@ app.post("/api/workspaces/:wsId/members", async (c) => {
     body.name || body.email.split("@")[0],
     body.role || "member"
   );
+
+  const wsMeta = await db.getWorkspaceMetadata(wsId);
+  const senderProfile = await db.getUserProfile(requesterEmail);
+  const memberSender = currentMembers.find(
+    (m) => m.email.toLowerCase() === requesterEmail.toLowerCase()
+  );
+  const senderName = memberSender?.name || senderProfile.name;
+  const senderAvatar = memberSender?.avatar || senderProfile.avatar;
+
+  // Dispatch rich invitation email to invitee
+  const inviteNotification: MentionNotification = {
+    id: `invite-${crypto.randomUUID()}`,
+    workspaceId: wsId,
+    workspaceName: wsMeta?.name || "Clocean Workspace",
+    type: "invite",
+    inviteRole: body.role || "member",
+    sender: {
+      name: senderName,
+      email: requesterEmail,
+      avatar: senderAvatar,
+    },
+    recipientEmail: body.email.trim(),
+    recipientName: body.name || body.email.split("@")[0],
+    contextSnippet: `You have been invited by ${senderName} to collaborate in ${
+      wsMeta?.name || "Clocean Workspace"
+    } as ${body.role === "admin" ? "an Admin" : "a Member"}.`,
+    timestamp: "Just now",
+    emailStatus: "simulated",
+    read: false,
+  };
+  await dispatchMentionNotification(c.env, db, inviteNotification, new URL(c.req.url).origin);
+
+  await db.appendActivity(wsId, {
+    title: `${senderName} invited ${body.email.trim()} as ${body.role || "member"}`,
+    type: "doc",
+    user: senderName,
+  });
+
   const updated = await db.getWorkspaceMembers(wsId);
   return c.json(updated);
 });
@@ -399,19 +446,57 @@ app.put("/api/docs/:id", async (c) => {
     content: (body.content ?? existing?.content ?? "").slice(0, 5 * 1024 * 1024), // Max 5 MB markdown
     updatedAt: new Date().toISOString(),
     attachments: body.attachments ?? existing?.attachments ?? [],
+    icon: body.icon ?? existing?.icon,
+    cover: body.cover ?? existing?.cover,
+    isPublic: body.isPublic ?? existing?.isPublic,
+    publicToken: body.publicToken ?? existing?.publicToken,
   };
 
   await db.putJson(`workspaces/${ws}/docs/${id}/content.json`, updatedDoc);
 
-  // Sync title in tree
+  // Sync title & icon in tree
   const treeRes = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
   if (treeRes.data) {
     const node = treeRes.data.nodes.find((n) => n.id === id);
-    if (node && node.name !== updatedDoc.title) {
-      node.name = updatedDoc.title;
-      node.updatedAt = "Just now";
-      await db.putJson(`workspaces/${ws}/tree.json`, treeRes.data);
+    if (node) {
+      let treeChanged = false;
+      if (node.name !== updatedDoc.title) {
+        node.name = updatedDoc.title;
+        treeChanged = true;
+      }
+      if (updatedDoc.icon && node.icon !== updatedDoc.icon) {
+        node.icon = updatedDoc.icon;
+        treeChanged = true;
+      }
+      if (treeChanged) {
+        node.updatedAt = "Just now";
+        await db.putJson(`workspaces/${ws}/tree.json`, treeRes.data);
+      }
     }
+  }
+
+  // Save revision snapshot if content changed and non-empty
+  if (body.content !== undefined && body.content !== existing?.content && updatedDoc.content.trim().length > 0) {
+    const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+    const senderProfile = await db.getUserProfile(senderEmail);
+    const revId = `rev-${Date.now()}`;
+    const newRev: DocRevision = {
+      id: revId,
+      timestamp: new Date().toISOString(),
+      title: safeTitle,
+      author: {
+        name: senderProfile.name,
+        email: senderEmail,
+        avatar: senderProfile.avatar,
+      },
+      snippet: updatedDoc.content.slice(0, 120).trim(),
+      content: updatedDoc.content,
+    };
+    await db.putJson(`workspaces/${ws}/docs/${id}/revisions/${revId}.json`, newRev);
+    const revListRes = await db.getJson<DocRevisionsData>(`workspaces/${ws}/docs/${id}/revisions.json`);
+    const revList = revListRes.data || { docId: id, revisions: [] };
+    revList.revisions = [newRev, ...revList.revisions].slice(0, 25);
+    await db.putJson(`workspaces/${ws}/docs/${id}/revisions.json`, revList);
   }
 
   // Detect @ mentions in document content and dispatch email notifications to mentioned teammates
@@ -456,6 +541,119 @@ app.put("/api/docs/:id", async (c) => {
   }
 
   return c.json(updatedDoc);
+});
+
+// Document Revisions Endpoints
+app.get("/api/docs/:id/revisions", async (c) => {
+  const id = c.req.param("id");
+  if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
+  const ws = getWorkspaceId(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const res = await db.getJson<DocRevisionsData>(`workspaces/${ws}/docs/${id}/revisions.json`);
+  return c.json(res.data?.revisions || []);
+});
+
+app.post("/api/docs/:id/revisions/:revId/restore", async (c) => {
+  const id = c.req.param("id");
+  const revId = c.req.param("revId");
+  if (!isValidId(id) || !isValidId(revId)) return c.json({ error: "Invalid ID parameter" }, 400);
+  const ws = getWorkspaceId(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const revRes = await db.getJson<DocRevision>(`workspaces/${ws}/docs/${id}/revisions/${revId}.json`);
+  if (!revRes.data) return c.json({ error: "Revision not found" }, 404);
+
+  const docRes = await db.getJson<DocContent>(`workspaces/${ws}/docs/${id}/content.json`);
+  const doc = docRes.data || {
+    id,
+    title: revRes.data.title,
+    tags: [],
+    content: revRes.data.content,
+    updatedAt: new Date().toISOString(),
+    attachments: [],
+  };
+  doc.content = revRes.data.content;
+  doc.title = revRes.data.title;
+  doc.updatedAt = new Date().toISOString();
+  await db.putJson(`workspaces/${ws}/docs/${id}/content.json`, doc);
+  return c.json(doc);
+});
+
+// Document Public Sharing Endpoints
+app.post("/api/docs/:id/share", async (c) => {
+  const id = c.req.param("id");
+  if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
+  const ws = getWorkspaceId(c);
+  const body = await c.req.json<{ isPublic: boolean }>();
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const docRes = await db.getJson<DocContent>(`workspaces/${ws}/docs/${id}/content.json`);
+  if (!docRes.data) return c.json({ error: "Document not found" }, 404);
+
+  const doc = docRes.data;
+  doc.isPublic = !!body.isPublic;
+  if (doc.isPublic && !doc.publicToken) {
+    doc.publicToken = `pub-${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  }
+  await db.putJson(`workspaces/${ws}/docs/${id}/content.json`, doc);
+
+  if (doc.isPublic && doc.publicToken) {
+    await db.putJson(`public/shares/${doc.publicToken}.json`, {
+      workspaceId: ws,
+      docId: id,
+    });
+  }
+  return c.json({ isPublic: doc.isPublic, publicToken: doc.publicToken });
+});
+
+// Public Read-Only Endpoint (Exempt from Auth)
+app.get("/api/public/docs/:token", async (c) => {
+  const token = c.req.param("token");
+  if (!isValidId(token)) return c.json({ error: "Invalid share token" }, 400);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const lookup = await db.getJson<{ workspaceId: string; docId: string }>(`public/shares/${token}.json`);
+  if (!lookup.data) return c.json({ error: "Public document not found or revoked" }, 404);
+
+  const { workspaceId, docId } = lookup.data;
+  const docRes = await db.getJson<DocContent>(`workspaces/${workspaceId}/docs/${docId}/content.json`);
+  if (!docRes.data || !docRes.data.isPublic || docRes.data.publicToken !== token) {
+    return c.json({ error: "Public document not found or sharing disabled" }, 404);
+  }
+
+  // Return strictly public metadata: zero leakage of internal ids, members, or comments
+  return c.json({
+    id: docRes.data.id,
+    title: docRes.data.title,
+    content: docRes.data.content,
+    tags: docRes.data.tags || [],
+    icon: docRes.data.icon,
+    cover: docRes.data.cover,
+    updatedAt: docRes.data.updatedAt,
+  });
+});
+
+// Workspace Favorites Endpoints
+app.get("/api/workspaces/:ws/favorites", async (c) => {
+  const ws = c.req.param("ws") || getWorkspaceId(c);
+  if (!isValidId(ws)) return c.json({ error: "Invalid workspace ID" }, 400);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const res = await db.getJson<WorkspaceFavoritesData>(`workspaces/${ws}/favorites.json`);
+  return c.json(res.data?.docIds || []);
+});
+
+app.post("/api/workspaces/:ws/favorites", async (c) => {
+  const ws = c.req.param("ws") || getWorkspaceId(c);
+  if (!isValidId(ws)) return c.json({ error: "Invalid workspace ID" }, 400);
+  const body = await c.req.json<{ docId: string }>();
+  if (!body.docId || !isValidId(body.docId)) return c.json({ error: "Invalid doc ID" }, 400);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const res = await db.getJson<WorkspaceFavoritesData>(`workspaces/${ws}/favorites.json`);
+  const favs = res.data || { workspaceId: ws, docIds: [] };
+  if (favs.docIds.includes(body.docId)) {
+    favs.docIds = favs.docIds.filter((id) => id !== body.docId);
+  } else {
+    favs.docIds.push(body.docId);
+  }
+  await db.putJson(`workspaces/${ws}/favorites.json`, favs);
+  return c.json(favs.docIds);
 });
 
 // Document Comments & Discussions Endpoints
@@ -626,6 +824,41 @@ app.post("/api/notifications/mention", async (c) => {
   return c.json({ dispatched: dispatched.length, notifications: dispatched });
 });
 
+app.post("/api/notifications/test", async (c) => {
+  const ws = getWorkspaceId(c);
+  const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const wsMeta = await db.getWorkspaceMetadata(ws);
+  const senderProfile = await db.getUserProfile(senderEmail);
+
+  const testNotification: MentionNotification = {
+    id: `notif-test-${crypto.randomUUID()}`,
+    workspaceId: ws,
+    workspaceName: wsMeta?.name || "Clocean Workspace",
+    type: "test",
+    sender: {
+      name: senderProfile.name,
+      email: senderEmail,
+      avatar: senderProfile.avatar,
+    },
+    recipientEmail: senderEmail,
+    recipientName: senderProfile.name,
+    contextSnippet:
+      "This is a test notification verifying that your Clocean email notification engine is properly configured.",
+    timestamp: "Just now",
+    emailStatus: "simulated",
+    read: false,
+  };
+
+  const result = await dispatchMentionNotification(
+    c.env,
+    db,
+    testNotification,
+    new URL(c.req.url).origin
+  );
+  return c.json({ success: true, notification: testNotification, deliveryStatus: result.status });
+});
+
 // Drive File Upload & Streaming
 app.post("/api/upload", async (c) => {
   const body = await c.req.parseBody();
@@ -778,8 +1011,87 @@ app.get("/api/tasks", async (c) => {
 
 app.put("/api/tasks", async (c) => {
   const ws = getWorkspaceId(c);
-  const tasks = await c.req.json<any[]>();
+  const tasks = await c.req.json<TaskItem[]>();
+  const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const existing = await db.getJson<TasksData>(`workspaces/${ws}/tasks.json`);
+  const previousTasks = existing.data?.tasks || [];
+  const prevMap = new Map<string, TaskItem>(previousTasks.map((t) => [t.id, t]));
+
+  const members = await db.getWorkspaceMembers(ws);
+  const wsMeta = await db.getWorkspaceMetadata(ws);
+  const senderProfile = await db.getUserProfile(senderEmail);
+  const memberSender = members.find((m) => m.email.toLowerCase() === senderEmail.toLowerCase());
+  const senderName = memberSender?.name || senderProfile.name;
+  const senderAvatar = memberSender?.avatar || senderProfile.avatar;
+
+  // Detect newly added or updated tasks with @ mentions or assignee assignments
+  for (const task of tasks) {
+    const prev = prevMap.get(task.id);
+    const combinedText = `${task.title} ${task.description || ""}`;
+    const mentions = extractMentions(combinedText, members, senderEmail);
+
+    // Also check if an assignee is set who is not the sender and wasn't previously assigned
+    const assigneeEmail = task.assignee?.email?.toLowerCase();
+    const prevAssigneeEmail = prev?.assignee?.email?.toLowerCase();
+    const isNewAssignee =
+      assigneeEmail &&
+      assigneeEmail !== senderEmail.toLowerCase() &&
+      assigneeEmail !== prevAssigneeEmail;
+
+    const notifiedEmails = new Set<string>();
+
+    for (const member of mentions) {
+      notifiedEmails.add(member.email.toLowerCase());
+      const notif: MentionNotification = {
+        id: `notif-task-${crypto.randomUUID()}`,
+        workspaceId: ws,
+        workspaceName: wsMeta?.name || "Clocean Workspace",
+        type: "task",
+        taskId: task.id,
+        taskTitle: task.title,
+        sender: {
+          name: senderName,
+          email: senderEmail,
+          avatar: senderAvatar,
+        },
+        recipientEmail: member.email,
+        recipientName: member.name,
+        contextSnippet: task.title,
+        timestamp: "Just now",
+        emailStatus: "simulated",
+        read: false,
+      };
+      await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
+    }
+
+    if (isNewAssignee && !notifiedEmails.has(assigneeEmail)) {
+      const assignedMember = members.find((m) => m.email.toLowerCase() === assigneeEmail);
+      if (assignedMember) {
+        const notif: MentionNotification = {
+          id: `notif-task-${crypto.randomUUID()}`,
+          workspaceId: ws,
+          workspaceName: wsMeta?.name || "Clocean Workspace",
+          type: "task",
+          taskId: task.id,
+          taskTitle: task.title,
+          sender: {
+            name: senderName,
+            email: senderEmail,
+            avatar: senderAvatar,
+          },
+          recipientEmail: assignedMember.email,
+          recipientName: assignedMember.name,
+          contextSnippet: `Assigned to: "${task.title}"`,
+          timestamp: "Just now",
+          emailStatus: "simulated",
+          read: false,
+        };
+        await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
+      }
+    }
+  }
+
   await db.putJson(`workspaces/${ws}/tasks.json`, {
     tasks,
     updatedAt: new Date().toISOString(),

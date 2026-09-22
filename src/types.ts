@@ -29,18 +29,55 @@ export interface DocContent {
   content: string;
   updatedAt: string;
   attachments: DocAttachment[];
+  icon?: string;
+  cover?: string;
+  isPublic?: boolean;
+  publicToken?: string;
+}
+
+export interface DocRevision {
+  id: string;
+  timestamp: string;
+  title: string;
+  author: {
+    name: string;
+    email: string;
+    avatar?: string;
+  };
+  snippet: string;
+  content: string;
+}
+
+export interface DocRevisionsData {
+  docId: string;
+  revisions: DocRevision[];
+}
+
+export interface WorkspaceFavoritesData {
+  workspaceId: string;
+  docIds: string[];
+}
+
+export interface TaskSubtask {
+  id: string;
+  title: string;
+  completed: boolean;
 }
 
 export interface TaskItem {
   id: string;
   title: string;
+  description?: string;
   status: "todo" | "inprogress" | "done";
+  priority?: "urgent" | "high" | "medium" | "low";
   dueDate: string;
   assignee: {
     name: string;
     email: string;
     avatar?: string;
   };
+  tags?: string[];
+  subtasks?: TaskSubtask[];
 }
 
 export interface PhotoItem {
@@ -107,8 +144,12 @@ export interface MentionNotification {
   id: string;
   workspaceId: string;
   workspaceName: string;
-  documentId: string;
-  documentTitle: string;
+  documentId?: string;
+  documentTitle?: string;
+  taskId?: string;
+  taskTitle?: string;
+  type?: "doc" | "comment" | "task" | "invite" | "test";
+  inviteRole?: "admin" | "member";
   sender: {
     name: string;
     email: string;

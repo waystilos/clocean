@@ -22,6 +22,7 @@ import {
   UserWorkspaceReference,
   MentionNotification,
 } from "./types.ts";
+import { MarkdownRenderer } from "./components/MarkdownRenderer.tsx";
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewMode>("home");
@@ -55,6 +56,32 @@ export const App: React.FC = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [previewFile, setPreviewFile] = useState<TreeNode | DocAttachment | null>(null);
+
+  // Public document share link handling (?p=pub-xxx)
+  const [publicToken] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("p");
+  });
+  const [publicDoc, setPublicDoc] = useState<any>(null);
+  const [publicLoading, setPublicLoading] = useState<boolean>(!!publicToken);
+  const [publicError, setPublicError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!publicToken) return;
+    fetch(`/api/public/docs/${publicToken}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Public document not found or sharing has been revoked.");
+        return res.json();
+      })
+      .then((data) => {
+        setPublicDoc(data);
+        setPublicLoading(false);
+      })
+      .catch((err) => {
+        setPublicError(err.message);
+        setPublicLoading(false);
+      });
+  }, [publicToken]);
 
   // Sync theme with DOM document attribute
   useEffect(() => {
@@ -192,6 +219,94 @@ export const App: React.FC = () => {
     return undefined;
   };
 
+  if (publicToken) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          backgroundColor: "var(--bg-primary)",
+          color: "var(--text-primary)",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <header
+          style={{
+            borderBottom: "1px solid var(--border-subtle)",
+            padding: "16px 32px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            backgroundColor: "var(--bg-surface)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 600 }}>
+            <span style={{ fontSize: "20px" }}>🌊</span>
+            <span style={{ color: "var(--text-primary)", fontSize: "15px" }}>Clocean Public Web</span>
+          </div>
+          <button
+            onClick={handleToggleTheme}
+            className="btn-icon"
+            style={{ width: "32px", height: "32px", fontSize: "14px" }}
+            title="Toggle Theme"
+          >
+            {theme === "dark" ? "☀️" : "🌙"}
+          </button>
+        </header>
+
+        <main style={{ flex: 1, maxWidth: "800px", width: "100%", margin: "0 auto", padding: "48px 24px" }}>
+          {publicLoading ? (
+            <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-muted)" }}>
+              Loading document from Cloudflare edge...
+            </div>
+          ) : publicError ? (
+            <div style={{ textAlign: "center", padding: "60px 0" }}>
+              <h2 style={{ color: "#ef4444", marginBottom: "8px" }}>404 Not Found</h2>
+              <p style={{ color: "var(--text-muted)" }}>{publicError}</p>
+            </div>
+          ) : publicDoc ? (
+            <div>
+              {publicDoc.cover && (
+                <div
+                  style={{
+                    height: "180px",
+                    background: publicDoc.cover,
+                    borderRadius: "var(--radius-lg)",
+                    marginBottom: "28px",
+                  }}
+                />
+              )}
+              <div style={{ fontSize: "36px", marginBottom: "12px" }}>{publicDoc.icon || "📄"}</div>
+              <h1 className="font-serif" style={{ fontSize: "36px", fontWeight: 600, marginBottom: "12px", color: "var(--text-primary)" }}>
+                {publicDoc.title}
+              </h1>
+              <div style={{ display: "flex", gap: "6px", marginBottom: "28px" }}>
+                {(publicDoc.tags || []).map((t: string, idx: number) => (
+                  <span key={idx} style={{ fontSize: "12px", color: "var(--accent-text)", fontWeight: 500 }}>
+                    {t}
+                  </span>
+                ))}
+              </div>
+              <MarkdownRenderer content={publicDoc.content} />
+            </div>
+          ) : null}
+        </main>
+
+        <footer
+          style={{
+            borderTop: "1px solid var(--border-subtle)",
+            padding: "20px",
+            textAlign: "center",
+            fontSize: "12px",
+            color: "var(--text-muted)",
+          }}
+        >
+          Published with <strong>Clocean</strong> — Zero-cost serverless document workspace
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", width: "100vw", height: "100vh", overflow: "hidden" }}>
       {/* Figma Sidebar */}
@@ -207,6 +322,8 @@ export const App: React.FC = () => {
         onSelectWorkspace={(ws) => setCurrentWorkspace(ws)}
         onOpenCreateWorkspace={() => setIsCreateWsOpen(true)}
         onOpenTeamMembers={() => setIsTeamMembersOpen(true)}
+        tree={tree}
+        onSelectDoc={handleNavigateDoc}
       />
 
       {/* Main Content Area */}
@@ -263,6 +380,7 @@ export const App: React.FC = () => {
             <TasksView
               tasks={tasks}
               currentUser={currentUser}
+              workspaceId={currentWorkspace.id}
               onUpdateTasks={handleUpdateTasks}
             />
           )}

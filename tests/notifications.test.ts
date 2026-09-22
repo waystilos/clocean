@@ -190,5 +190,85 @@ describe("Clocean @ Mentions & Email Notification System", () => {
       const notifs = (await notifRes.json()) as MentionNotification[];
       expect(notifs.every((n) => n.read === true)).toBe(true);
     });
+
+    it("should dispatch task email notifications when teammates are @ mentioned or assigned in tasks", async () => {
+      const taskId = `task-notif-${Date.now()}`;
+      const tasksPayload = [
+        {
+          id: taskId,
+          title: "Complete Figma design export @Elena Rostova",
+          status: "todo",
+          priority: "urgent",
+          dueDate: "Due tomorrow",
+          assignee: {
+            name: "Elena Rostova",
+            email: "elena@clocean.co",
+          },
+        },
+      ];
+
+      const putRes = await fetch(`${BASE_URL}/api/tasks?user=alex`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-workspace-id": "default",
+        },
+        body: JSON.stringify(tasksPayload),
+      });
+      expect(putRes.status).toBe(200);
+
+      // Verify Elena received the task mention/assignment notification
+      const elenaNotifs = await fetch(`${BASE_URL}/api/notifications?user=elena`);
+      expect(elenaNotifs.status).toBe(200);
+      const notifications = (await elenaNotifs.json()) as MentionNotification[];
+      const found = notifications.find((n) => n.taskId === taskId || n.contextSnippet.includes("Figma design export"));
+      expect(found).toBeDefined();
+      expect(found?.type).toBe("task");
+      expect(found?.recipientEmail).toBe("elena@clocean.co");
+    });
+
+    it("should dispatch invitation email when an admin invites a new member", async () => {
+      const newTeammateEmail = `designer-${Date.now()}@clocean.co`;
+      const inviteRes = await fetch(`${BASE_URL}/api/workspaces/default/members?user=alex`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: newTeammateEmail,
+          name: "Design Lead",
+          role: "member",
+        }),
+      });
+      expect(inviteRes.status).toBe(200);
+
+      // Verify invitee received the invitation email notification
+      const inviteeNotifsRes = await fetch(
+        `${BASE_URL}/api/notifications?user=${encodeURIComponent(newTeammateEmail)}`
+      );
+      expect(inviteeNotifsRes.status).toBe(200);
+      const inviteeNotifs = (await inviteeNotifsRes.json()) as MentionNotification[];
+      expect(inviteeNotifs.length).toBeGreaterThan(0);
+      expect(inviteeNotifs[0].type).toBe("invite");
+      expect(inviteeNotifs[0].recipientEmail).toBe(newTeammateEmail);
+      expect(inviteeNotifs[0].contextSnippet).toContain("invited by Alex Sterling");
+    });
+
+    it("should dispatch verification test email via POST /api/notifications/test", async () => {
+      const testRes = await fetch(`${BASE_URL}/api/notifications/test?user=marcus`, {
+        method: "POST",
+        headers: { "x-workspace-id": "default" },
+      });
+      expect(testRes.status).toBe(200);
+      const testData = (await testRes.json()) as any;
+      expect(testData.success).toBe(true);
+      expect(testData.notification.type).toBe("test");
+      expect(testData.notification.recipientEmail).toBe("marcus@clocean.co");
+
+      // Verify Marcus has the test notification
+      const marcusNotifsRes = await fetch(`${BASE_URL}/api/notifications?user=marcus`);
+      const marcusNotifs = (await marcusNotifsRes.json()) as MentionNotification[];
+      const found = marcusNotifs.find((n) => n.type === "test");
+      expect(found).toBeDefined();
+      expect(found?.contextSnippet).toContain("test notification");
+    });
   });
 });

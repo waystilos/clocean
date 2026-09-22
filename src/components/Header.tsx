@@ -264,7 +264,9 @@ export const Header: React.FC<HeaderProps> = ({
                       key={n.id}
                       onClick={() => {
                         setIsNotifOpen(false);
-                        onSelectDoc?.(n.documentId);
+                        if (n.documentId) {
+                          onSelectDoc?.(n.documentId);
+                        }
                       }}
                       style={{
                         padding: "12px 16px",
@@ -290,9 +292,18 @@ export const Header: React.FC<HeaderProps> = ({
                         />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: "12px", color: "var(--text-primary)", lineHeight: 1.4 }}>
-                            <strong>{n.sender.name}</strong> mentioned you in{" "}
+                            <strong>{n.sender.name}</strong>{" "}
+                            {n.type === "invite" ? (
+                              <span>invited you to join</span>
+                            ) : n.type === "task" ? (
+                              <span>mentioned you in task</span>
+                            ) : n.type === "test" ? (
+                              <span>sent you a test notification in</span>
+                            ) : (
+                              <span>mentioned you in</span>
+                            )}{" "}
                             <span style={{ color: "var(--accent)", fontWeight: 500 }}>
-                              {n.documentTitle}
+                              {n.taskTitle || n.documentTitle || n.workspaceName}
                             </span>
                           </div>
                           {n.contextSnippet && (

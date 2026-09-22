@@ -88,9 +88,9 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
 
       const updatedMembers: any = await res.json();
       setMembers(Array.isArray(updatedMembers) ? updatedMembers : updatedMembers?.members || []);
-      setSuccessMsg(`Invited ${inviteEmail} to ${workspace.name}!`);
+      setSuccessMsg(`Invited ${inviteEmail} to ${workspace.name}! An invitation email has been dispatched.`);
       setInviteEmail("");
-      setTimeout(() => setSuccessMsg(null), 3500);
+      setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
       setError(err.message || "Failed to invite member");
     } finally {
@@ -266,19 +266,23 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
           {/* Invite form (only for Owner and Admin) */}
           {isPrivileged ? (
             <form onSubmit={handleInvite} style={{ marginBottom: "24px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "var(--text-secondary)",
-                  marginBottom: "8px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Invite Team Member
-              </label>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "var(--text-secondary)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Invite Team Member
+                </label>
+                <span style={{ fontSize: "11px", color: "var(--accent)" }}>
+                  Admin privileges enabled • Invitation email will be sent
+                </span>
+              </div>
               <div style={{ display: "flex", gap: "8px" }}>
                 <div style={{ position: "relative", flex: 1 }}>
                   <Mail

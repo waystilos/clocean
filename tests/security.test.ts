@@ -203,4 +203,124 @@ describe("Clocean Enterprise Security Regression Test Suite", () => {
       expect(getAuthEmail(req, devEnv)).toBe("marcus@clocean.co");
     });
   });
+
+  // 6. Public Share Isolation & Token Boundary Defense
+  describe("Public Share Isolation & Token Boundary Defense", () => {
+    const testDocId = `sec-share-${Date.now()}`;
+    let pubToken = "";
+
+    it("should reject path traversal sequences in public token parameter with 400", async () => {
+      const res = await fetch(`${BASE_URL}/api/public/docs/..%2F..%2Fworkspaces%2Fdefault%2Ftree`);
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Invalid share token");
+    });
+
+    it("should return 404 for nonexistent or invalid share tokens", async () => {
+      const res = await fetch(`${BASE_URL}/api/public/docs/pub-nonexistent-12345`);
+      expect(res.status).toBe(404);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Public document not found");
+    });
+
+    it("should share a document, allow unauthenticated read, and strictly sanitize response against data leakage", async () => {
+      // 1. Create document with internal metadata
+      await fetch(`${BASE_URL}/api/docs/${testDocId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Public Share Test Doc",
+          content: "Confidential details in comments only.",
+          icon: "🔒",
+          cover: "gradient-emerald",
+        }),
+      });
+
+      // 2. Enable sharing
+      const shareRes = await fetch(`${BASE_URL}/api/docs/${testDocId}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: true }),
+      });
+      expect(shareRes.status).toBe(200);
+      const shareData = (await shareRes.json()) as any;
+      expect(shareData.isPublic).toBe(true);
+      expect(shareData.publicToken).toBeDefined();
+      pubToken = shareData.publicToken;
+
+      // 3. Fetch anonymously without any auth headers or cookies
+      const publicRes = await fetch(`${BASE_URL}/api/public/docs/${pubToken}`);
+      expect(publicRes.status).toBe(200);
+      const publicDoc = (await publicRes.json()) as any;
+
+      // Verify legitimate public fields
+      expect(publicDoc.title).toBe("Public Share Test Doc");
+      expect(publicDoc.content).toBe("Confidential details in comments only.");
+      expect(publicDoc.icon).toBe("🔒");
+      expect(publicDoc.cover).toBe("gradient-emerald");
+
+      // Verify ZERO leakage of sensitive internal workspace fields
+      expect(publicDoc.workspaceId).toBeUndefined();
+      expect(publicDoc.members).toBeUndefined();
+      expect(publicDoc.comments).toBeUndefined();
+      expect(publicDoc.attachments).toBeUndefined();
+      expect(publicDoc.revisions).toBeUndefined();
+    });
+
+    it("should immediately revoke public access when isPublic is set to false", async () => {
+      const revokeRes = await fetch(`${BASE_URL}/api/docs/${testDocId}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: false }),
+      });
+      expect(revokeRes.status).toBe(200);
+
+      // Now verify public token returns 404
+      const publicRes = await fetch(`${BASE_URL}/api/public/docs/${pubToken}`);
+      expect(publicRes.status).toBe(404);
+      const data = (await publicRes.json()) as any;
+      expect(data.error).toContain("disabled");
+    });
+  });
+
+  // 7. Revisions & Favorites Identifier Validation (Path Traversal)
+  describe("Revisions & Favorites Identifier Validation", () => {
+    it("should reject path traversal in revisions endpoints", async () => {
+      const resRev = await fetch(`${BASE_URL}/api/docs/..%2F..%2Ftree/revisions`);
+      expect(resRev.status).toBe(400);
+
+      const resRestore = await fetch(
+        `${BASE_URL}/api/docs/doc-valid/revisions/..%2F..%2Fevil/restore`,
+        { method: "POST" }
+      );
+      expect(resRestore.status).toBe(400);
+    });
+
+    it("should reject path traversal in favorites workspace parameter", async () => {
+      const resFav = await fetch(`${BASE_URL}/api/workspaces/..%2F..%2Fexploit/favorites`);
+      expect(resFav.status).toBe(400);
+
+      const resFavPost = await fetch(
+        `${BASE_URL}/api/workspaces/..%2F..%2Fexploit/favorites`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ docId: "doc-123" }),
+        }
+      );
+      expect(resFavPost.status).toBe(400);
+    });
+
+    it("should reject invalid docId in favorites body", async () => {
+      const res = await fetch(`${BASE_URL}/api/workspaces/default/favorites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docId: "../../../escape" }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Invalid doc ID");
+    });
+  });
 });
+

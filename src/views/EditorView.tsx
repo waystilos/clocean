@@ -18,8 +18,37 @@ import {
   Mail,
   Shield,
   Check,
+  Eye,
+  Columns,
+  Edit3,
+  Table as TableIcon,
+  Code,
+  Quote,
+  Star,
+  Globe,
+  History,
+  Sparkles,
+  Lightbulb,
+  AlertTriangle,
+  ChevronRight,
+  X,
+  RotateCcw,
+  Copy,
+  Smile,
+  Palette,
+  Minus,
+  ListOrdered,
+  Share2,
 } from "lucide-react";
-import { DocContent, DocAttachment, UserProfile, WorkspaceMember, DocComment } from "../types.ts";
+import {
+  DocContent,
+  DocAttachment,
+  UserProfile,
+  WorkspaceMember,
+  DocComment,
+  DocRevision,
+} from "../types.ts";
+import { MarkdownRenderer } from "../components/MarkdownRenderer.tsx";
 
 interface EditorViewProps {
   docId: string;
@@ -43,6 +72,57 @@ interface RemoteCursor {
   };
 }
 
+const COVER_PRESETS = [
+  { name: "Obsidian Emerald", style: "linear-gradient(135deg, #141412 0%, #1E7D6B 100%)" },
+  { name: "Warm Sunset", style: "linear-gradient(135deg, #7C2D12 0%, #D97706 100%)" },
+  { name: "Ocean Deep", style: "linear-gradient(135deg, #0C4A6E 0%, #0284C7 100%)" },
+  { name: "Violet Twilight", style: "linear-gradient(135deg, #4C1D95 0%, #8B5CF6 100%)" },
+  { name: "Obsidian Monochrome", style: "linear-gradient(135deg, #232321 0%, #141412 100%)" },
+];
+
+const EMOJI_PALETTE = [
+  "📄", "🚀", "💡", "📋", "📝", "🎯", "🔥", "🌊", "⚡", "🎨",
+  "🛠️", "📊", "🏆", "📦", "🧩", "🔒", "🏷️", "💬", "🌐", "📚"
+];
+
+const STARTER_TEMPLATES = [
+  {
+    id: "meeting",
+    title: "Weekly Team Sync Notes",
+    icon: "📋",
+    tags: ["#meetings", "#notes"],
+    content: `# Weekly Team Sync Notes\n\n> [!NOTE]\n> **Meeting Goal**: Align on sprint deliverables, address roadblocks, and finalize deployment plan.\n\n### 👥 Attendees\n- @Alex Bailey (Lead)\n- @Elena Rostova (Engineering)\n- @Marcus Vance (Design)\n\n### 📌 Agenda\n1. Review sprint burndown and outstanding PRs\n2. Database architecture on Cloudflare R2\n3. Zero Trust Access configuration\n\n### 💬 Discussion Points\n- Performance benchmarks show sub-millisecond edge latency with Durable Objects.\n- ETag optimistic locking successfully prevents concurrent write collisions.\n\n### ✅ Action Items\n- [ ] Finalize production R2 bucket bindings\n- [ ] Invite QA engineers to workspace roster\n- [ ] Deploy v2-dashboard update\n`,
+  },
+  {
+    id: "prd",
+    title: "Product Requirement Spec (PRD)",
+    icon: "🚀",
+    tags: ["#spec", "#product"],
+    content: `# Feature Spec: Cloudflare R2 Workspace Database\n\n> [!TIP]\n> **Objective**: Provide a fully serverless, zero-database-cost persistence layer using Cloudflare R2 and optimistic locking.\n\n## 1. Problem Statement\nTraditional databases add standing monthly costs and infrastructure management overhead. We need infinite serverless scalability at near-zero standing cost.\n\n## 2. Requirements Matrix\n| Feature | Priority | Target Sprint | Status |\n| :--- | :---: | :---: | ---: |\n| Optimistic ETag Concurrency | Urgent | Sprint 14 | Done |\n| Real-Time WebSocket Rooms | High | Sprint 14 | In Progress |\n| Public Read-Only Share Link | Medium | Sprint 15 | Todo |\n\n## 3. Architecture Overview\n> [toggle] Edge Data Flow Details\n> All JSON metadata files reside in Cloudflare R2. Durable Objects maintain in-memory state and debounce writes.\n\n## 4. Open Questions\n- [ ] What is the maximum payload size for single-document markdown files? (Currently set to 5 MB)\n- [ ] Should public share links support password protection?\n`,
+  },
+  {
+    id: "sprint",
+    title: "Sprint Planning",
+    icon: "🎯",
+    tags: ["#sprint", "#planning"],
+    content: `# Sprint 15 Planning & Goals\n\n> [!IMPORTANT]\n> **Sprint Theme**: Feature parity with Notion (Slash Menu, Multi-View Kanban/Table, Public Sharing).\n\n## 🎯 Sprint Objectives\n1. Release Notion-style Slash command menu for fluid document authoring.\n2. Add Table View alongside Kanban board in Tasks view.\n3. Complete Red-Team security verification of all edge routes.\n\n## 📋 Workstream Breakdown\n| Workstream | Owner | Estimated Days | Risk Level |\n| :--- | :--- | :---: | ---: |\n| Document Engine | @Elena | 3 days | Low |\n| Kanban & Table Multi-View | @Marcus | 2 days | Low |\n| Edge Auth & Public Sharing | @Alex | 2 days | Medium |\n\n## ⚠️ Identified Risks & Mitigations\n> [!WARNING]\n> Public document sharing must strictly isolate internal workspace metadata, preventing ID enumeration or member leakage.\n`,
+  },
+  {
+    id: "wiki",
+    title: "Company Knowledge Base",
+    icon: "📚",
+    tags: ["#wiki", "#handbook"],
+    content: `# Team Handbook & Knowledge Base\n\n> [!NOTE]\n> Welcome to the Clocean workspace! This document outlines team workflows, core repositories, and deployment guides.\n\n## 🚀 Quick Links\n- [GitHub Repository](https://github.com/clocean)\n- [Design System & Figma Tokens](https://figma.com)\n- [Cloudflare Dashboard](https://dash.cloudflare.com)\n\n## 💡 Team Principles\n- **Zero Database Costs**: Persist state as structured JSON in Cloudflare R2.\n- **Sub-Millisecond Edge Latency**: Collab over Durable Objects WebSockets.\n- **Design Fidelity**: Strict adherence to Obsidian Dark & Parchment Light themes.\n\n## ❓ Frequently Asked Questions\n> [toggle] How do I invite team members?\n> Workspace Admins and Owners can invite colleagues directly from the workspace dropdown. An invitation email with a joining link is dispatched automatically.\n\n> [toggle] How does document collaboration work?\n> Cloudflare Durable Objects track connected users, broadcast live cursor positions, and flush debounced markdown content directly into R2.\n`,
+  },
+  {
+    id: "design_doc",
+    title: "Engineering Design Doc",
+    icon: "🛠️",
+    tags: ["#architecture", "#engineering"],
+    content: `# RFC: Edge-Native Transactional Email & Mentions\n\n> [!NOTE]\n> **Author**: Alex Bailey\n> **Status**: Accepted & Implemented\n\n## 1. Context & Motivation\nWhen collaborators are @ mentioned in documents, comments, or sprint tasks, they need immediate email notifications with deep-links to the exact document.\n\n## 2. Technical Design\n\`\`\`typescript\ninterface MentionNotification {\n  id: string;\n  workspaceId: string;\n  recipientEmail: string;\n  documentId: string;\n  contextSnippet: string;\n}\n\`\`\`\n\n## 3. Security Considerations\n> [!CAUTION]\n> Ensure recipient emails are verified against the workspace members roster to prevent arbitrary relay of unsolicited emails.\n`,
+  },
+];
+
 export const EditorView: React.FC<EditorViewProps> = ({
   docId,
   currentUser,
@@ -54,10 +134,40 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [tags, setTags] = useState<string[]>([]);
   const [content, setContent] = useState("");
   const [attachments, setAttachments] = useState<DocAttachment[]>([]);
+  const [icon, setIcon] = useState("📄");
+  const [cover, setCover] = useState<string | null>(null);
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [viewMode, setViewMode] = useState<"edit" | "split" | "preview">("edit");
+
+  // Favorites state
+  const [isFavorite, setIsFavorite] = useState(false);
+
+  // Public Sharing state
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
+  const [publicToken, setPublicToken] = useState("");
+  const [copiedShare, setCopiedShare] = useState(false);
+
+  // History & Revisions state
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [revisions, setRevisions] = useState<DocRevision[]>([]);
+  const [isLoadingRevisions, setIsLoadingRevisions] = useState(false);
+
+  // Pickers & Popovers
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [isCoverPickerOpen, setIsCoverPickerOpen] = useState(false);
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+
+  // Slash Command Menu state
+  const [slashMenu, setSlashMenu] = useState<{
+    visible: boolean;
+    query: string;
+    selectedIndex: number;
+    pos: number;
+  }>({ visible: false, query: "", selectedIndex: 0, pos: 0 });
 
   // Discussion & Mentions State
   const [activeTab, setActiveTab] = useState<"attachments" | "discussion">("attachments");
@@ -75,6 +185,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const socketRef = useRef<WebSocket | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const mentionPopupRef = useRef<HTMLDivElement | null>(null);
+  const slashMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Load initial document from API
   useEffect(() => {
@@ -85,13 +196,29 @@ export const EditorView: React.FC<EditorViewProps> = ({
       .then((raw) => {
         const data = raw as DocContent;
         setDoc(data);
-        setTitle(data.title || "Untitled");
+        setTitle(data.title || "Untitled Document");
         setTags(data.tags || ["#notes"]);
         setContent(data.content || "");
         setAttachments(data.attachments || []);
+        setIcon(data.icon || "📄");
+        setCover(data.cover || null);
+        setIsPublic(!!data.isPublic);
+        setPublicToken(data.publicToken || "");
       })
       .catch((err) => console.error("Error loading document:", err));
   }, [docId, workspaceId]);
+
+  // Load favorites
+  useEffect(() => {
+    fetch(`/api/workspaces/${workspaceId}/favorites`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((favs: any) => {
+        if (Array.isArray(favs)) {
+          setIsFavorite(favs.includes(docId));
+        }
+      })
+      .catch(() => {});
+  }, [workspaceId, docId]);
 
   // Load workspace members for @ mention autocompletion
   useEffect(() => {
@@ -182,20 +309,23 @@ export const EditorView: React.FC<EditorViewProps> = ({
     };
   }, [docId, currentUser, workspaceId]);
 
-  // Close mention popup on click outside
+  // Close mention and slash popups on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (mentionPopupRef.current && !mentionPopupRef.current.contains(e.target as Node)) {
         setMentionPopup((prev) => ({ ...prev, visible: false }));
       }
+      if (slashMenuRef.current && !slashMenuRef.current.contains(e.target as Node)) {
+        setSlashMenu((prev) => ({ ...prev, visible: false }));
+      }
     };
-    if (mentionPopup.visible) {
+    if (mentionPopup.visible || slashMenu.visible) {
       document.addEventListener("mousedown", handleClickOutside);
     }
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [mentionPopup.visible]);
+  }, [mentionPopup.visible, slashMenu.visible]);
 
   // Send edits to peers & Durable Object
   const handleContentChange = (newContent: string) => {
@@ -214,7 +344,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
       );
     }
 
-    // Save fallback to REST API
+    // Debounced persist to Cloudflare R2
     const timeout = setTimeout(() => {
       fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
         method: "PUT",
@@ -222,20 +352,365 @@ export const EditorView: React.FC<EditorViewProps> = ({
           "Content-Type": "application/json",
           "x-workspace-id": workspaceId,
         },
-        body: JSON.stringify({ title, content: newContent, tags, attachments }),
+        body: JSON.stringify({
+          title,
+          content: newContent,
+          tags,
+          attachments,
+          icon,
+          cover,
+          isPublic,
+          publicToken,
+        }),
       }).then(() => setIsSaving(false));
-    }, 1500);
+    }, 1200);
 
     return () => clearTimeout(timeout);
   };
+
+  const handleTitleChange = (newTitle: string) => {
+    setTitle(newTitle);
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({
+          type: "edit",
+          title: newTitle,
+          content,
+          tags,
+          attachments,
+        })
+      );
+    }
+
+    fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-workspace-id": workspaceId,
+      },
+      body: JSON.stringify({
+        title: newTitle,
+        content,
+        tags,
+        attachments,
+        icon,
+        cover,
+      }),
+    });
+  };
+
+  const handleUpdateIcon = (newIcon: string) => {
+    setIcon(newIcon);
+    setIsEmojiPickerOpen(false);
+    fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-workspace-id": workspaceId,
+      },
+      body: JSON.stringify({ title, content, tags, attachments, icon: newIcon, cover }),
+    });
+  };
+
+  const handleUpdateCover = (newCover: string | null) => {
+    setCover(newCover);
+    setIsCoverPickerOpen(false);
+    fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-workspace-id": workspaceId,
+      },
+      body: JSON.stringify({ title, content, tags, attachments, icon, cover: newCover }),
+    });
+  };
+
+  // Toggle favorite
+  const handleToggleFavorite = async () => {
+    try {
+      const res = await fetch(`/api/workspaces/${workspaceId}/favorites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docId }),
+      });
+      if (res.ok) {
+        const favs: string[] = await res.json();
+        setIsFavorite(favs.includes(docId));
+      }
+    } catch (err) {
+      console.error("Failed to toggle favorite:", err);
+    }
+  };
+
+  // Public Sharing toggle
+  const handleToggleShare = async (nextPublic: boolean) => {
+    try {
+      const res = await fetch(`/api/docs/${docId}/share`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-workspace-id": workspaceId,
+        },
+        body: JSON.stringify({ isPublic: nextPublic }),
+      });
+      if (res.ok) {
+        const data: any = await res.json();
+        setIsPublic(data.isPublic);
+        setPublicToken(data.publicToken || "");
+      }
+    } catch (err) {
+      console.error("Failed to toggle public share:", err);
+    }
+  };
+
+  // Load Revisions
+  const loadRevisions = async () => {
+    setIsLoadingRevisions(true);
+    try {
+      const res = await fetch(`/api/docs/${docId}/revisions`, {
+        headers: { "x-workspace-id": workspaceId },
+      });
+      if (res.ok) {
+        const list: any = await res.json();
+        setRevisions(Array.isArray(list) ? list : []);
+      }
+    } catch (err) {
+      console.error("Failed to load revisions:", err);
+    } finally {
+      setIsLoadingRevisions(false);
+    }
+  };
+
+  const handleRestoreRevision = async (revId: string) => {
+    if (!confirm("Restore this version? Current editor text will be replaced.")) return;
+    try {
+      const res = await fetch(`/api/docs/${docId}/revisions/${revId}/restore`, {
+        method: "POST",
+        headers: { "x-workspace-id": workspaceId },
+      });
+      if (res.ok) {
+        const restored: any = await res.json();
+        setContent(restored.content);
+        setTitle(restored.title);
+        handleContentChange(restored.content);
+        setIsHistoryOpen(false);
+      }
+    } catch (err) {
+      console.error("Failed to restore revision:", err);
+    }
+  };
+
+  // Document Export
+  const handleExportMarkdown = () => {
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title.toLowerCase().replace(/[^a-z0-9]+/g, "_") || "document"}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportHTML = () => {
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #1c1c1a; background: #faf8f5; }
+    h1, h2, h3 { font-family: Georgia, serif; }
+    pre { background: #232321; color: #e8e5e0; padding: 14px; border-radius: 6px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th, td { border: 1px solid #e5e5e5; padding: 8px 12px; text-align: left; }
+    th { background: #f2ede6; }
+    blockquote { border-left: 4px solid #1E7D6B; background: rgba(30,125,107,0.08); margin: 16px 0; padding: 10px 16px; }
+  </style>
+</head>
+<body>
+  <h1>${icon || "📄"} ${title}</h1>
+  <div style="color: #666; margin-bottom: 20px;">Tags: ${tags.join(" ")}</div>
+  <hr/>
+  <pre style="white-space: pre-wrap; font-family: inherit; background: none; color: inherit; padding: 0;">${content}</pre>
+</body>
+</html>`;
+    const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title.toLowerCase().replace(/[^a-z0-9]+/g, "_") || "document"}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Apply Starter Template
+  const handleApplyTemplate = (tmpl: (typeof STARTER_TEMPLATES)[0]) => {
+    if (content.trim().length > 0 && !confirm("Replace current content with this template?")) return;
+    setTitle(tmpl.title);
+    setIcon(tmpl.icon);
+    setTags(tmpl.tags);
+    setContent(tmpl.content);
+    handleContentChange(tmpl.content);
+    setIsTemplatePickerOpen(false);
+  };
+
+  // Execute Slash Command
+  const executeSlashCommand = (snippet: string) => {
+    if (!textareaRef.current) return;
+    const val = content;
+    const start = slashMenu.pos;
+    const end = textareaRef.current.selectionStart;
+    const newContent = val.slice(0, start) + snippet + val.slice(end);
+    handleContentChange(newContent);
+    setSlashMenu({ visible: false, query: "", selectedIndex: 0, pos: 0 });
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        const newPos = start + snippet.length;
+        textareaRef.current.setSelectionRange(newPos, newPos);
+      }
+    }, 10);
+  };
+
+  // Slash commands registry
+  const slashCommands = [
+    {
+      id: "h1",
+      label: "Heading 1",
+      description: "Large section header",
+      icon: <Heading1 size={16} />,
+      execute: () => executeSlashCommand("# "),
+    },
+    {
+      id: "h2",
+      label: "Heading 2",
+      description: "Medium section header",
+      icon: <Heading1 size={14} />,
+      execute: () => executeSlashCommand("## "),
+    },
+    {
+      id: "h3",
+      label: "Heading 3",
+      description: "Small section header",
+      icon: <Heading1 size={12} />,
+      execute: () => executeSlashCommand("### "),
+    },
+    {
+      id: "table",
+      label: "Table",
+      description: "Add a 3x3 GFM markdown table",
+      icon: <TableIcon size={16} />,
+      execute: () =>
+        executeSlashCommand(
+          "\n| Feature | Status | Assignee |\n| :--- | :---: | ---: |\n| Document Sync | Done | @Elena |\n| Kanban Tasks | In Progress | @Marcus |\n| Moodboard Photos | Todo | @Alex |\n\n"
+        ),
+    },
+    {
+      id: "callout_tip",
+      label: "Callout: Tip",
+      description: "Emerald highlighted tip box",
+      icon: <Lightbulb size={16} color="var(--accent)" />,
+      execute: () => executeSlashCommand("> [!TIP]\n> Your tip goes here\n\n"),
+    },
+    {
+      id: "callout_warning",
+      label: "Callout: Warning",
+      description: "Amber warning card",
+      icon: <AlertTriangle size={16} color="#D97706" />,
+      execute: () => executeSlashCommand("> [!WARNING]\n> Your warning goes here\n\n"),
+    },
+    {
+      id: "callout_note",
+      label: "Callout: Note",
+      description: "Informational note box",
+      icon: <Lightbulb size={16} color="#0284C7" />,
+      execute: () => executeSlashCommand("> [!NOTE]\n> Your note goes here\n\n"),
+    },
+    {
+      id: "toggle",
+      label: "Toggle Accordion",
+      description: "Collapsible details section",
+      icon: <ChevronRight size={16} />,
+      execute: () => executeSlashCommand("> [toggle] Section Details\n> Content hidden inside toggle\n\n"),
+    },
+    {
+      id: "code",
+      label: "Code Block",
+      description: "Syntax highlighted code card",
+      icon: <Code size={16} />,
+      execute: () => executeSlashCommand("```typescript\n// code here\n```\n"),
+    },
+    {
+      id: "todo",
+      label: "To-do Checklist",
+      description: "Interactive task checklist item",
+      icon: <CheckSquare size={16} />,
+      execute: () => executeSlashCommand("- [ ] "),
+    },
+    {
+      id: "bullet",
+      label: "Bulleted List",
+      description: "Simple bulleted list item",
+      icon: <List size={16} />,
+      execute: () => executeSlashCommand("- "),
+    },
+    {
+      id: "num",
+      label: "Numbered List",
+      description: "Numbered list item",
+      icon: <ListOrdered size={16} />,
+      execute: () => executeSlashCommand("1. "),
+    },
+    {
+      id: "quote",
+      label: "Quote",
+      description: "Capture a quote with accent bar",
+      icon: <Quote size={16} />,
+      execute: () => executeSlashCommand("> "),
+    },
+    {
+      id: "divider",
+      label: "Divider",
+      description: "Visually separate sections",
+      icon: <Minus size={16} />,
+      execute: () => executeSlashCommand("\n---\n\n"),
+    },
+    {
+      id: "toc",
+      label: "Table of Contents",
+      description: "Auto-generated document outline",
+      icon: <List size={16} color="var(--accent)" />,
+      execute: () => executeSlashCommand("\n[TOC]\n\n"),
+    },
+  ];
+
+  const filteredSlashCommands = slashCommands.filter(
+    (c) =>
+      c.label.toLowerCase().includes(slashMenu.query) ||
+      c.id.toLowerCase().includes(slashMenu.query)
+  );
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     handleContentChange(val);
 
-    // Detect @ symbol for autocompletion
     const pos = e.target.selectionStart;
     const textBefore = val.slice(0, pos);
+
+    // Detect / command trigger
+    const slashMatch = textBefore.match(/(?:^|\n|\s)\/([a-zA-Z0-9_-]*)$/);
+    if (slashMatch) {
+      setSlashMenu({
+        visible: true,
+        query: slashMatch[1].toLowerCase(),
+        selectedIndex: 0,
+        pos: pos - slashMatch[1].length - 1,
+      });
+    } else if (slashMenu.visible) {
+      setSlashMenu((prev) => ({ ...prev, visible: false }));
+    }
+
+    // Detect @ symbol for autocompletion
     const atMatch = textBefore.match(/@([a-zA-Z0-9._ ]*)$/);
     if (atMatch) {
       setMentionPopup({
@@ -243,8 +718,33 @@ export const EditorView: React.FC<EditorViewProps> = ({
         query: atMatch[1].toLowerCase(),
         target: "content",
       });
-    } else {
+    } else if (mentionPopup.target === "content") {
       setMentionPopup((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashMenu.visible && filteredSlashCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashMenu((prev) => ({
+          ...prev,
+          selectedIndex: (prev.selectedIndex + 1) % filteredSlashCommands.length,
+        }));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashMenu((prev) => ({
+          ...prev,
+          selectedIndex:
+            (prev.selectedIndex - 1 + filteredSlashCommands.length) % filteredSlashCommands.length,
+        }));
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        filteredSlashCommands[slashMenu.selectedIndex]?.execute();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashMenu((prev) => ({ ...prev, visible: false }));
+      }
     }
   };
 
@@ -269,22 +769,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
     setMentionPopup({ visible: false, query: "", target: "content" });
   };
 
-  const handleTitleChange = (newTitle: string) => {
-    setTitle(newTitle);
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(
-        JSON.stringify({
-          type: "edit",
-          title: newTitle,
-          content,
-          tags,
-          attachments,
-        })
-      );
-    }
-  };
-
-  // Broadcast cursor movements to peers
   const handleCursorMove = () => {
     if (!textareaRef.current || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN)
       return;
@@ -297,7 +781,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
     );
   };
 
-  // Formatting actions
   const applyFormat = (prefix: string, suffix: string = "") => {
     if (!textareaRef.current) return;
     const { selectionStart, selectionEnd, value } = textareaRef.current;
@@ -308,7 +791,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
     handleContentChange(newContent);
   };
 
-  // Checkbox toggle logic
   const toggleCheckbox = (lineIndex: number) => {
     const lines = content.split("\n");
     const targetLine = lines[lineIndex];
@@ -320,7 +802,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
     handleContentChange(lines.join("\n"));
   };
 
-  // Submit comment
   const handlePostComment = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!commentText.trim()) return;
@@ -379,59 +860,418 @@ export const EditorView: React.FC<EditorViewProps> = ({
         display: "flex",
         width: "100%",
         minHeight: "calc(100vh - 64px)",
+        position: "relative",
       }}
     >
       {/* Main Document Content Area */}
       <div
         style={{
           flex: 1,
-          padding: "48px 64px 120px 64px",
+          padding: cover ? "0 64px 120px 64px" : "32px 64px 120px 64px",
           maxWidth: "860px",
           margin: "0 auto",
           position: "relative",
         }}
       >
-        {/* Document Tags */}
+        {/* Cover Banner Area */}
+        {cover && (
+          <div
+            style={{
+              height: "180px",
+              background: cover,
+              borderRadius: "0 0 var(--radius-lg) var(--radius-lg)",
+              marginBottom: "32px",
+              position: "relative",
+              marginLeft: "-64px",
+              marginRight: "-64px",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "flex-end",
+              padding: "16px",
+            }}
+          >
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                onClick={() => setIsCoverPickerOpen(true)}
+                className="btn-secondary"
+                style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "rgba(0,0,0,0.6)", color: "#FFF", border: "none" }}
+              >
+                <Palette size={12} /> Change Cover
+              </button>
+              <button
+                onClick={() => handleUpdateCover(null)}
+                className="btn-secondary"
+                style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "rgba(0,0,0,0.6)", color: "#FFF", border: "none" }}
+              >
+                <X size={12} /> Remove
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Cover / Icon Action Row when no cover exists */}
+        {!cover && (
+          <div style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
+            <button
+              onClick={() => setIsEmojiPickerOpen(true)}
+              style={{
+                background: "transparent",
+                border: "none",
+                fontSize: "12px",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <Smile size={13} /> Change icon
+            </button>
+            <button
+              onClick={() => setIsCoverPickerOpen(true)}
+              style={{
+                background: "transparent",
+                border: "none",
+                fontSize: "12px",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <Palette size={13} /> Add cover
+            </button>
+          </div>
+        )}
+
+        {/* Cover Picker Popover */}
+        {isCoverPickerOpen && (
+          <div
+            className="animate-fade-in"
+            style={{
+              position: "absolute",
+              top: cover ? "120px" : "60px",
+              right: "64px",
+              backgroundColor: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-md)",
+              boxShadow: "0 10px 25px rgba(0,0,0,0.35)",
+              padding: "12px",
+              zIndex: 100,
+              width: "240px",
+            }}
+          >
+            <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "8px" }}>
+              Curated Gradients
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {COVER_PRESETS.map((cp) => (
+                <button
+                  key={cp.name}
+                  onClick={() => handleUpdateCover(cp.style)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "transparent",
+                    border: "none",
+                    padding: "6px 8px",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-nav-active)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  <div style={{ width: "24px", height: "18px", borderRadius: "3px", background: cp.style }} />
+                  <span style={{ fontSize: "12px", color: "var(--text-primary)" }}>{cp.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Page Icon Emoji & Picker */}
+        <div style={{ position: "relative", display: "inline-block", marginBottom: "8px" }}>
+          <button
+            onClick={() => setIsEmojiPickerOpen((prev) => !prev)}
+            style={{
+              fontSize: "36px",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              padding: "4px",
+              borderRadius: "8px",
+              lineHeight: 1,
+            }}
+            title="Click to change page icon"
+          >
+            {icon}
+          </button>
+
+          {isEmojiPickerOpen && (
+            <div
+              className="animate-fade-in"
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                backgroundColor: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-md)",
+                boxShadow: "0 10px 25px rgba(0,0,0,0.35)",
+                padding: "10px",
+                zIndex: 100,
+                width: "220px",
+                display: "grid",
+                gridTemplateColumns: "repeat(5, 1fr)",
+                gap: "6px",
+              }}
+            >
+              {EMOJI_PALETTE.map((em) => (
+                <button
+                  key={em}
+                  onClick={() => handleUpdateIcon(em)}
+                  style={{
+                    fontSize: "20px",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "4px",
+                    borderRadius: "4px",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-nav-active)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  {em}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Document Header Row: Tags & Actions Bar */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "8px",
+            justifyContent: "space-between",
             marginBottom: "16px",
+            flexWrap: "wrap",
+            gap: "10px",
           }}
         >
-          {tags.map((tag, i) => (
-            <span
-              key={i}
+          {/* Tags */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {tags.map((tag, i) => (
+              <span
+                key={i}
+                style={{
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  color: "var(--accent-text)",
+                  letterSpacing: "0.01em",
+                }}
+              >
+                {tag}
+              </span>
+            ))}
+            <button
+              onClick={() => {
+                const newTag = prompt("Enter tag name (e.g. #project):");
+                if (newTag) setTags([...tags, newTag.startsWith("#") ? newTag : `#${newTag}`]);
+              }}
               style={{
-                fontSize: "13px",
-                fontWeight: 500,
-                color: "var(--accent-text)",
-                letterSpacing: "0.01em",
+                background: "transparent",
+                border: "none",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+              }}
+              title="Add tag"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+
+          {/* Action Tools: Star, Share, History, Export, Templates, View Modes */}
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            {/* Favorite Star */}
+            <button
+              onClick={handleToggleFavorite}
+              className="btn-icon"
+              title={isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+              style={{ width: "28px", height: "28px" }}
+            >
+              <Star
+                size={15}
+                color={isFavorite ? "#F59E0B" : "var(--text-muted)"}
+                fill={isFavorite ? "#F59E0B" : "none"}
+              />
+            </button>
+
+            {/* Share to Web */}
+            <button
+              onClick={() => setIsShareOpen(true)}
+              className="btn-icon"
+              title="Publish to Web / Share Link"
+              style={{
+                width: "auto",
+                padding: "3px 8px",
+                height: "26px",
+                fontSize: "12px",
+                color: isPublic ? "var(--accent)" : "var(--text-muted)",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
               }}
             >
-              {tag}
-            </span>
-          ))}
-          <button
-            onClick={() => {
-              const newTag = prompt("Enter tag name (e.g. #project):");
-              if (newTag) setTags([...tags, newTag.startsWith("#") ? newTag : `#${newTag}`]);
-            }}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            <Plus size={14} />
-          </button>
+              <Globe size={13} />
+              <span>{isPublic ? "Shared" : "Share"}</span>
+            </button>
+
+            {/* Version History */}
+            <button
+              onClick={() => {
+                setIsHistoryOpen(true);
+                loadRevisions();
+              }}
+              className="btn-icon"
+              title="Document Revision History"
+              style={{
+                width: "auto",
+                padding: "3px 8px",
+                height: "26px",
+                fontSize: "12px",
+                color: "var(--text-muted)",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <History size={13} />
+              <span>History</span>
+            </button>
+
+            {/* Templates */}
+            <button
+              onClick={() => setIsTemplatePickerOpen(true)}
+              className="btn-icon"
+              title="Notion Starter Templates"
+              style={{
+                width: "auto",
+                padding: "3px 8px",
+                height: "26px",
+                fontSize: "12px",
+                color: "var(--text-muted)",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <Sparkles size={13} />
+              <span>Templates</span>
+            </button>
+
+            {/* Export Menu */}
+            <button
+              onClick={handleExportMarkdown}
+              className="btn-icon"
+              title="Export as Markdown (.md)"
+              style={{
+                width: "auto",
+                padding: "3px 8px",
+                height: "26px",
+                fontSize: "12px",
+                color: "var(--text-muted)",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <Download size={13} />
+              <span>Export</span>
+            </button>
+
+            {/* View Mode Switcher: Edit | Split | Preview */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                backgroundColor: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-md)",
+                padding: "2px",
+                gap: "2px",
+              }}
+            >
+              <button
+                onClick={() => setViewMode("edit")}
+                className="btn-icon"
+                style={{
+                  width: "auto",
+                  padding: "3px 8px",
+                  height: "24px",
+                  fontSize: "11px",
+                  borderRadius: "var(--radius-sm)",
+                  backgroundColor: viewMode === "edit" ? "var(--bg-nav-active)" : "transparent",
+                  color: viewMode === "edit" ? "var(--text-primary)" : "var(--text-muted)",
+                  fontWeight: viewMode === "edit" ? 600 : 400,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+                title="Full Edit Mode"
+              >
+                <Edit3 size={11} /> Edit
+              </button>
+              <button
+                onClick={() => setViewMode("split")}
+                className="btn-icon"
+                style={{
+                  width: "auto",
+                  padding: "3px 8px",
+                  height: "24px",
+                  fontSize: "11px",
+                  borderRadius: "var(--radius-sm)",
+                  backgroundColor: viewMode === "split" ? "var(--bg-nav-active)" : "transparent",
+                  color: viewMode === "split" ? "var(--text-primary)" : "var(--text-muted)",
+                  fontWeight: viewMode === "split" ? 600 : 400,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+                title="Side-by-side Live Split View"
+              >
+                <Columns size={11} /> Split
+              </button>
+              <button
+                onClick={() => setViewMode("preview")}
+                className="btn-icon"
+                style={{
+                  width: "auto",
+                  padding: "3px 8px",
+                  height: "24px",
+                  fontSize: "11px",
+                  borderRadius: "var(--radius-sm)",
+                  backgroundColor: viewMode === "preview" ? "var(--bg-nav-active)" : "transparent",
+                  color: viewMode === "preview" ? "var(--text-primary)" : "var(--text-muted)",
+                  fontWeight: viewMode === "preview" ? 600 : 400,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+                title="Rendered Document Preview"
+              >
+                <Eye size={11} /> Preview
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* Document Title (Matching Figma: Spectral 600 40px) */}
+        {/* Document Title */}
         <input
           type="text"
           value={title}
@@ -447,13 +1287,61 @@ export const EditorView: React.FC<EditorViewProps> = ({
             background: "transparent",
             border: "none",
             outline: "none",
-            marginBottom: "28px",
+            marginBottom: "24px",
             letterSpacing: "-0.02em",
           }}
         />
 
+        {/* If document is completely empty, offer Notion-style 1-click starter template cards */}
+        {content.trim().length === 0 && (
+          <div
+            style={{
+              padding: "24px",
+              backgroundColor: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-md)",
+              marginBottom: "24px",
+            }}
+          >
+            <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>
+              Get started with a template
+            </div>
+            <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "16px" }}>
+              Click any template to populate the document, or type <code style={{ color: "var(--accent)" }}>/</code> in the editor for blocks.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "10px" }}>
+              {STARTER_TEMPLATES.map((tmpl) => (
+                <button
+                  key={tmpl.id}
+                  onClick={() => handleApplyTemplate(tmpl)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "10px 12px",
+                    backgroundColor: "var(--bg-primary)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--radius-sm)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-subtle)")}
+                >
+                  <span style={{ fontSize: "20px" }}>{tmpl.icon}</span>
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)" }}>{tmpl.title}</div>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{tmpl.tags.join(" ")}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Interactive Checkbox Items Rendered Above Editor (if available) */}
-        <div style={{ marginBottom: "24px" }}>
+        <div style={{ marginBottom: "20px" }}>
           {lines.map((line, idx) => {
             if (line.startsWith("- [ ] ") || line.startsWith("- [x] ")) {
               const isChecked = line.startsWith("- [x] ");
@@ -502,127 +1390,231 @@ export const EditorView: React.FC<EditorViewProps> = ({
           })}
         </div>
 
-        {/* Document Body Textarea with Live Multiplayer Remote Carets */}
-        <div style={{ position: "relative" }}>
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={handleTextareaChange}
-            onSelect={handleCursorMove}
-            onKeyUp={handleCursorMove}
-            placeholder="Type '/' for commands, '@' to mention a teammate, or start typing..."
-            rows={18}
-            style={{
-              width: "100%",
-              minHeight: "450px",
-              background: "transparent",
-              border: "none",
-              outline: "none",
-              resize: "vertical",
-              color: "var(--text-primary)",
-              fontFamily: "var(--font-sans)",
-              fontSize: "16px",
-              lineHeight: 1.75,
-              letterSpacing: "-0.01em",
-            }}
-          />
-
-          {/* Active Collaborators Cursor Overlay Indicator */}
-          {Object.values(remoteCursors).map((rc) => (
-            <div
-              key={rc.user.id}
-              style={{
-                position: "absolute",
-                top: "10px",
-                right: "10px",
-                padding: "2px 8px",
-                borderRadius: "9999px",
-                backgroundColor: rc.user.color,
-                color: "#FFFFFF",
-                fontSize: "11px",
-                fontWeight: 600,
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
-                boxShadow: "var(--shadow-sm)",
-              }}
-            >
-              <span>●</span> {rc.user.name} typing
+        {/* Document Body: Edit Mode vs Split Mode vs Preview Mode */}
+        {viewMode === "preview" ? (
+          <div style={{ minHeight: "450px", padding: "12px 0" }}>
+            <MarkdownRenderer content={content} onToggleCheckbox={toggleCheckbox} members={members} />
+          </div>
+        ) : viewMode === "split" ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px", minHeight: "500px" }}>
+            <div style={{ position: "relative" }}>
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onChange={handleTextareaChange}
+                onKeyDown={handleKeyDown}
+                onSelect={handleCursorMove}
+                onKeyUp={handleCursorMove}
+                placeholder="Type '/' for slash commands, '@' to mention a teammate..."
+                rows={20}
+                style={{
+                  width: "100%",
+                  minHeight: "450px",
+                  background: "transparent",
+                  border: "none",
+                  outline: "none",
+                  resize: "vertical",
+                  color: "var(--text-primary)",
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "15px",
+                  lineHeight: 1.7,
+                  letterSpacing: "-0.01em",
+                }}
+              />
             </div>
-          ))}
 
-          {/* Mention Autocomplete Dropdown Popup */}
-          {mentionPopup.visible && filteredMembers.length > 0 && (
+            {/* Split View: Live Rendered Markdown & Tables */}
             <div
-              ref={mentionPopupRef}
-              className="animate-fade-in"
               style={{
-                position: "absolute",
-                top: "60px",
-                left: "20px",
-                width: "280px",
-                backgroundColor: "var(--bg-surface)",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "var(--radius-md)",
-                boxShadow: "0 12px 28px rgba(0, 0, 0, 0.35)",
-                zIndex: 50,
-                padding: "6px",
+                borderLeft: "1px solid var(--border-subtle)",
+                paddingLeft: "28px",
+                overflowY: "auto",
+                maxHeight: "calc(100vh - 220px)",
               }}
             >
               <div
                 style={{
                   fontSize: "11px",
-                  fontWeight: 600,
-                  color: "var(--text-muted)",
                   textTransform: "uppercase",
-                  padding: "6px 8px",
+                  color: "var(--text-muted)",
+                  fontWeight: 600,
                   letterSpacing: "0.05em",
+                  marginBottom: "16px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
                 }}
               >
-                Mention Teammate (Email will be sent)
+                <Eye size={12} color="var(--accent)" /> Live Markdown & Table Preview
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxHeight: "180px", overflowY: "auto" }}>
-                {filteredMembers.map((m) => (
+              <MarkdownRenderer content={content} onToggleCheckbox={toggleCheckbox} members={members} />
+            </div>
+          </div>
+        ) : (
+          <div style={{ position: "relative" }}>
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              onSelect={handleCursorMove}
+              onKeyUp={handleCursorMove}
+              placeholder="Type '/' for slash commands, '@' to mention a teammate, or start writing..."
+              rows={22}
+              style={{
+                width: "100%",
+                minHeight: "450px",
+                background: "transparent",
+                border: "none",
+                outline: "none",
+                resize: "vertical",
+                color: "var(--text-primary)",
+                fontFamily: "var(--font-sans)",
+                fontSize: "16px",
+                lineHeight: 1.75,
+                letterSpacing: "-0.01em",
+              }}
+            />
+          </div>
+        )}
+
+        {/* Slash Command Palette Popup */}
+        {slashMenu.visible && filteredSlashCommands.length > 0 && (
+          <div
+            ref={slashMenuRef}
+            className="animate-fade-in"
+            style={{
+              position: "absolute",
+              top: "220px",
+              left: "64px",
+              width: "320px",
+              backgroundColor: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-md)",
+              boxShadow: "0 14px 32px rgba(0, 0, 0, 0.45)",
+              zIndex: 100,
+              padding: "6px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "10px",
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+                padding: "6px 8px",
+                letterSpacing: "0.05em",
+              }}
+            >
+              Blocks & Formatting
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxHeight: "240px", overflowY: "auto" }}>
+              {filteredSlashCommands.map((item, idx) => {
+                const isSelected = idx === slashMenu.selectedIndex;
+                return (
                   <button
-                    key={m.email}
-                    onClick={() => handleSelectMention(m)}
+                    key={item.id}
+                    onClick={item.execute}
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: "10px",
-                      padding: "6px 8px",
+                      padding: "8px 10px",
                       borderRadius: "var(--radius-sm)",
                       border: "none",
-                      backgroundColor: "transparent",
+                      backgroundColor: isSelected ? "var(--bg-nav-active)" : "transparent",
                       color: "var(--text-primary)",
                       cursor: "pointer",
                       textAlign: "left",
                       width: "100%",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-nav-active)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                    onMouseEnter={() => setSlashMenu((prev) => ({ ...prev, selectedIndex: idx }))}
                   >
-                    <img
-                      src={m.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(m.email)}`}
-                      alt={m.name}
-                      style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover" }}
-                    />
-                    <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                      <span style={{ fontSize: "13px", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {m.name}
-                      </span>
-                      <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
-                        {m.email}
-                      </span>
+                    <div style={{ color: "var(--accent)", display: "flex", alignItems: "center" }}>
+                      {item.icon}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
+                      <span style={{ fontSize: "13px", fontWeight: isSelected ? 600 : 500 }}>{item.label}</span>
+                      <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{item.description}</span>
                     </div>
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Floating Formatting Toolbar (Matching Figma Editor) */}
+        {/* Mention Autocomplete Dropdown Popup */}
+        {mentionPopup.visible && mentionPopup.target === "content" && filteredMembers.length > 0 && (
+          <div
+            ref={mentionPopupRef}
+            className="animate-fade-in"
+            style={{
+              position: "absolute",
+              top: "220px",
+              left: "64px",
+              width: "280px",
+              backgroundColor: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-md)",
+              boxShadow: "0 12px 28px rgba(0, 0, 0, 0.35)",
+              zIndex: 100,
+              padding: "6px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+                padding: "6px 8px",
+                letterSpacing: "0.05em",
+              }}
+            >
+              Mention Teammate (Email will be sent)
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxHeight: "180px", overflowY: "auto" }}>
+              {filteredMembers.map((m) => (
+                <button
+                  key={m.email}
+                  onClick={() => handleSelectMention(m)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "6px 8px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "none",
+                    backgroundColor: "transparent",
+                    color: "var(--text-primary)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    width: "100%",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-nav-active)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  <img
+                    src={m.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(m.email)}`}
+                    alt={m.name}
+                    style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover" }}
+                  />
+                  <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                    <span style={{ fontSize: "13px", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {m.name}
+                    </span>
+                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                      {m.email}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Floating Formatting Toolbar */}
         <div
           style={{
             position: "fixed",
@@ -648,6 +1640,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
             H1
           </button>
           <button
+            onClick={() => applyFormat("## ", "")}
+            className="btn-icon font-serif"
+            style={{ fontSize: "13px", fontWeight: 700 }}
+            title="Heading 2"
+          >
+            H2
+          </button>
+          <button
             onClick={() => applyFormat("**", "**")}
             className="btn-icon"
             style={{ fontWeight: 700 }}
@@ -662,9 +1662,36 @@ export const EditorView: React.FC<EditorViewProps> = ({
           >
             <Italic size={15} />
           </button>
-          <div
-            style={{ width: "1px", height: "18px", backgroundColor: "var(--border-subtle)" }}
-          />
+          <div style={{ width: "1px", height: "18px", backgroundColor: "var(--border-subtle)" }} />
+          {/* Table */}
+          <button
+            onClick={() =>
+              executeSlashCommand(
+                "\n| Feature | Status | Assignee |\n| :--- | :---: | ---: |\n| Document Sync | Done | @Elena |\n| Kanban Tasks | In Progress | @Marcus |\n| Moodboard Photos | Todo | @Alex |\n\n"
+              )
+            }
+            className="btn-icon"
+            title="Insert Table"
+          >
+            <TableIcon size={15} />
+          </button>
+          {/* Code */}
+          <button
+            onClick={() => applyFormat("```typescript\n", "\n```")}
+            className="btn-icon"
+            title="Code Block"
+          >
+            <Code size={15} />
+          </button>
+          {/* Quote */}
+          <button
+            onClick={() => applyFormat("> ", "")}
+            className="btn-icon"
+            title="Quote Block"
+          >
+            <Quote size={15} />
+          </button>
+          <div style={{ width: "1px", height: "18px", backgroundColor: "var(--border-subtle)" }} />
           <button
             onClick={() => {
               const url = prompt("Enter link URL:");
@@ -689,10 +1716,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
           >
             <List size={15} />
           </button>
-          <div
-            style={{ width: "1px", height: "18px", backgroundColor: "var(--border-subtle)" }}
-          />
-          {/* Mention Teammate Action */}
+          <div style={{ width: "1px", height: "18px", backgroundColor: "var(--border-subtle)" }} />
+          {/* Mention Teammate */}
           <button
             onClick={() => {
               if (textareaRef.current) {
@@ -785,14 +1810,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--border-focus)")}
                   onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-subtle)")}
                 >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                      overflow: "hidden",
-                    }}
-                  >
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", overflow: "hidden" }}>
                     {att.name.endsWith(".png") || att.name.endsWith(".jpg") ? (
                       <ImageIcon size={16} color="var(--accent)" />
                     ) : (
@@ -824,7 +1842,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
               ))}
             </div>
 
-            {/* Attach File Button */}
             <button
               onClick={() => {
                 const fileName = prompt("Enter attachment name from Drive (e.g. brand_guidelines.pdf):");
@@ -844,7 +1861,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                       "Content-Type": "application/json",
                       "x-workspace-id": workspaceId,
                     },
-                    body: JSON.stringify({ title, content, tags, attachments: updated }),
+                    body: JSON.stringify({ title, content, tags, attachments: updated, icon, cover }),
                   });
                 }
               }}
@@ -877,7 +1894,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
               </div>
             )}
 
-            {/* Comments Stream */}
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "350px", overflowY: "auto" }}>
               {comments.length === 0 ? (
                 <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "12px", padding: "20px 0" }}>
@@ -996,6 +2012,303 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </div>
         )}
       </aside>
+
+      {/* Share to Web Modal */}
+      {isShareOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setIsShareOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            className="modal-content animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "440px",
+              backgroundColor: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-lg)",
+              padding: "24px",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Globe size={18} color="var(--accent)" />
+                <h3 style={{ fontSize: "16px", fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>
+                  Publish to Web
+                </h3>
+              </div>
+              <button onClick={() => setIsShareOpen(false)} className="btn-icon">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "20px", lineHeight: 1.5 }}>
+              Publishing generates an edge-native, read-only public URL hosted on Cloudflare Workers. Anyone with the link can view this document without requiring an account.
+            </div>
+
+            {/* Toggle Switch */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 14px",
+                backgroundColor: "var(--bg-primary)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-md)",
+                marginBottom: "16px",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
+                  {isPublic ? "Document is Live" : "Private Document"}
+                </div>
+                <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                  {isPublic ? "Public edge link is active" : "Only workspace members can view"}
+                </div>
+              </div>
+              <button
+                onClick={() => handleToggleShare(!isPublic)}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "none",
+                  backgroundColor: isPublic ? "var(--accent)" : "var(--bg-surface)",
+                  color: isPublic ? "#FFF" : "var(--text-primary)",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                {isPublic ? "Enabled" : "Enable"}
+              </button>
+            </div>
+
+            {isPublic && publicToken && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
+                <label style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Public Web Link
+                </label>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/?p=${publicToken}`}
+                    style={{
+                      flex: 1,
+                      padding: "8px 10px",
+                      fontSize: "12px",
+                      backgroundColor: "var(--bg-primary)",
+                      border: "1px solid var(--border-subtle)",
+                      borderRadius: "var(--radius-sm)",
+                      color: "var(--text-primary)",
+                      outline: "none",
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/?p=${publicToken}`);
+                      setCopiedShare(true);
+                      setTimeout(() => setCopiedShare(false), 2000);
+                    }}
+                    className="btn-primary"
+                    style={{ padding: "8px 12px", fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}
+                  >
+                    {copiedShare ? <Check size={13} /> : <Copy size={13} />}
+                    <span>{copiedShare ? "Copied" : "Copy"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div
+              style={{
+                fontSize: "11px",
+                color: "var(--text-muted)",
+                backgroundColor: "var(--bg-nav-active)",
+                padding: "8px 12px",
+                borderRadius: "var(--radius-sm)",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <Shield size={12} color="var(--accent)" />
+              <span>Discussion comments and internal workspace files are never exposed.</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Revision History Drawer */}
+      {isHistoryOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: "360px",
+            backgroundColor: "var(--bg-surface)",
+            borderLeft: "1px solid var(--border-subtle)",
+            boxShadow: "-10px 0 30px rgba(0,0,0,0.5)",
+            zIndex: 1000,
+            display: "flex",
+            flexDirection: "column",
+            padding: "20px",
+          }}
+          className="animate-fade-in"
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <History size={16} color="var(--accent)" />
+              <h3 style={{ fontSize: "15px", fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>
+                Version History
+              </h3>
+            </div>
+            <button onClick={() => setIsHistoryOpen(false)} className="btn-icon">
+              <X size={15} />
+            </button>
+          </div>
+
+          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "16px" }}>
+            Revisions are automatically captured to Cloudflare R2 on significant document updates.
+          </div>
+
+          {isLoadingRevisions ? (
+            <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-muted)", fontSize: "13px" }}>
+              Loading revisions...
+            </div>
+          ) : revisions.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-muted)", fontSize: "13px" }}>
+              No previous revisions captured yet. Edit document to create snapshots.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", overflowY: "auto", flex: 1 }}>
+              {revisions.map((rev) => (
+                <div
+                  key={rev.id}
+                  style={{
+                    padding: "12px",
+                    backgroundColor: "var(--bg-primary)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--radius-sm)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)" }}>
+                      {new Date(rev.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                      {new Date(rev.timestamp).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span>By {rev.author.name}</span>
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontStyle: "italic", lineHeight: 1.3 }}>
+                    "{rev.snippet || "Empty document"}"
+                  </div>
+                  <button
+                    onClick={() => handleRestoreRevision(rev.id)}
+                    className="btn-secondary"
+                    style={{ fontSize: "11px", padding: "4px 8px", marginTop: "4px", alignSelf: "flex-start", gap: "4px" }}
+                  >
+                    <RotateCcw size={11} /> Restore this version
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Starter Templates Modal */}
+      {isTemplatePickerOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setIsTemplatePickerOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            className="modal-content animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "600px",
+              backgroundColor: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-lg)",
+              padding: "24px",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Sparkles size={18} color="var(--accent)" />
+                <h3 style={{ fontSize: "16px", fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>
+                  Notion Starter Templates
+                </h3>
+              </div>
+              <button onClick={() => setIsTemplatePickerOpen(false)} className="btn-icon">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {STARTER_TEMPLATES.map((tmpl) => (
+                <div
+                  key={tmpl.id}
+                  style={{
+                    padding: "14px 16px",
+                    backgroundColor: "var(--bg-primary)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--radius-md)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <span style={{ fontSize: "24px" }}>{tmpl.icon}</span>
+                    <div>
+                      <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>{tmpl.title}</div>
+                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{tmpl.tags.join(" ")}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleApplyTemplate(tmpl)}
+                    className="btn-primary"
+                    style={{ fontSize: "12px", padding: "6px 12px" }}
+                  >
+                    Use Template
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

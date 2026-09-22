@@ -15,8 +15,9 @@ import {
   Plus,
   Check,
   UserPlus,
+  Star,
 } from "lucide-react";
-import { ViewMode, UserProfile, UserWorkspaceReference } from "../types.ts";
+import { ViewMode, UserProfile, UserWorkspaceReference, TreeNode } from "../types.ts";
 
 interface SidebarProps {
   currentView: ViewMode;
@@ -30,6 +31,8 @@ interface SidebarProps {
   onSelectWorkspace?: (workspace: UserWorkspaceReference) => void;
   onOpenCreateWorkspace?: () => void;
   onOpenTeamMembers?: () => void;
+  tree?: TreeNode[];
+  onSelectDoc?: (docId: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -44,9 +47,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectWorkspace,
   onOpenCreateWorkspace,
   onOpenTeamMembers,
+  tree = [],
+  onSelectDoc,
 }) => {
   const [isWsDropdownOpen, setIsWsDropdownOpen] = useState(false);
+  const [favoriteDocIds, setFavoriteDocIds] = useState<string[]>([]);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Load favorites for current workspace
+  useEffect(() => {
+    if (!currentWorkspace?.id) return;
+    fetch(`/api/workspaces/${currentWorkspace.id}/favorites`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((favs: any) => {
+        if (Array.isArray(favs)) {
+          setFavoriteDocIds(favs);
+        }
+      })
+      .catch(() => {});
+  }, [currentWorkspace?.id]);
+
+  const favoriteDocs = tree.filter((n) => n.type === "doc" && favoriteDocIds.includes(n.id));
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -242,6 +263,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {/* Actions */}
               <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                {(currentWorkspace.role === "owner" || currentWorkspace.role === "admin") && (
+                  <button
+                    onClick={() => {
+                      setIsWsDropdownOpen(false);
+                      onOpenTeamMembers?.();
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "6px 8px",
+                      borderRadius: "var(--radius-sm)",
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--accent)",
+                      fontSize: "12px",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      width: "100%",
+                      textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--accent-light)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                  >
+                    <UserPlus size={14} />
+                    <span>Invite Teammates</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => {
                     setIsWsDropdownOpen(false);
@@ -263,7 +313,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                 >
                   <Users size={14} />
-                  <span>Team Members</span>
+                  <span>Team Roster</span>
                 </button>
 
                 <button
@@ -294,6 +344,58 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
         </div>
+
+        {/* Favorites Section */}
+        {favoriteDocs.length > 0 && (
+          <div style={{ marginBottom: "16px" }}>
+            <div
+              style={{
+                padding: "0 10px 6px 10px",
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <Star size={11} fill="#F59E0B" color="#F59E0B" /> Favorites
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+              {favoriteDocs.map((fDoc) => (
+                <button
+                  key={fDoc.id}
+                  onClick={() => onSelectDoc?.(fDoc.id)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    width: "100%",
+                    padding: "6px 10px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--text-secondary)",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-nav-active)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  <span style={{ fontSize: "14px" }}>{fDoc.icon || "📄"}</span>
+                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {fDoc.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div style={{ height: "1px", backgroundColor: "var(--border-subtle)", margin: "14px 8px" }} />
+          </div>
+        )}
 
         {/* Primary Navigation */}
         <nav style={{ display: "flex", flexDirection: "column", gap: "2px" }}>

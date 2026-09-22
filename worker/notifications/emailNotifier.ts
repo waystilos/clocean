@@ -54,14 +54,36 @@ function escapeRegex(string: string) {
  * Generates responsive, high-end HTML email template styled to match Figma design tokens.
  */
 export function generateMentionEmailHtml(notification: MentionNotification, appUrl?: string): string {
-  const targetUrl = `${appUrl || "http://localhost:3000"}?doc=${notification.documentId}&ws=${notification.workspaceId}`;
+  const baseUrl = appUrl || "http://localhost:3000";
+  let targetUrl = `${baseUrl}?doc=${notification.documentId}&ws=${notification.workspaceId}`;
+  let ctaText = "Open Document & Reply →";
+  let actionDescription = `mentioned you in <strong>"${escapeHtml(notification.documentTitle || "Document")}"</strong>`;
+  let titleText = `${notification.sender.name} mentioned you in ${notification.documentTitle || "Document"}`;
+
+  if (notification.type === "task") {
+    targetUrl = `${baseUrl}?view=tasks&ws=${notification.workspaceId}`;
+    ctaText = "View Sprint Task →";
+    actionDescription = `mentioned you in task <strong>"${escapeHtml(notification.taskTitle || notification.documentTitle || "Task")}"</strong>`;
+    titleText = `${notification.sender.name} mentioned you in task "${notification.taskTitle || notification.documentTitle || "Task"}"`;
+  } else if (notification.type === "invite") {
+    targetUrl = `${baseUrl}?ws=${notification.workspaceId}`;
+    ctaText = "Accept Invitation & Open Workspace →";
+    const roleLabel = notification.inviteRole === "admin" ? "an Admin" : "a Member";
+    actionDescription = `invited you to join <strong>"${escapeHtml(notification.workspaceName)}"</strong> as <strong>${roleLabel}</strong>`;
+    titleText = `${notification.sender.name} invited you to join ${notification.workspaceName}`;
+  } else if (notification.type === "test") {
+    targetUrl = `${baseUrl}?ws=${notification.workspaceId}`;
+    ctaText = "Open Clocean Workspace →";
+    actionDescription = `sent you a <strong>verification test notification</strong>`;
+    titleText = `Test notification from ${notification.sender.name}`;
+  }
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(notification.sender.name)} mentioned you in ${escapeHtml(notification.documentTitle)}</title>
+  <title>${escapeHtml(titleText)}</title>
 </head>
 <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #141412; color: #E8E5E0;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #141412; padding: 40px 20px;">
@@ -90,7 +112,7 @@ export function generateMentionEmailHtml(notification: MentionNotification, appU
                     ${escapeHtml(notification.sender.name)}
                   </div>
                   <div style="font-size: 13px; color: #8F8C85;">
-                    mentioned you in <strong>"${escapeHtml(notification.documentTitle)}"</strong>
+                    ${actionDescription}
                   </div>
                 </div>
               </div>
@@ -103,7 +125,7 @@ export function generateMentionEmailHtml(notification: MentionNotification, appU
               <!-- CTA Button -->
               <div style="margin-top: 28px; text-align: center;">
                 <a href="${escapeHtml(targetUrl)}" style="display: inline-block; background-color: #1E7D6B; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none; padding: 10px 24px; border-radius: 6px; box-shadow: 0 4px 12px rgba(30, 125, 107, 0.3);">
-                  Open Document & Reply →
+                  ${escapeHtml(ctaText)}
                 </a>
               </div>
             </td>
@@ -112,7 +134,7 @@ export function generateMentionEmailHtml(notification: MentionNotification, appU
           <!-- Footer -->
           <tr>
             <td style="padding: 20px 32px; background-color: #141412; border-top: 1px solid #2C2C28; text-align: center; font-size: 11px; color: #8F8C85; line-height: 1.5;">
-              This notification was sent to <strong>${escapeHtml(notification.recipientEmail)}</strong> because you were mentioned in <strong>${escapeHtml(notification.workspaceName)}</strong>.<br>
+              This notification was sent to <strong>${escapeHtml(notification.recipientEmail)}</strong> regarding your activity in <strong>${escapeHtml(notification.workspaceName)}</strong>.<br>
               Clocean Zero-Database Serverless Workspace • Powered by Cloudflare Edge & R2
             </td>
           </tr>
@@ -145,13 +167,23 @@ export async function dispatchMentionNotification(
   const html = generateMentionEmailHtml(notification, appUrl);
   let status: "sent" | "delivered" | "simulated" = "simulated";
 
+  let subject = `[Clocean] ${notification.sender.name} mentioned you in "${notification.documentTitle || "Document"}"`;
+  if (notification.type === "task") {
+    subject = `[Clocean] ${notification.sender.name} mentioned you in task "${notification.taskTitle || notification.documentTitle || "Task"}"`;
+  } else if (notification.type === "invite") {
+    const roleLabel = notification.inviteRole === "admin" ? "an Admin" : "a Member";
+    subject = `[Clocean] ${notification.sender.name} invited you to join "${notification.workspaceName}" as ${roleLabel}`;
+  } else if (notification.type === "test") {
+    subject = `[Clocean] Verification test notification from ${notification.sender.name}`;
+  }
+
   // 1. Production Option: Cloudflare Email Routing / send_email binding
   if (env.SEND_EMAIL && typeof env.SEND_EMAIL.send === "function") {
     try {
       await env.SEND_EMAIL.send({
         to: notification.recipientEmail,
         from: env.EMAIL_FROM || "notifications@clocean.co",
-        subject: `[Clocean] ${notification.sender.name} mentioned you in "${notification.documentTitle}"`,
+        subject,
         html,
       });
       status = "sent";
@@ -171,7 +203,7 @@ export async function dispatchMentionNotification(
         body: JSON.stringify({
           from: env.EMAIL_FROM || "notifications@clocean.co",
           to: notification.recipientEmail,
-          subject: `[Clocean] ${notification.sender.name} mentioned you in "${notification.documentTitle}"`,
+          subject,
           html,
         }),
       });
