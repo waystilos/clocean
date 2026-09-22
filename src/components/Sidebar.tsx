@@ -18,6 +18,7 @@ import {
   UserPlus,
   Star,
   LogOut,
+  Table2,
 } from "lucide-react";
 import { ViewMode, UserProfile, UserWorkspaceReference, TreeNode } from "../types.ts";
 
@@ -91,6 +92,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: "tasks", label: "Tasks", icon: <ListCheck size={18} /> },
     { id: "notes", label: "Notes", icon: <FileText size={18} /> },
     { id: "documents", label: "Documents", icon: <Folder size={18} /> },
+    { id: "databases", label: "Databases", icon: <Table2 size={18} /> },
     { id: "photos", label: "Photos", icon: <ImageIcon size={18} /> },
   ];
 
@@ -581,4 +583,3 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </aside>
   );
 };
-

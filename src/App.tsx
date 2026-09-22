@@ -6,6 +6,7 @@ import { EditorView } from "./views/EditorView.tsx";
 import { DocumentsView } from "./views/DocumentsView.tsx";
 import { TasksView } from "./views/TasksView.tsx";
 import { PhotosView } from "./views/PhotosView.tsx";
+import { DatabasesView } from "./views/DatabasesView.tsx";
 import { SearchModal } from "./components/SearchModal.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { FilePreviewModal } from "./components/FilePreviewModal.tsx";
@@ -597,6 +598,10 @@ export const App: React.FC = () => {
               workspaceId={currentWorkspace.id}
               onUpdateTasks={handleUpdateTasks}
             />
+          )}
+
+          {currentView === "databases" && (
+            <DatabasesView workspaceId={currentWorkspace.id} currentUser={currentUser} getAuthHeaders={getAuthHeaders} />
           )}
 
           {currentView === "photos" && (

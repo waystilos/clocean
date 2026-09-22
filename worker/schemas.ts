@@ -284,3 +284,31 @@ export const CheckDeadlinesSchema = z.object({
   workspaceId: z.string().trim().min(1).optional(),
 });
 export type CheckDeadlinesInput = z.infer<typeof CheckDeadlinesSchema>;
+
+export const DatabasePropertySchema = z.object({
+  id: z.string().trim().regex(/^[a-zA-Z0-9_-]+$/).max(40),
+  name: z.string().trim().min(1).max(80),
+  type: z.enum(["text", "number", "select", "multi_select", "date", "checkbox", "person", "url"]),
+  options: z.array(z.string().trim().min(1).max(60)).max(50).optional(),
+});
+
+export const CreateDatabaseSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  properties: z.array(DatabasePropertySchema).max(30).default([]),
+}).superRefine((value, ctx) => {
+  const ids = new Set<string>();
+  for (const property of value.properties) {
+    if (ids.has(property.id)) ctx.addIssue({ code: "custom", path: ["properties"], message: "Property IDs must be unique" });
+    ids.add(property.id);
+    if (["select", "multi_select"].includes(property.type) && (!property.options || property.options.length === 0)) {
+      ctx.addIssue({ code: "custom", path: ["properties"], message: `${property.type} properties require options` });
+    }
+  }
+});
+export type CreateDatabaseInput = z.infer<typeof CreateDatabaseSchema>;
+
+export const DatabaseRecordPayloadSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  properties: z.record(z.string().regex(/^[a-zA-Z0-9_-]+$/).max(40), z.unknown()).default({}),
+});
+export type DatabaseRecordPayload = z.infer<typeof DatabaseRecordPayloadSchema>;

@@ -1,4 +1,33 @@
-export type ViewMode = "home" | "tasks" | "notes" | "documents" | "photos" | "templates" | "import" | "trash";
+export type ViewMode = "home" | "tasks" | "notes" | "documents" | "databases" | "photos" | "templates" | "import" | "trash";
+
+export type DatabasePropertyType = "text" | "number" | "select" | "multi_select" | "date" | "checkbox" | "person" | "url";
+
+export interface DatabaseProperty {
+  id: string;
+  name: string;
+  type: DatabasePropertyType;
+  options?: string[];
+}
+
+export interface DatabaseSchema {
+  id: string;
+  workspaceId: string;
+  name: string;
+  properties: DatabaseProperty[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DatabaseRecord {
+  id: string;
+  databaseId: string;
+  title: string;
+  properties: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+}
 
 export interface TreeNode {
   id: string;

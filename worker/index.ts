@@ -20,6 +20,7 @@ import {
   UserWorkspaceReference,
 } from "./types.ts";
 import { R2Database } from "./storage/r2Db.ts";
+import { DatabaseConflictError, DatabaseStore, DatabaseValidationError } from "./storage/databaseStore.ts";
 import { getAuthEmail, requireAuth } from "./auth/cfAccess.ts";
 import { DocSessionDO } from "./durable_objects/DocSessionDO.ts";
 import crypto from "node:crypto";
@@ -48,6 +49,8 @@ import {
   SendOtpSchema,
   VerifyOtpSchema,
   CheckDeadlinesSchema,
+  CreateDatabaseSchema,
+  DatabaseRecordPayloadSchema,
 } from "./schemas.ts";
 
 export { DocSessionDO };
@@ -886,6 +889,68 @@ app.put("/api/workspaces/:wsId/members/:email/role", async (c) => {
   }
 
   return c.json(result.members);
+});
+
+// R2-backed Notion-style databases. All routes inherit workspace membership middleware above.
+app.get("/api/databases", async (c) => {
+  const store = new DatabaseStore(new R2Database(c.env.CLOCEAN_STORAGE));
+  return c.json({ databases: await store.list(getWorkspaceId(c)) });
+});
+
+app.post("/api/databases", async (c) => {
+  const oversized = rejectOversizedRequest(c, 32 * 1024);
+  if (oversized) return oversized;
+  const parsed = CreateDatabaseSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Invalid database schema", details: parsed.error.issues }, 400);
+  try {
+    const schema = await new DatabaseStore(new R2Database(c.env.CLOCEAN_STORAGE)).create(getWorkspaceId(c), parsed.data.name, parsed.data.properties, getRequesterEmail(c));
+    return c.json(schema, 201);
+  } catch (error) {
+    if (error instanceof DatabaseConflictError) return c.json({ error: error.message }, 409);
+    return c.json({ error: "Failed to create database" }, 500);
+  }
+});
+
+app.get("/api/databases/:databaseId/records", async (c) => {
+  const databaseId = c.req.param("databaseId");
+  if (!isValidId(databaseId)) return c.json({ error: "Invalid database ID" }, 400);
+  const query = c.req.query("q")?.slice(0, 100);
+  const sort = c.req.query("sort");
+  const direction = c.req.query("dir") === "desc" ? "desc" : "asc";
+  const result = await new DatabaseStore(new R2Database(c.env.CLOCEAN_STORAGE)).listRecords(getWorkspaceId(c), databaseId, query, sort, direction);
+  if (!result) return c.json({ error: "Database not found" }, 404);
+  return c.json(result);
+});
+
+app.post("/api/databases/:databaseId/records", async (c) => {
+  const databaseId = c.req.param("databaseId");
+  if (!isValidId(databaseId)) return c.json({ error: "Invalid database ID" }, 400);
+  const oversized = rejectOversizedRequest(c, 64 * 1024);
+  if (oversized) return oversized;
+  const parsed = DatabaseRecordPayloadSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Invalid database record", details: parsed.error.issues }, 400);
+  try {
+    const record = await new DatabaseStore(new R2Database(c.env.CLOCEAN_STORAGE)).createRecord(getWorkspaceId(c), databaseId, parsed.data, getRequesterEmail(c));
+    if (!record) return c.json({ error: "Database not found" }, 404);
+    return c.json(record, 201);
+  } catch (error) {
+    if (error instanceof DatabaseValidationError) return c.json({ error: error.message }, 400);
+    if (error instanceof DatabaseConflictError) return c.json({ error: error.message }, 409);
+    return c.json({ error: "Failed to create database record" }, 500);
+  }
+});
+
+app.delete("/api/databases/:databaseId/records/:recordId", async (c) => {
+  const databaseId = c.req.param("databaseId");
+  const recordId = c.req.param("recordId");
+  if (!isValidId(databaseId) || !isValidId(recordId)) return c.json({ error: "Invalid database or record ID" }, 400);
+  try {
+    const deleted = await new DatabaseStore(new R2Database(c.env.CLOCEAN_STORAGE)).deleteRecord(getWorkspaceId(c), databaseId, recordId);
+    return deleted ? c.json({ ok: true }) : c.json({ error: "Record not found" }, 404);
+  } catch (error) {
+    if (error instanceof DatabaseConflictError) return c.json({ error: error.message }, 409);
+    return c.json({ error: "Failed to delete database record" }, 500);
+  }
 });
 
 // Workspace Tree Endpoints
