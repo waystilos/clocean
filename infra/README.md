@@ -43,15 +43,19 @@ pulumi login --local
 
 #### Option B: Cloudflare R2 Backend (Recommended for Teams, $0 Costs)
 Stores state in Cloudflare R2 using R2's S3-compatible API:
-1. Create an R2 API Token in **Cloudflare Dashboard > R2 > Manage R2 API Tokens** with **Object Read & Write** permissions.
-2. Export your credentials in your terminal:
+1. Provision the R2 buckets (creates `clocean-storage` and `clocean-pulumi-state`):
+```bash
+pnpm setup:r2
+```
+2. Create an R2 API Token in **Cloudflare Dashboard > R2 > Manage R2 API Tokens** with **Object Read & Write** permissions.
+3. Export your credentials in your terminal:
 ```bash
 export CLOUDFLARE_ACCOUNT_ID="your-cloudflare-account-id"
 export AWS_ACCESS_KEY_ID="your-r2-access-key-id"
 export AWS_SECRET_ACCESS_KEY="your-r2-secret-access-key"
 export PULUMI_CONFIG_PASSPHRASE="your-encryption-passphrase"
 ```
-3. Run the automated login script:
+4. Run the automated login script:
 ```bash
 pnpm login:r2
 # Or directly via Pulumi:

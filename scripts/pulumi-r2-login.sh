@@ -15,8 +15,16 @@ R2_SECRET="${AWS_SECRET_ACCESS_KEY:-${R2_SECRET_ACCESS_KEY}}"
 REGION="${AWS_REGION:-auto}"
 
 if [ -z "$ACCOUNT_ID" ]; then
-  echo "Error: CLOUDFLARE_ACCOUNT_ID (or CF_ACCOUNT_ID) is required."
-  echo "Find your Account ID in the Cloudflare Dashboard overview."
+  DETECTED_ID=$(npx wrangler whoami 2>/dev/null | grep -oE '[a-f0-9]{32}' | head -n 1 || true)
+  if [ -n "$DETECTED_ID" ]; then
+    ACCOUNT_ID="$DETECTED_ID"
+    echo "Auto-detected Cloudflare Account ID: $ACCOUNT_ID"
+  fi
+fi
+
+if [ -z "$ACCOUNT_ID" ]; then
+  echo "Error: CLOUDFLARE_ACCOUNT_ID is required."
+  echo "Find your Account ID in Cloudflare Dashboard overview or log in with 'npx wrangler login'."
   echo "Example: export CLOUDFLARE_ACCOUNT_ID=\"your-account-id\""
   exit 1
 fi

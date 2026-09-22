@@ -103,10 +103,9 @@ The user interface strictly replicates the **Figma Design System** (`Clocean - A
    pnpm install
    ```
 
-2. Provision the Cloudflare R2 bucket:
+2. Provision the Cloudflare R2 storage buckets:
    ```bash
-   ./scripts/setup-r2.sh
-   # Or directly: npx wrangler r2 bucket create clocean-storage
+   pnpm setup:r2
    ```
 
 3. Deploy the application:
