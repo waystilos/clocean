@@ -63,6 +63,16 @@ describe("Notion-Style Invites, Avatar Storage, and Edge Schemas", () => {
     const existingMemberToken = signSessionToken(existingMemberEmail);
 
     it("should allow an authenticated user to join a workspace via invite link", async () => {
+      const inviteRes = await fetch(`${BASE_URL}/api/workspaces/${createdWsId}/members`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${ownerToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: existingMemberEmail, role: "member" }),
+      });
+      expect(inviteRes.status).toBe(200);
+
       const res = await fetch(`${BASE_URL}/api/workspaces/${createdWsId}/join`, {
         method: "POST",
         headers: {

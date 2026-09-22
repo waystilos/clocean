@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Header } from "./components/Header.tsx";
 import { DashboardView } from "./views/DashboardView.tsx";
@@ -341,6 +341,10 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleLoadTasks = useCallback((loadedTasks: TaskItem[]) => {
+    setTasks(loadedTasks);
+  }, []);
+
   const handleNavigateDoc = (docId: string) => {
     setActiveDocId(docId);
     setCurrentView("notes");
@@ -637,6 +641,7 @@ export const App: React.FC = () => {
               currentUser={currentUser}
               workspaceId={currentWorkspace.id}
               onUpdateTasks={handleUpdateTasks}
+              onLoadTasks={handleLoadTasks}
               sessionToken={sessionToken}
             />
           )}

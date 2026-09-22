@@ -109,6 +109,11 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 const app = new Hono<{ Bindings: Env; Variables: { requesterEmail: string } }>();
 
 function applySecurityHeaders(response: Response): Response {
+  // A successful WebSocket upgrade uses status 101. The Fetch Response
+  // constructor rejects informational status codes, so preserve the upgrade
+  // response and let the WebSocket handshake complete.
+  if (response.status === 101) return response;
+
   const headers = new Headers(response.headers);
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -179,10 +184,10 @@ function getAppUrl(c: any): string {
   return new URL(c.req.url).origin;
 }
 
-function rejectOversizedRequest(c: any, maxBytes: number): Response | null {
+function rejectOversizedRequest(c: any, maxBytes: number, message = "Request body exceeds the maximum allowed size"): Response | null {
   const contentLength = Number(c.req.header("content-length"));
   return Number.isFinite(contentLength) && contentLength > maxBytes
-    ? c.json({ error: "Request body exceeds the maximum allowed size" }, 413)
+    ? c.json({ error: message }, 413)
     : null;
 }
 
@@ -257,7 +262,13 @@ app.use("/api/*", async (c, next) => {
 
   // Joining is authorized by the route's invitation check rather than current membership.
   const isJoinRoute = /^\/api\/workspaces\/[^/]+\/join$/.test(c.req.path);
-  if (requestedWs && !isJoinRoute) {
+  // Let mutation handlers perform their role-specific checks so callers
+  // receive the correct authorization response. Read-only workspace routes
+  // still go through this membership gate.
+  const isMemberManagementMutation =
+    (/^\/api\/workspaces\/[^/]+\/members$/.test(c.req.path) && c.req.method === "POST") ||
+    (/^\/api\/workspaces\/[^/]+\/members\/[^/]+\/role$/.test(c.req.path) && c.req.method === "PUT");
+  if (requestedWs && !isJoinRoute && !isMemberManagementMutation) {
     const db = new R2Database(c.env.CLOCEAN_STORAGE);
     const access = await verifyWorkspaceAccess(c, requestedWs, db, authRes.email);
     if (access) return access;
@@ -602,7 +613,7 @@ app.put("/api/user/profile", async (c) => {
 
 app.post("/api/user/avatar", async (c) => {
   const email = getRequesterEmail(c);
-  const oversized = rejectOversizedRequest(c, MAX_AVATAR_SIZE + 64 * 1024);
+  const oversized = rejectOversizedRequest(c, MAX_AVATAR_SIZE + 64 * 1024, "Avatar file exceeds maximum 5MB limit");
   if (oversized) return oversized;
   const cleanEmail = email.toLowerCase().trim();
   const body = await c.req.parseBody();
@@ -1724,6 +1735,12 @@ app.get("/api/tasks", async (c) => {
   const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const boardId = c.req.query("boardId") || "default";
+  if (boardId !== "default") {
+    const registry = await db.getJson<{ boards: TaskBoard[] }>(`workspaces/${ws}/task-boards.json`);
+    if (!registry.data?.boards.some((board) => board.id === boardId)) {
+      return c.json({ error: "Task board not found" }, 404);
+    }
+  }
   const key = boardId === "default" ? `workspaces/${ws}/tasks.json` : `workspaces/${ws}/task-boards/${boardId}.json`;
   const { data } = await db.getJson<TasksData>(key);
   return c.json(data?.tasks || []);
@@ -1740,6 +1757,12 @@ app.put("/api/tasks", async (c) => {
   const senderEmail = getRequesterEmail(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const boardId = c.req.query("boardId") || "default";
+  if (boardId !== "default") {
+    const registry = await db.getJson<{ boards: TaskBoard[] }>(`workspaces/${ws}/task-boards.json`);
+    if (!registry.data?.boards.some((board) => board.id === boardId)) {
+      return c.json({ error: "Task board not found" }, 404);
+    }
+  }
   const tasksKey = boardId === "default" ? `workspaces/${ws}/tasks.json` : `workspaces/${ws}/task-boards/${boardId}.json`;
   const existing = await db.getJson<TasksData>(tasksKey);
   const previousTasks = existing.data?.tasks || [];

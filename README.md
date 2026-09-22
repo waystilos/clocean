@@ -12,8 +12,9 @@ Because it runs on Cloudflare's serverless edge and R2 has zero egress fees, you
 
 - **Collaborative Document Editor**: Write documents with rich markdown, interactive checklists, code blocks, and linked attachments. Multi-user editing is powered by Cloudflare Durable Objects over WebSockets with live cursor tracking.
 - **Notion-Style Workspace & Doc Invites**: Share a workspace or document with a link (`?join=workspaceId` or `?join=ws&doc=docId`). Teammates authenticate through the Cloudflare Access protected application before joining.
-- **Sprint Tasks & Deadlines**: Kanban board (`To Do`, `In Progress`, `Done`) and table view with assignees, tags, and calendar due dates. Includes an edge worker routine that flags upcoming deadlines within 48 hours and sends email alerts.
-- **Cloudflare Drive & Photo Moodboards**: Upload PDFs, design specs, and images directly to R2. Images are indexed into moodboard albums with in-app previews and no bandwidth egress charges.
+- **Workspace Navigation**: Organize notes and documents in nested folders, create notes from the tree, and move between workspace resources without losing context.
+- **Sprint Tasks & Boards**: Create separate Kanban boards, switch between projects, and use board or table views with assignees, tags, and calendar due dates.
+- **Cloudflare Drive & Media**: Upload PDFs, design specs, text files, and images directly to R2. Documents owns the file and media experience, with authenticated previews and no bandwidth egress charges.
 - **Custom Profile Avatars**: Upload profile photos directly to R2 with instant client preview and edge-cached streaming.
 - **Zero-Database Architecture**: Every piece of data is stored in R2. Writes to tree structures use R2 HTTP ETags (`If-Match`) for optimistic concurrency control so edits never overwrite each other silently.
 - **Authentication**: Production uses cryptographically verified Cloudflare Access JWTs. Local development keeps mock identity and OTP helpers for testing; production email signup is disabled, so no transactional email service is required.
@@ -129,7 +130,7 @@ For automated Zero Trust provisioning via code, check out [`infra/`](infra/READM
 clocean/
 ├── src/                       # React 19 Single Page App
 │   ├── components/            # Header, Sidebar, Modals, Markdown renderer
-│   ├── views/                 # Dashboard, Editor, Documents, Tasks, Photos
+│   ├── views/                 # Dashboard, Notes, Editor, Documents, Tasks
 │   └── styles/                # Design tokens (warm parchment palette)
 ├── worker/                    # Cloudflare Worker backend
 │   ├── index.ts               # Hono API router & WebSocket handler

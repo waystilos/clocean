@@ -33,19 +33,20 @@ graph TD
 
 ### Layer 1: Edge Security & Authentication
 
-Clocean supports a flexible dual-authentication architecture:
+Clocean uses Cloudflare Access as the production authentication boundary:
 
-1. **Native Email OTP & Cryptographic Session Tokens**:
-   * Users sign in or register with their email address.
+1. **Local Development OTP & Cryptographic Session Tokens**:
+   * Local development can sign in or register with an email address.
    * The worker issues a secure, time-limited 6-digit numeric OTP code (`POST /api/auth/send-otp`). The hash is stored in R2 (`workspaces/registry/otp/{email}.json`) with a per-user salt to prevent replay and brute-force attacks (rate-limited, max 5 attempts, expires in 10 minutes).
    * Upon verification (`POST /api/auth/verify-otp`), the server signs an HMAC-SHA256 session token (`Authorization: Bearer <token>`) providing stateless, edge-verified sessions.
-2. **Cloudflare Zero Trust / Access (Enterprise SSO)**:
+2. **Cloudflare Zero Trust / Access (Production)**:
    * Sits in front of the application domain (`clocean.yourcompany.com`).
    * Supports Google Workspace, GitHub, Microsoft 365, Okta, or Cloudflare Access OTP.
    * Passes authenticated identity headers down to the Worker:
      * `Cf-Access-Authenticated-User-Email`: Authenticated user's email address.
      * `Cf-Access-Jwt-Assertion`: Cryptographically signed JWT verified by the Worker against Cloudflare's JWKS, including issuer, audience, expiration, and signature checks.
    * Free for up to 50 active team members on Cloudflare's Zero Trust free tier.
+   * Production email OTP signup is disabled. The Worker rejects requests without a verified Access JWT.
 
 ---
 
@@ -69,13 +70,16 @@ Powered by [Hono](https://hono.dev/), a lightweight, edge-optimized routing fram
 * `GET /api/workspaces/:wsId/invite-info`: Unauthenticated endpoint returning public workspace name, icon, and member count for Notion-style share links.
 * `POST /api/workspaces/:wsId/join`: Authenticated endpoint that completes a previously issued invitation; knowing a workspace ID alone is insufficient.
 * `GET /api/tree`: Returns workspace folder and document tree.
+* `POST /api/tree/node`: Creates a note or folder with an optional parent folder.
+* `PUT /api/tree/node/:id`: Renames or moves a note or folder.
 * `POST /api/upload`: Direct streaming multipart upload to R2 without buffering in RAM.
-* `GET /api/files/:id/:filename`: Streams binary files from R2 with byte-range requests for audio/video/PDFs.
+* `GET /api/files/:id/:filename`: Streams authenticated binary files from R2 with byte-range requests for documents and media.
 * `POST /api/user/avatar`: Uploads and validates custom profile avatar pictures directly to R2.
 * `GET /api/user/avatar/:email`: Edge-cached streaming of user avatar images with Dicebear fallback.
-* `GET /api/tasks`, `PUT /api/tasks`: Kanban board persistence with calendar due dates.
+* `GET /api/task-boards`, `POST /api/task-boards`: Lists and creates independent task boards.
+* `GET /api/tasks?boardId=:id`, `PUT /api/tasks?boardId=:id`: Persists each board's Kanban tasks with calendar due dates.
 * `POST /api/tasks/check-deadlines`: Scans tasks for deadlines due within 48 hours and sends email alerts.
-* `GET /api/photos`: Media gallery metadata.
+* `GET /api/photos`: Legacy media metadata retained for existing R2 records; media is presented from Documents in the main UI.
 
 #### 2. Durable Objects Real-Time Room Sync (`worker/durable_objects/DocSessionDO.ts`)
 * When multiple users open a document, their browsers establish a WebSocket connection to:
@@ -116,7 +120,9 @@ workspaces/{workspaceId}/              # Multi-tenant partitioned team root (e.g
 ├── meta.json                          # Organization metadata (name, icon, owner, timestamps)
 ├── members.json                       # Team roster (emails, display names, avatars, roles: owner/admin/member)
 ├── tree.json                          # File & folder hierarchy isolated to this organization
-├── tasks.json                         # Kanban sprint tasks isolated to this organization
+├── tasks.json                         # Default Kanban board tasks
+├── task-boards.json                   # Task board registry
+├── task-boards/{boardId}.json         # Tasks for additional boards
 ├── photos.json                        # Photos gallery index isolated to this organization
 ├── activity.json                      # Organization-specific activity changelog
 ├── favorites.json                     # Pinned and starred documents per user
@@ -366,7 +372,7 @@ sequenceDiagram
     * `X-Content-Type-Options: nosniff`: Prevents MIME-confusion attacks.
     * `X-Frame-Options: SAMEORIGIN`: Prevents clickjacking.
   * **Safe Format Gating**: Only safe non-executable image formats (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`) and `.pdf` may be served with `Content-Disposition: inline`. All active or executable formats (HTML, SVG, XML, JS, etc.) are forced to `Content-Disposition: attachment`, preventing arbitrary script execution.
-  * Embedded preview `<iframe>` components explicitly declare `sandbox="allow-scripts"` to isolate rendered documents from parent cookies and `localStorage`.
+  * File previews fetch through the authenticated API with the current session token, render from temporary blob URLs, and revoke those URLs when the modal closes. PDF and text previews use sandboxed iframes; unsafe formats remain downloads.
 
 ```mermaid
 graph TD

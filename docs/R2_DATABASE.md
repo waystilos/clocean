@@ -33,7 +33,9 @@ workspaces/{workspaceId}/              # Multi-tenant partitioned team root (e.g
 ├── meta.json                          # Workspace metadata (name, icon, owner, createdAt)
 ├── members.json                       # Team roster (emails, names, avatars, roles: owner/admin/member)
 ├── tree.json                          # Workspace File & Document Hierarchy
-├── tasks.json                         # Sprint Kanban Board & calendar deadlines
+├── tasks.json                         # Default Sprint Kanban Board & calendar deadlines
+├── task-boards.json                   # Task board registry
+├── task-boards/{boardId}.json         # Tasks for additional boards
 ├── photos.json                        # Photos Gallery Index
 ├── activity.json                      # Workspace Changelog
 ├── favorites.json                     # Pinned and starred documents per user
@@ -183,6 +185,12 @@ Stores Kanban tasks with assignees and deadline tracking.
   }
 ]
 ```
+
+Additional boards are registered in `workspaces/{wsId}/task-boards.json` and store their tasks under `workspaces/{wsId}/task-boards/{boardId}.json`. The default board remains compatible with `tasks.json`, allowing existing installations to migrate without changing their current task data.
+
+### 7. Notes, folders, and authenticated file previews
+
+Notes and folders share `tree.json`. Each node stores a `parentId`, allowing arbitrary nesting while document content remains in `docs/{docId}/content.json`. Uploaded files use `files/{fileId}/{filename}` and are served through authenticated API requests. The browser fetches files with its session token, creates temporary blob URLs for image, PDF, or text previews, and revokes those URLs after use.
 
 ---
 

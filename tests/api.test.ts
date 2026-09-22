@@ -318,6 +318,40 @@ describe("Clocean R2 Edge REST API & Database Tests", () => {
 
   // 5. Tasks Board & Activity Feed
   describe("Kanban Tasks & Activity Logging", () => {
+    it("should create and persist an independent task board", async () => {
+      const createRes = await fetch(`${BASE_URL}/api/task-boards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `QA board ${Date.now()}` }),
+      });
+      expect(createRes.status).toBe(201);
+      const board = await createRes.json() as { id: string; name: string };
+      expect(board.id).toMatch(/^board-/);
+
+      const task = {
+        id: `task-board-${Date.now()}`,
+        title: "Board isolation check",
+        status: "todo",
+        dueDate: "Due Tomorrow",
+        assignee: { name: "Tester", email: testUserEmail },
+      };
+      const putRes = await fetch(`${BASE_URL}/api/tasks?boardId=${encodeURIComponent(board.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([task]),
+      });
+      expect(putRes.status).toBe(200);
+
+      const boardTasks = await (await fetch(`${BASE_URL}/api/tasks?boardId=${encodeURIComponent(board.id)}`)).json() as any[];
+      const defaultTasks = await (await fetch(`${BASE_URL}/api/tasks`)).json() as any[];
+      expect(boardTasks).toHaveLength(1);
+      expect(boardTasks[0].title).toBe(task.title);
+      expect(defaultTasks.some((item) => item.id === task.id)).toBe(false);
+
+      const missingBoardRes = await fetch(`${BASE_URL}/api/tasks?boardId=board-missing`);
+      expect(missingBoardRes.status).toBe(404);
+    });
+
     it("should fetch tasks from R2", async () => {
       const res = await fetch(`${BASE_URL}/api/tasks`);
       expect(res.status).toBe(200);

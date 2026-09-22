@@ -243,6 +243,7 @@ describe("Clocean Organizations & Team Workspaces Test Suite", () => {
         headers: {
           "Content-Type": "application/json",
           "x-workspace-id": createdWsId,
+          "x-user-email": testOwner,
         },
         body: JSON.stringify(customTasks),
       });
@@ -258,7 +259,7 @@ describe("Clocean Organizations & Team Workspaces Test Suite", () => {
 
       // Verify custom workspace does NOT leak default tasks
       const getCustom = await fetch(`${BASE_URL}/api/tasks`, {
-        headers: { "x-workspace-id": createdWsId },
+        headers: { "x-workspace-id": createdWsId, "x-user-email": testOwner },
       });
       const fetchedCustom = await getCustom.json() as any[];
       expect(fetchedCustom.some((t) => t.title === "Default Workspace Task")).toBe(false);
@@ -274,6 +275,7 @@ describe("Clocean Organizations & Team Workspaces Test Suite", () => {
         headers: {
           "Content-Type": "application/json",
           "x-workspace-id": createdWsId,
+          "x-user-email": testOwner,
         },
         body: JSON.stringify({
           title: "Confidential Strategy",
@@ -295,7 +297,7 @@ describe("Clocean Organizations & Team Workspaces Test Suite", () => {
 
       // Reading from custom workspace succeeds and returns the confidential document
       const readCustom = await fetch(`${BASE_URL}/api/docs/${docId}`, {
-        headers: { "x-workspace-id": createdWsId },
+        headers: { "x-workspace-id": createdWsId, "x-user-email": testOwner },
       });
       expect(readCustom.status).toBe(200);
       const docData = await readCustom.json() as any;

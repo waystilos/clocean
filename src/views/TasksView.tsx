@@ -114,6 +114,7 @@ interface TasksViewProps {
   currentUser: UserProfile;
   workspaceId?: string;
   onUpdateTasks: (tasks: TaskItem[], boardId?: string) => Promise<void>;
+  onLoadTasks?: (tasks: TaskItem[], boardId?: string) => void;
   sessionToken?: string | null;
 }
 
@@ -122,11 +123,12 @@ export const TasksView: React.FC<TasksViewProps> = ({
   currentUser,
   workspaceId = "default",
   onUpdateTasks,
+  onLoadTasks,
   sessionToken,
 }) => {
   const getAuthHeaders = (extra: Record<string, string> = {}) => {
     const token = sessionToken || localStorage.getItem("clocean_session_token");
-    return { ...extra, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    return { "x-workspace-id": workspaceId, ...extra, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   };
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split("T")[0];
   const [filter, setFilter] = useState<"all" | "mine" | "due" | "high">("all");
@@ -152,33 +154,56 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [boards, setBoards] = useState<TaskBoard[]>([]);
   const [activeBoardId, setActiveBoardId] = useState("default");
   const [newBoardName, setNewBoardName] = useState("");
+  const [boardError, setBoardError] = useState<string | null>(null);
 
   useEffect(() => {
+    setBoards([]);
+    setActiveBoardId("default");
+    setBoardError(null);
     fetch("/api/task-boards", { headers: getAuthHeaders() })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setBoards(data as TaskBoard[]))
-      .catch(() => {});
+      .then((res) => {
+        if (!res.ok) throw new Error("Could not load task boards");
+        return res.json();
+      })
+      .then((data) => {
+        const loadedBoards = data as TaskBoard[];
+        setBoards(loadedBoards);
+        if (!loadedBoards.some((board) => board.id === "default")) setActiveBoardId(loadedBoards[0]?.id || "default");
+      })
+      .catch((error: unknown) => setBoardError(error instanceof Error ? error.message : "Could not load task boards"));
   }, [workspaceId]);
 
   useEffect(() => {
     fetch(`/api/tasks?boardId=${encodeURIComponent(activeBoardId)}`, { headers: getAuthHeaders() })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => onUpdateTasks(data as TaskItem[], activeBoardId))
-      .catch(() => {});
-  }, [activeBoardId]);
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Could not load tasks");
+        return res.json();
+      })
+      .then((data) => onLoadTasks?.(data as TaskItem[], activeBoardId))
+      .catch((error: unknown) => setBoardError(error instanceof Error ? error.message : "Could not load tasks"));
+  }, [activeBoardId, workspaceId, onLoadTasks]);
 
   const createBoard = async () => {
-    if (!newBoardName.trim()) return;
-    const response = await fetch("/api/task-boards", {
-      method: "POST",
-      headers: getAuthHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ name: newBoardName.trim() }),
-    });
-    if (!response.ok) return;
-    const board = await response.json() as TaskBoard;
-    setBoards((current) => [...current, board]);
-    setNewBoardName("");
-    setActiveBoardId(board.id);
+    if (!newBoardName.trim()) {
+      setBoardError("Enter a name for the new board.");
+      return;
+    }
+    try {
+      const response = await fetch("/api/task-boards", {
+        method: "POST",
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ name: newBoardName.trim() }),
+      });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not create task board");
+      const board = data as TaskBoard;
+      setBoards((current) => [...current, board]);
+      setNewBoardName("");
+      setBoardError(null);
+      setActiveBoardId(board.id);
+    } catch (error: unknown) {
+      setBoardError(error instanceof Error ? error.message : "Could not create task board");
+    }
   };
 
   const handleCheckDeadlines = async () => {
@@ -416,6 +441,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
             <input value={newBoardName} onChange={(e) => setNewBoardName(e.target.value)} placeholder="New board name" aria-label="New board name" maxLength={100} />
             <button className="btn-secondary" onClick={createBoard}><Plus size={14} /> Board</button>
           </div>
+          {boardError && <div role="alert" style={{ color: "var(--danger, #b42318)", fontSize: 12, marginTop: 8 }}>{boardError}</div>}
         </div>
 
         {/* Filters */}
