@@ -20,10 +20,8 @@ pulumi login
 Then run:
 
 ```bash
-export CLOCEAN_ACCESS_EMAIL="you@example.com"
-export CLOUDFLARE_ACCESS_TEAM_DOMAIN="your-team.cloudflareaccess.com"
-export CLOUDFLARE_API_TOKEN="<token with Workers, R2, and Access edit permissions>"
-export PULUMI_CONFIG_PASSPHRASE="<local encryption passphrase>"
+cp .env.example .env
+# Edit .env and replace the placeholder values.
 pnpm install
 pnpm deploy:one-click
 ```
