@@ -13,14 +13,14 @@
     "test": "vitest run --fileParallelism=false"
   },
   "packageManager": "pnpm@10.29.1",
-
   "dependencies": {
     "hono": "^4.7.2",
     "lucide-react": "^1.16.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "y-protocols": "^1.0.6",
-    "yjs": "^13.6.23"
+    "yjs": "^13.6.23",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250224.0",

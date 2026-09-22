@@ -123,19 +123,24 @@ Your application will be live globally on Cloudflare Workers and Pages!
 
 Run the full local stack (Vite + Cloudflare Worker + Miniflare R2 + Durable Objects):
 
-1. Start the Cloudflare Worker with local R2 and Durable Objects emulation:
+1. Configure local environment variables (optional):
+   ```bash
+   cp .env.example .dev.vars
+   ```
+
+2. Start the Cloudflare Worker with local R2 and Durable Objects emulation:
    ```bash
    pnpm worker:dev
    ```
    *(Listens on `http://127.0.0.1:8787`)*
 
-2. Start the Vite React development server:
+3. Start the Vite React development server:
    ```bash
    pnpm dev
    ```
    *(Listens on `http://localhost:3000` with hot module replacement and `/api` proxy)*
 
-3. Open two browser windows:
+4. Open two browser windows:
    * Window 1: `http://localhost:3000`
    * Window 2: Open an incognito or separate browser window to collaborate simultaneously and observe real-time live cursor synchronization.
 

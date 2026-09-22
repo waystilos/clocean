@@ -322,5 +322,74 @@ describe("Clocean Enterprise Security Regression Test Suite", () => {
       expect(data.error).toContain("Invalid doc ID");
     });
   });
+
+  // 6. Zod Runtime Schema Validation & Malformed Payload Defenses
+  describe("Zod Edge Schema Validation Defenses", () => {
+    it("should reject workspace creation with empty or invalid payload", async () => {
+      const res = await fetch(`${BASE_URL}/api/workspaces?user=alex`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "   " }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Workspace name is required");
+    });
+
+    it("should reject member invitation with malformed email format", async () => {
+      const res = await fetch(`${BASE_URL}/api/workspaces/default/members?user=alex`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "not-an-email", role: "member" }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("valid email");
+    });
+
+    it("should reject member role update with invalid role value", async () => {
+      const res = await fetch(`${BASE_URL}/api/workspaces/default/members/elena%40clocean.co/role?user=alex`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "superadmin" }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Role must be 'admin' or 'member'");
+    });
+
+    it("should reject document share toggle with non-boolean payload", async () => {
+      const res = await fetch(`${BASE_URL}/api/docs/doc-manifesto/share?user=alex`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: "yes_please" }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("isPublic boolean is required");
+    });
+
+    it("should reject comment submission with empty text", async () => {
+      const res = await fetch(`${BASE_URL}/api/docs/doc-manifesto/comments?user=alex`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "   " }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Comment text");
+    });
+
+    it("should reject tasks update with non-array payload", async () => {
+      const res = await fetch(`${BASE_URL}/api/tasks?user=alex`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invalid: "not an array" }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Invalid tasks array payload");
+    });
+  });
 });
 

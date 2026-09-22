@@ -21,6 +21,17 @@ import { R2Database } from "./storage/r2Db.ts";
 import { getAuthEmail, requireAuth } from "./auth/cfAccess.ts";
 import { DocSessionDO } from "./durable_objects/DocSessionDO.ts";
 import { extractMentions, dispatchMentionNotification } from "./notifications/emailNotifier.ts";
+import { z } from "zod";
+import {
+  CreateWorkspaceSchema,
+  InviteMemberSchema,
+  UpdateMemberRoleSchema,
+  SaveDocSchema,
+  ShareDocSchema,
+  TaskItemSchema,
+  AddCommentSchema,
+  MentionNotificationPayloadSchema,
+} from "./schemas.ts";
 
 export { DocSessionDO };
 
@@ -189,14 +200,16 @@ app.get("/api/workspaces", async (c) => {
 
 app.post("/api/workspaces", async (c) => {
   const email = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
-  const body = await c.req.json<{ name: string; icon?: string }>();
-  if (!body.name || !body.name.trim()) {
-    return c.json({ error: "Workspace name is required" }, 400);
+  const json = await c.req.json().catch(() => null);
+  const parsed = CreateWorkspaceSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.issues[0]?.message || "Workspace name is required" }, 400);
   }
+  const body = parsed.data;
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const profile = await db.getUserProfile(email);
   const meta = await db.createWorkspace(
-    body.name.trim().slice(0, 60),
+    body.name,
     body.icon || "layers",
     email,
     profile.name
@@ -230,10 +243,12 @@ app.post("/api/workspaces/:wsId/members", async (c) => {
     return c.json({ error: "Only workspace owners and admins can invite members" }, 403);
   }
 
-  const body = await c.req.json<{ email: string; name?: string; role?: "admin" | "member" }>();
-  if (!body.email || !body.email.includes("@")) {
-    return c.json({ error: "Valid email is required" }, 400);
+  const json = await c.req.json().catch(() => null);
+  const parsed = InviteMemberSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.issues[0]?.message || "Valid email is required" }, 400);
   }
+  const body = parsed.data;
 
   await db.addWorkspaceMember(
     wsId,
@@ -307,10 +322,12 @@ app.put("/api/workspaces/:wsId/members/:email/role", async (c) => {
     return c.json({ error: "Only workspace owners and admins can update member roles" }, 403);
   }
 
-  const body = await c.req.json<{ role: "admin" | "member" }>();
-  if (body.role !== "admin" && body.role !== "member") {
+  const json = await c.req.json().catch(() => null);
+  const parsed = UpdateMemberRoleSchema.safeParse(json);
+  if (!parsed.success) {
     return c.json({ error: "Role must be 'admin' or 'member'" }, 400);
   }
+  const body = parsed.data;
 
   const result = await db.updateWorkspaceMemberRole(wsId, targetEmail, body.role);
   if (!result.success) {
@@ -431,8 +448,12 @@ app.put("/api/docs/:id", async (c) => {
   const id = c.req.param("id");
   if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
   const ws = getWorkspaceId(c);
-
-  const body = await c.req.json<Partial<DocContent>>();
+  const json = await c.req.json().catch(() => null);
+  const parsed = SaveDocSchema.partial().safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.issues[0]?.message || "Invalid document payload" }, 400);
+  }
+  const body = parsed.data;
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const existing = (await db.getJson<DocContent>(`workspaces/${ws}/docs/${id}/content.json`)).data;
 
@@ -583,7 +604,12 @@ app.post("/api/docs/:id/share", async (c) => {
   const id = c.req.param("id");
   if (!isValidId(id)) return c.json({ error: "Invalid document ID parameter" }, 400);
   const ws = getWorkspaceId(c);
-  const body = await c.req.json<{ isPublic: boolean }>();
+  const json = await c.req.json().catch(() => null);
+  const parsed = ShareDocSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: "isPublic boolean is required" }, 400);
+  }
+  const body = parsed.data;
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const docRes = await db.getJson<DocContent>(`workspaces/${ws}/docs/${id}/content.json`);
   if (!docRes.data) return c.json({ error: "Document not found" }, 404);
@@ -672,10 +698,12 @@ app.post("/api/docs/:id/comments", async (c) => {
   const ws = getWorkspaceId(c);
   const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
 
-  const body = await c.req.json<{ text: string; documentTitle?: string }>();
-  if (!body.text || !body.text.trim()) {
-    return c.json({ error: "Comment text is required" }, 400);
+  const json = await c.req.json().catch(() => null);
+  const parsed = AddCommentSchema.extend({ documentTitle: z.string().optional() }).safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.issues[0]?.message || "Comment text is required" }, 400);
   }
+  const body = parsed.data;
 
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const senderProfile = await db.getUserProfile(senderEmail);
@@ -763,15 +791,12 @@ app.put("/api/notifications/read", async (c) => {
 app.post("/api/notifications/mention", async (c) => {
   const ws = getWorkspaceId(c);
   const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
-  const body = await c.req.json<{
-    documentId: string;
-    documentTitle: string;
-    text: string;
-  }>();
-
-  if (!body.text || !body.documentId) {
+  const json = await c.req.json().catch(() => null);
+  const parsed = MentionNotificationPayloadSchema.safeParse(json);
+  if (!parsed.success) {
     return c.json({ error: "Text and documentId are required" }, 400);
   }
+  const body = parsed.data;
 
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const members = await db.getWorkspaceMembers(ws);
@@ -1007,7 +1032,12 @@ app.get("/api/tasks", async (c) => {
 
 app.put("/api/tasks", async (c) => {
   const ws = getWorkspaceId(c);
-  const tasks = await c.req.json<TaskItem[]>();
+  const json = await c.req.json().catch(() => null);
+  const parsed = z.array(TaskItemSchema).safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid tasks array payload" }, 400);
+  }
+  const tasks = parsed.data;
   const senderEmail = getAuthEmail(c.req.raw, c.env) || "alex@clocean.co";
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const existing = await db.getJson<TasksData>(`workspaces/${ws}/tasks.json`);
@@ -1028,8 +1058,19 @@ app.put("/api/tasks", async (c) => {
     const mentions = extractMentions(combinedText, members, senderEmail);
 
     // Also check if an assignee is set who is not the sender and wasn't previously assigned
-    const assigneeEmail = task.assignee?.email?.toLowerCase();
-    const prevAssigneeEmail = prev?.assignee?.email?.toLowerCase();
+    const assigneeEmail =
+      typeof task.assignee === "object" && task.assignee !== null
+        ? task.assignee.email?.toLowerCase()
+        : typeof task.assignee === "string" && task.assignee.includes("@")
+        ? task.assignee.toLowerCase()
+        : undefined;
+    const prevAssigneeRaw = prev?.assignee as any;
+    const prevAssigneeEmail =
+      typeof prevAssigneeRaw === "object" && prevAssigneeRaw !== null
+        ? prevAssigneeRaw.email?.toLowerCase()
+        : typeof prevAssigneeRaw === "string" && prevAssigneeRaw.includes("@")
+        ? prevAssigneeRaw.toLowerCase()
+        : undefined;
     const isNewAssignee =
       assigneeEmail &&
       assigneeEmail !== senderEmail.toLowerCase() &&

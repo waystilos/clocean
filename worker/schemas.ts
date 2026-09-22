@@ -1,0 +1,219 @@
+import { z } from "zod";
+
+// =====================================================================
+// Core Data Model Schemas
+// =====================================================================
+
+export const DocAttachmentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  type: z.string(),
+  size: z.number().nonnegative(),
+  url: z.string().min(1),
+});
+export type DocAttachment = z.infer<typeof DocAttachmentSchema>;
+
+export const TreeNodeSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).max(200),
+  type: z.enum(["doc", "file", "folder"]),
+  parentId: z.string().nullable(),
+  size: z.number().nonnegative().optional(),
+  mimeType: z.string().optional(),
+  icon: z.string().optional(),
+  updatedAt: z.string(),
+  createdAt: z.string(),
+  tags: z.array(z.string()).optional(),
+  r2Key: z.string().optional(),
+});
+export type TreeNode = z.infer<typeof TreeNodeSchema>;
+
+export const WorkspaceTreeSchema = z.object({
+  workspaceId: z.string().min(1),
+  updatedAt: z.string(),
+  nodes: z.array(TreeNodeSchema),
+});
+export type WorkspaceTree = z.infer<typeof WorkspaceTreeSchema>;
+
+export const DocRevisionSchema = z.object({
+  id: z.string().min(1),
+  timestamp: z.string(),
+  title: z.string(),
+  author: z.object({
+    name: z.string(),
+    email: z.string(),
+    avatar: z.string().optional(),
+  }),
+  snippet: z.string(),
+  content: z.string(),
+});
+export type DocRevision = z.infer<typeof DocRevisionSchema>;
+
+export const DocContentSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1).max(200),
+  tags: z.array(z.string()).default([]),
+  content: z.string().default(""),
+  updatedAt: z.string(),
+  attachments: z.array(DocAttachmentSchema).default([]),
+  icon: z.string().optional(),
+  cover: z.string().optional(),
+  isPublic: z.boolean().optional(),
+  publicToken: z.string().optional(),
+});
+export type DocContent = z.infer<typeof DocContentSchema>;
+
+export const WorkspaceMemberSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  role: z.enum(["owner", "admin", "member"]),
+  avatar: z.string(),
+  joinedAt: z.string(),
+});
+export type WorkspaceMember = z.infer<typeof WorkspaceMemberSchema>;
+
+export const UserWorkspaceReferenceSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).max(100),
+  icon: z.string(),
+  role: z.enum(["owner", "admin", "member"]),
+});
+export type UserWorkspaceReference = z.infer<typeof UserWorkspaceReferenceSchema>;
+
+export const TaskSubtaskSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  completed: z.boolean(),
+});
+export type TaskSubtask = z.infer<typeof TaskSubtaskSchema>;
+
+export const TaskItemSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1).max(300),
+  description: z.string().optional(),
+  status: z.enum(["todo", "inprogress", "in_progress", "done"]),
+  priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
+  dueDate: z.string().optional(),
+  assignee: z.union([
+    z.string(),
+    z.object({
+      name: z.string().optional(),
+      email: z.string().optional(),
+      avatar: z.string().optional(),
+    }),
+  ]).optional(),
+  tags: z.array(z.string()).optional(),
+  subtasks: z.array(TaskSubtaskSchema).optional(),
+});
+export type TaskItem = z.infer<typeof TaskItemSchema>;
+
+export const PhotoItemSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  url: z.string().min(1),
+  size: z.number().nonnegative(),
+  album: z.string(),
+  uploadedAt: z.string(),
+});
+export type PhotoItem = z.infer<typeof PhotoItemSchema>;
+
+export const DocCommentSchema = z.object({
+  id: z.string().min(1),
+  docId: z.string().min(1),
+  user: z.object({
+    name: z.string().min(1),
+    email: z.string().email(),
+    avatar: z.string(),
+  }),
+  text: z.string().min(1).max(5000),
+  mentions: z.array(z.string()).default([]),
+  createdAt: z.string(),
+});
+export type DocComment = z.infer<typeof DocCommentSchema>;
+
+export const MentionNotificationSchema = z.object({
+  id: z.string().min(1),
+  workspaceId: z.string().min(1),
+  workspaceName: z.string().optional(),
+  documentId: z.string().optional(),
+  documentTitle: z.string().optional(),
+  taskId: z.string().optional(),
+  taskTitle: z.string().optional(),
+  inviteRole: z.enum(["admin", "member"]).optional(),
+  type: z.enum(["doc", "comment", "task", "invite", "test"]).optional(),
+  sender: z.object({
+    name: z.string().min(1),
+    email: z.string().email(),
+    avatar: z.string(),
+  }),
+  recipientEmail: z.string().email(),
+  recipientName: z.string(),
+  contextSnippet: z.string(),
+  timestamp: z.string(),
+  emailStatus: z.enum(["sent", "delivered"]),
+  read: z.boolean().default(false),
+});
+export type MentionNotification = z.infer<typeof MentionNotificationSchema>;
+
+// =====================================================================
+// API Request Payload Validation Schemas
+// =====================================================================
+
+export const CreateWorkspaceSchema = z.object({
+  name: z.string().trim().min(1, "Workspace name is required").max(60, "Workspace name is too long"),
+  icon: z.string().max(50).optional(),
+});
+export type CreateWorkspaceInput = z.infer<typeof CreateWorkspaceSchema>;
+
+export const InviteMemberSchema = z.object({
+  email: z.string().trim().email("A valid email address is required"),
+  name: z.string().trim().max(100).optional(),
+  role: z.enum(["admin", "member"]).default("member"),
+});
+export type InviteMemberInput = z.infer<typeof InviteMemberSchema>;
+
+export const UpdateMemberRoleSchema = z.object({
+  role: z.enum(["admin", "member"]),
+});
+export type UpdateMemberRoleInput = z.infer<typeof UpdateMemberRoleSchema>;
+
+export const SaveDocSchema = z.object({
+  title: z.string().trim().min(1, "Document title cannot be empty").max(200),
+  content: z.string().default(""),
+  tags: z.array(z.string()).default([]),
+  icon: z.string().max(50).optional(),
+  cover: z.string().max(100).optional(),
+  attachments: z.array(DocAttachmentSchema).optional(),
+  isPublic: z.boolean().optional(),
+  publicToken: z.string().optional(),
+});
+export type SaveDocInput = z.infer<typeof SaveDocSchema>;
+
+export const ShareDocSchema = z.object({
+  isPublic: z.boolean(),
+});
+export type ShareDocInput = z.infer<typeof ShareDocSchema>;
+
+export const SaveTasksSchema = z.object({
+  tasks: z.array(TaskItemSchema),
+});
+export type SaveTasksInput = z.infer<typeof SaveTasksSchema>;
+
+export const SavePhotosSchema = z.object({
+  photos: z.array(PhotoItemSchema),
+});
+export type SavePhotosInput = z.infer<typeof SavePhotosSchema>;
+
+export const AddCommentSchema = z.object({
+  text: z.string().trim().min(1, "Comment text cannot be empty").max(5000),
+  replyToId: z.string().optional(),
+});
+export type AddCommentInput = z.infer<typeof AddCommentSchema>;
+
+export const MentionNotificationPayloadSchema = z.object({
+  documentId: z.string().min(1, "Document ID is required"),
+  documentTitle: z.string().optional(),
+  text: z.string().trim().min(1, "Notification text content is required"),
+  type: z.enum(["doc", "comment", "task", "invite", "test"]).optional(),
+});
+export type MentionNotificationPayload = z.infer<typeof MentionNotificationPayloadSchema>;
