@@ -52,6 +52,8 @@ import {
   Link2,
   UserPlus,
   Users,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import {
   DocContent,
@@ -245,6 +247,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   // Discussion & Mentions State
   const [activeTab, setActiveTab] = useState<"attachments" | "discussion">("attachments");
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [comments, setComments] = useState<DocComment[]>([]);
   const [commentText, setCommentText] = useState("");
@@ -1031,7 +1034,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   return (
     <div
-      className="animate-fade-in"
+      className="animate-fade-in editor-workspace"
       style={{
         display: "flex",
         width: "100%",
@@ -1041,6 +1044,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     >
       {/* Main Document Content Area */}
       <div
+        className="editor-content"
         style={{
           flex: 1,
           padding: cover ? "0 64px 120px 64px" : "32px 64px 120px 64px",
@@ -1052,6 +1056,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         {/* Cover Banner Area */}
         {cover && (
           <div
+            className="editor-cover"
             style={{
               height: "180px",
               background: cover,
@@ -2185,7 +2190,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
       </div>
 
       {/* Right Sidebar: Attachments & Discussion */}
-      <aside
+      {isRightPanelOpen ? <aside
+        className="editor-right-panel"
         style={{
           width: "280px",
           minWidth: "280px",
@@ -2232,6 +2238,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
           >
             <MessageSquare size={13} />
             Discussion ({comments.length})
+          </button>
+          <button
+            onClick={() => setIsRightPanelOpen(false)}
+            className="btn-icon"
+            title="Hide files and discussion"
+            aria-label="Hide files and discussion"
+            style={{ marginLeft: "auto", width: "26px", height: "26px" }}
+          >
+            <PanelRightClose size={15} />
           </button>
         </div>
 
@@ -2458,7 +2473,16 @@ export const EditorView: React.FC<EditorViewProps> = ({
             </form>
           </div>
         )}
-      </aside>
+      </aside> : (
+        <button
+          className="editor-right-panel-toggle"
+          onClick={() => setIsRightPanelOpen(true)}
+          title="Show files and discussion"
+          aria-label="Show files and discussion"
+        >
+          <PanelRightOpen size={17} />
+        </button>
+      )}
 
       {/* Notion-Style Share & Invite Modal */}
       {isShareOpen && (

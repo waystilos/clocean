@@ -185,6 +185,25 @@ body {
 }
 .desktop-sidebar-toggle:hover { color: var(--text-primary); background: var(--bg-surface-hover); }
 
+.editor-right-panel-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+.editor-right-panel-toggle:hover { color: var(--text-primary); background: var(--bg-surface-hover); }
+
 @media (max-width: 720px) {
   .clocean-shell { height: 100dvh !important; }
   .clocean-sidebar { display: none !important; }
@@ -234,6 +253,10 @@ body {
   .documents-table-header, .documents-table-row { grid-template-columns: minmax(0, 1fr) auto !important; padding-left: 14px !important; padding-right: 14px !important; }
   .documents-table-meta { display: none; }
   .task-board-columns { grid-template-columns: 1fr !important; gap: 14px !important; }
+  .editor-content { max-width: none !important; padding: 24px 16px 100px !important; }
+  .editor-cover { margin-left: -16px !important; margin-right: -16px !important; }
+  .editor-right-panel { width: 100% !important; min-width: 0 !important; border-left: 0 !important; border-top: 1px solid var(--border-subtle); padding: 18px 14px !important; }
+  .editor-right-panel-toggle { top: 10px; right: 10px; }
   .database-panel { min-width: 0; }
   .database-toolbar { align-items: stretch; flex-direction: column; }
   .database-actions { width: 100%; }
