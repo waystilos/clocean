@@ -66,7 +66,7 @@ describe("MarkdownRenderer & Table Engine", () => {
     expect(html).toContain("Marcus");
   });
 
-  it("should render GitHub alert callouts and Notion-style emoji callouts", () => {
+  it("should render GitHub alert callouts ([!NOTE], [!TIP], [!WARNING], [!IMPORTANT], [!CAUTION])", () => {
     const calloutMarkdown = `> [!NOTE]
 > This is an important system note.
 
@@ -76,7 +76,8 @@ describe("MarkdownRenderer & Table Engine", () => {
 > [!WARNING]
 > Proceed with caution when deleting workspaces.
 
-> 💡 This is a Notion-style custom lightbulb callout!
+> [!IMPORTANT]
+> Keep your R2 credentials secure.
 `;
 
     const html = renderToString(
@@ -86,7 +87,7 @@ describe("MarkdownRenderer & Table Engine", () => {
     expect(html).toContain("This is an important system note.");
     expect(html).toContain("Use keyboard shortcuts to speed up editing.");
     expect(html).toContain("Proceed with caution when deleting workspaces.");
-    expect(html).toContain("This is a Notion-style custom lightbulb callout!");
+    expect(html).toContain("Keep your R2 credentials secure.");
   });
 
   it("should render toggle accordions for expandable details", () => {

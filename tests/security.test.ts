@@ -231,7 +231,7 @@ describe("Clocean Enterprise Security Regression Test Suite", () => {
         body: JSON.stringify({
           title: "Public Share Test Doc",
           content: "Confidential details in comments only.",
-          icon: "🔒",
+          icon: "shield",
           cover: "gradient-emerald",
         }),
       });
@@ -256,7 +256,7 @@ describe("Clocean Enterprise Security Regression Test Suite", () => {
       // Verify legitimate public fields
       expect(publicDoc.title).toBe("Public Share Test Doc");
       expect(publicDoc.content).toBe("Confidential details in comments only.");
-      expect(publicDoc.icon).toBe("🔒");
+      expect(publicDoc.icon).toBe("shield");
       expect(publicDoc.cover).toBe("gradient-emerald");
 
       // Verify ZERO leakage of sensitive internal workspace fields

@@ -14,17 +14,17 @@ The user interface strictly replicates the **Figma Design System** (`Clocean - A
 
 ---
 
-## 📚 Documentation Index
+## Documentation Index
 
-* 🏛️ **[System Architecture](docs/ARCHITECTURE.md)**: Deep dive into the 4 architectural layers, Hono API, Durable Objects, and WebSocket hibernation.
-* 🚀 **[One-Click Deployment Guide](docs/ONE_CLICK_DEPLOY.md)**: Step-by-step instructions for 1-click deploys and Cloudflare Access setup for 50 free users.
-* 🗄️ **[R2 JSON Database Guide](docs/R2_DATABASE.md)**: JSON schemas, optimistic concurrency control via HTTP ETags, and streaming file uploads.
-* 🤖 **[AI Agents & Contributor Guide](AGENTS.md)**: Engineering constraints, coding patterns, and operational rules for AI and human developers.
-* ☁️ **[Pulumi Zero Trust IaC](infra/README.md)**: Optional TypeScript IaC program to automate Cloudflare Zero Trust Access policies.
+- **[System Architecture](docs/ARCHITECTURE.md)**: Deep dive into the 4 architectural layers, Hono API, Durable Objects, and WebSocket hibernation.
+- **[Deployment Guide](docs/ONE_CLICK_DEPLOY.md)**: Step-by-step instructions for deployment and Cloudflare Access setup for 50 free users.
+- **[R2 JSON Database Guide](docs/R2_DATABASE.md)**: JSON schemas, optimistic concurrency control via HTTP ETags, and streaming file uploads.
+- **[Developer & Contributor Guide](AGENTS.md)**: Engineering constraints, coding patterns, and operational rules for developers.
+- **[Pulumi Zero Trust IaC](infra/README.md)**: Optional TypeScript IaC program to automate Cloudflare Zero Trust Access policies.
 
 ---
 
-## 🏛️ Architecture Overview
+## Architecture Overview
 
 ```
                                   ┌──────────────────────────────────────────────┐
@@ -58,7 +58,7 @@ The user interface strictly replicates the **Figma Design System** (`Clocean - A
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
 ### 1. Notion-Style Document Editor
 * **Live Multiplayer Multi-Editing**: Multiple teammates can type, edit, and select text simultaneously. Connected users display real-time colored cursor carets and name tags.
@@ -89,11 +89,10 @@ The user interface strictly replicates the **Figma Design System** (`Clocean - A
   * `Cf-Access-Authenticated-User-Email`
   * `Cf-Access-Jwt-Assertion`
 * No database tables, password hashing, or salt management needed.
-* Built-in local mock authentication fallback for seamless local development and pair programming.
 
 ---
 
-## 📦 Deployment (Command Line / Wrangler)
+## Deployment (Command Line / Wrangler)
 
 > [!NOTE]
 > The automated 1-Click "Deploy with Workers" button is temporarily disabled while the platform is under active development. You can deploy directly via the command line below.
@@ -120,8 +119,7 @@ Your application will be live globally on Cloudflare Workers and Pages!
 
 ---
 
-
-## 💻 Local Development
+## Local Development
 
 Run the full local stack (Vite + Cloudflare Worker + Miniflare R2 + Durable Objects):
 
@@ -137,15 +135,13 @@ Run the full local stack (Vite + Cloudflare Worker + Miniflare R2 + Durable Obje
    ```
    *(Listens on `http://localhost:3000` with hot module replacement and `/api` proxy)*
 
-
 3. Open two browser windows:
-   * Window 1: `http://localhost:3000` (logged in as **Alex Sterling**)
-   * Window 2: Select **Marcus** or **Elena** in the bottom sidebar user switcher.
-   * Edit the document simultaneously in both windows to watch live multiplayer cursor synchronization!
+   * Window 1: `http://localhost:3000`
+   * Window 2: Open an incognito or separate browser window to collaborate simultaneously and observe real-time live cursor synchronization.
 
 ---
 
-## 🎨 Design System Tokens
+## Design System Tokens
 
 Extracted directly from Figma (`Clocean - Active`):
 
@@ -164,5 +160,6 @@ Extracted directly from Figma (`Clocean - Active`):
 
 ---
 
-## 📄 License
+## License
 MIT License. Created for the Cloudflare serverless community.
+

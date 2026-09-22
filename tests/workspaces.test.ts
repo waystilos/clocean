@@ -20,7 +20,7 @@ describe("Clocean Organizations & Team Workspaces Test Suite", () => {
       const defaultWs = workspaces.find((w) => w.id === "default");
       expect(defaultWs).toBeDefined();
       expect(defaultWs.name).toBe("Clocean Main");
-      expect(defaultWs.icon).toBe("🌊");
+      expect(defaultWs.icon).toBe("layers");
     });
   });
 
@@ -30,7 +30,7 @@ describe("Clocean Organizations & Team Workspaces Test Suite", () => {
       const res = await fetch(`${BASE_URL}/api/workspaces?user=elena`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "", icon: "🎨" }),
+        body: JSON.stringify({ name: "", icon: "palette" }),
       });
       expect(res.status).toBe(400);
       const data = await res.json() as any;
@@ -43,7 +43,7 @@ describe("Clocean Organizations & Team Workspaces Test Suite", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: "Design Studio Alpha",
-          icon: "🎨",
+          icon: "palette",
         }),
       });
 
@@ -51,7 +51,7 @@ describe("Clocean Organizations & Team Workspaces Test Suite", () => {
       const created = await res.json() as any;
       expect(created.id).toMatch(/^ws-[a-z0-9]+$/);
       expect(created.name).toBe("Design Studio Alpha");
-      expect(created.icon).toBe("🎨");
+      expect(created.icon).toBe("palette");
       expect(created.role).toBe("owner");
 
       createdWsId = created.id;

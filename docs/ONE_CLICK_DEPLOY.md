@@ -8,7 +8,7 @@ This guide walks you through deploying **Clocean** to your Cloudflare account wi
 ---
 
 
-## 🛠️ Option 2: Command-Line Deployment (Wrangler)
+## Command-Line Deployment (Wrangler)
 
 If you prefer deploying directly from your terminal:
 
@@ -49,7 +49,7 @@ Wrangler will:
 
 ---
 
-## 🔒 Step 3: Configure Cloudflare Zero Trust Access (Free for 50 Users)
+## Configure Cloudflare Zero Trust Access (Free for 50 Users)
 
 To protect your Clocean instance so only you and your team can log in:
 
@@ -73,7 +73,7 @@ Once configured, Cloudflare Access intercepts all requests before they hit your 
 
 ---
 
-## ❓ Frequently Asked Questions
+## Frequently Asked Questions
 
 ### Do I need a paid database like PostgreSQL, Supabase, or MongoDB?
 **No.** Clocean was specifically designed to eliminate database costs. All structured data (workspace hierarchy, documents, tasks, photos, user profiles) and binary files are stored directly in Cloudflare R2 as JSON models.

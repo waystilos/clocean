@@ -194,7 +194,7 @@ export interface MentionNotification {
   recipientName: string;
   contextSnippet: string;
   timestamp: string;
-  emailStatus: "sent" | "delivered" | "simulated";
+  emailStatus: "sent" | "delivered";
   read: boolean;
 }
 

@@ -4,7 +4,7 @@ This document details how **Clocean** uses **Cloudflare R2** as both an object s
 
 ---
 
-## 🎯 The Core Concept
+## The Core Concept
 
 Traditional serverless applications often rely on external databases (PostgreSQL, Supabase, DynamoDB) which introduce:
 * Monthly baseline hosting fees ($25–$150/mo).
@@ -18,7 +18,7 @@ By treating Cloudflare R2 as our primary datastore:
 
 ---
 
-## 📂 Key Hierarchy & Data Models
+## Key Hierarchy & Data Models
 
 All application state is organized hierarchically inside the `clocean-storage` R2 bucket:
 
@@ -42,7 +42,7 @@ workspaces/{workspaceId}/
 
 ---
 
-## 📄 JSON Schemas
+## JSON Schemas
 
 ### 1. Workspace Tree (`workspaces/default/tree.json`)
 The complete index of all folders, documents, and files in the workspace.
@@ -111,7 +111,7 @@ Stores display names and avatar links.
 
 ---
 
-## 🔒 Concurrency Control with HTTP ETags
+## Concurrency Control with HTTP ETags
 
 To prevent race conditions when two users modify the file tree simultaneously, `worker/storage/r2Db.ts` implements optimistic concurrency using **HTTP ETags**:
 
@@ -136,7 +136,7 @@ If another user modified the tree during the operation, the write is aborted, en
 
 ---
 
-## ⚡ Binary Streaming & Byte Ranges
+## Binary Streaming & Byte Ranges
 
 Files stored in R2 (such as large PDFs or MP4 videos) are streamed directly through Cloudflare Workers without loading the entire file into RAM:
 

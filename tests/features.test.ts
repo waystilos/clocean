@@ -13,7 +13,7 @@ describe("Clocean Notion Features Integration Suite", () => {
       body: JSON.stringify({
         title: "Product Requirements Document",
         content: "Initial PRD draft with overview.",
-        icon: "🚀",
+        icon: "zap",
         cover: "gradient-sunset",
       }),
     });
@@ -22,7 +22,7 @@ describe("Clocean Notion Features Integration Suite", () => {
     const doc = (await res.json()) as any;
     expect(doc.id).toBe(testDocId);
     expect(doc.title).toBe("Product Requirements Document");
-    expect(doc.icon).toBe("🚀");
+    expect(doc.icon).toBe("zap");
     expect(doc.cover).toBe("gradient-sunset");
   });
 
@@ -35,7 +35,7 @@ describe("Clocean Notion Features Integration Suite", () => {
       body: JSON.stringify({
         title: "Product Requirements Document v2",
         content: "Updated PRD draft with user stories and edge cases.",
-        icon: "🚀",
+        icon: "zap",
         cover: "gradient-sunset",
       }),
     });
@@ -93,7 +93,7 @@ describe("Clocean Notion Features Integration Suite", () => {
     expect(pubDoc.id).toBe(testDocId);
     expect(pubDoc.title).toBe("Product Requirements Document");
     expect(pubDoc.content).toBe("Initial PRD draft with overview.");
-    expect(pubDoc.icon).toBe("🚀");
+    expect(pubDoc.icon).toBe("zap");
 
     // Disable public sharing
     const unshareRes = await fetch(`${BASE_URL}/api/docs/${testDocId}/share`, {

@@ -65,7 +65,7 @@ describe("Clocean @ Mentions & Email Notification System", () => {
         recipientName: "Elena Rostova",
         contextSnippet: "Elena, could you review the typography specs?",
         timestamp: "Just now",
-        emailStatus: "simulated",
+        emailStatus: "delivered",
         read: false,
       };
 

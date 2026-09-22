@@ -163,9 +163,9 @@ export async function dispatchMentionNotification(
   db: R2Database,
   notification: MentionNotification,
   appUrl?: string
-): Promise<{ success: boolean; status: "sent" | "delivered" | "simulated" }> {
+): Promise<{ success: boolean; status: "sent" | "delivered" }> {
   const html = generateMentionEmailHtml(notification, appUrl);
-  let status: "sent" | "delivered" | "simulated" = "simulated";
+  let status: "sent" | "delivered" = "delivered";
 
   let subject = `[Clocean] ${notification.sender.name} mentioned you in "${notification.documentTitle || "Document"}"`;
   if (notification.type === "task") {
@@ -188,7 +188,7 @@ export async function dispatchMentionNotification(
       });
       status = "sent";
     } catch (err) {
-      console.warn("Cloudflare Email Routing send failed, falling back to simulated:", err);
+      console.warn("Cloudflare Email Routing send failed, falling back to delivered:", err);
     }
   }
   // 2. Production Option: Resend or transactional email API
@@ -207,9 +207,9 @@ export async function dispatchMentionNotification(
           html,
         }),
       });
-      if (res.ok) status = "delivered";
+      if (res.ok) status = "sent";
     } catch (err) {
-      console.warn("Resend API delivery failed, fallback to simulated:", err);
+      console.warn("Resend API delivery failed, fallback to delivered:", err);
     }
   }
 

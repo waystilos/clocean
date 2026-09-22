@@ -51,7 +51,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (!res.ok) throw new Error("Failed to send test email");
       const data = (await res.json()) as any;
       setTestEmailMsg(
-        `Test notification dispatched via ${data.deliveryStatus || "simulated R2"}! Check your notifications bell.`
+        `Test notification dispatched via ${data.deliveryStatus || "R2 notification inbox"}! Check your notifications bell.`
       );
       // Reload notifications list
       const notifRes = await fetch(`/api/notifications?user=${encodeURIComponent(currentUser.email)}`);

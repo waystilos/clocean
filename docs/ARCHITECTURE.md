@@ -4,7 +4,7 @@ This document provides an in-depth technical analysis of **Clocean's** architect
 
 ---
 
-## 🏛️ High-Level System Architecture
+## High-Level System Architecture
 
 ```mermaid
 graph TD
@@ -29,7 +29,7 @@ graph TD
 
 ---
 
-## 🧩 Architectural Layers
+## Architectural Layers
 
 ### Layer 1: Edge Security & Authentication (Cloudflare Zero Trust)
 * **Goal**: Authenticate users without building custom authentication tables, hashing passwords, or running OAuth servers.
@@ -189,7 +189,7 @@ graph TD
 
 ---
 
-## 🛡️ Security Architecture & Threat Defenses
+## Security Architecture & Threat Defenses
 
 Clocean implements an enterprise-grade defense-in-depth model engineered specifically for the serverless edge, preventing user impersonation, data leaks, path traversal attacks, and cross-site hijacking.
 
@@ -315,7 +315,7 @@ graph TD
 
 ---
 
-## ⚡ Performance Characteristics
+## Performance Characteristics
 * **Edge Proximity**: Cloudflare Workers run across 330+ cities worldwide within ~50ms of 95% of the world's population.
 * **Cold Starts**: Cloudflare V8 isolates start in **< 5ms**, eliminating the multi-second cold start delays common in Docker / Lambda architectures.
 * **Direct File Streaming**: Uploads and downloads stream directly through the Worker into R2 via standard web streams without buffering in memory.

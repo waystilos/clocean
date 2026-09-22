@@ -35,10 +35,20 @@ import {
   RotateCcw,
   Copy,
   Smile,
-  Palette,
   Minus,
   ListOrdered,
   Share2,
+  BookOpen,
+  Bookmark,
+  Target,
+  Cpu,
+  Layers,
+  Terminal,
+  Zap,
+  Tag,
+  Calendar,
+  Briefcase,
+  Palette,
 } from "lucide-react";
 import {
   DocContent,
@@ -80,44 +90,89 @@ const COVER_PRESETS = [
   { name: "Obsidian Monochrome", style: "linear-gradient(135deg, #232321 0%, #141412 100%)" },
 ];
 
-const EMOJI_PALETTE = [
-  "📄", "🚀", "💡", "📋", "📝", "🎯", "🔥", "🌊", "⚡", "🎨",
-  "🛠️", "📊", "🏆", "📦", "🧩", "🔒", "🏷️", "💬", "🌐", "📚"
+interface PageIconOption {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+}
+
+const PAGE_ICON_OPTIONS: PageIconOption[] = [
+  { id: "file-text", label: "Document", icon: <FileText size={16} /> },
+  { id: "book-open", label: "Book", icon: <BookOpen size={16} /> },
+  { id: "bookmark", label: "Bookmark", icon: <Bookmark size={16} /> },
+  { id: "target", label: "Target", icon: <Target size={16} /> },
+  { id: "layers", label: "Layers", icon: <Layers size={16} /> },
+  { id: "cpu", label: "Tech", icon: <Cpu size={16} /> },
+  { id: "terminal", label: "Terminal", icon: <Terminal size={16} /> },
+  { id: "shield", label: "Shield", icon: <Shield size={16} /> },
+  { id: "zap", label: "Action", icon: <Zap size={16} /> },
+  { id: "globe", label: "Web", icon: <Globe size={16} /> },
+  { id: "code", label: "Code", icon: <Code size={16} /> },
+  { id: "tag", label: "Tag", icon: <Tag size={16} /> },
+  { id: "calendar", label: "Calendar", icon: <Calendar size={16} /> },
+  { id: "mail", label: "Mail", icon: <Mail size={16} /> },
+  { id: "star", label: "Star", icon: <Star size={16} /> },
+  { id: "briefcase", label: "Work", icon: <Briefcase size={16} /> },
 ];
+
+const renderPageIcon = (iconId: string, size = 22) => {
+  const match = PAGE_ICON_OPTIONS.find((o) => o.id === iconId);
+  if (match) {
+    return React.cloneElement(match.icon as React.ReactElement<any>, { size, color: "var(--accent)" });
+  }
+  return <FileText size={size} color="var(--accent)" />;
+};
+
+const renderTemplateIcon = (id: string) => {
+  switch (id) {
+    case "meeting":
+      return <List size={18} color="var(--accent)" />;
+    case "prd":
+      return <FileText size={18} color="var(--accent)" />;
+    case "sprint":
+      return <Target size={18} color="var(--accent)" />;
+    case "wiki":
+      return <BookOpen size={18} color="var(--accent)" />;
+    case "design_doc":
+      return <Cpu size={18} color="var(--accent)" />;
+    default:
+      return <FileText size={18} color="var(--accent)" />;
+  }
+};
 
 const STARTER_TEMPLATES = [
   {
     id: "meeting",
     title: "Weekly Team Sync Notes",
-    icon: "📋",
+    icon: "file-text",
     tags: ["#meetings", "#notes"],
-    content: `# Weekly Team Sync Notes\n\n> [!NOTE]\n> **Meeting Goal**: Align on sprint deliverables, address roadblocks, and finalize deployment plan.\n\n### 👥 Attendees\n- @Alex Bailey (Lead)\n- @Elena Rostova (Engineering)\n- @Marcus Vance (Design)\n\n### 📌 Agenda\n1. Review sprint burndown and outstanding PRs\n2. Database architecture on Cloudflare R2\n3. Zero Trust Access configuration\n\n### 💬 Discussion Points\n- Performance benchmarks show sub-millisecond edge latency with Durable Objects.\n- ETag optimistic locking successfully prevents concurrent write collisions.\n\n### ✅ Action Items\n- [ ] Finalize production R2 bucket bindings\n- [ ] Invite QA engineers to workspace roster\n- [ ] Deploy v2-dashboard update\n`,
+    content: `# Weekly Team Sync Notes\n\n> [!NOTE]\n> **Meeting Goal**: Align on sprint deliverables, address roadblocks, and finalize deployment plan.\n\n### Attendees\n- @Alex Bailey (Lead)\n- @Elena Rostova (Engineering)\n- @Marcus Vance (Design)\n\n### Agenda\n1. Review sprint burndown and outstanding PRs\n2. Database architecture on Cloudflare R2\n3. Zero Trust Access configuration\n\n### Discussion Points\n- Performance benchmarks show sub-millisecond edge latency with Durable Objects.\n- ETag optimistic locking successfully prevents concurrent write collisions.\n\n### Action Items\n- [ ] Finalize production R2 bucket bindings\n- [ ] Invite QA engineers to workspace roster\n- [ ] Deploy v2-dashboard update\n`,
   },
   {
     id: "prd",
     title: "Product Requirement Spec (PRD)",
-    icon: "🚀",
+    icon: "file-text",
     tags: ["#spec", "#product"],
     content: `# Feature Spec: Cloudflare R2 Workspace Database\n\n> [!TIP]\n> **Objective**: Provide a fully serverless, zero-database-cost persistence layer using Cloudflare R2 and optimistic locking.\n\n## 1. Problem Statement\nTraditional databases add standing monthly costs and infrastructure management overhead. We need infinite serverless scalability at near-zero standing cost.\n\n## 2. Requirements Matrix\n| Feature | Priority | Target Sprint | Status |\n| :--- | :---: | :---: | ---: |\n| Optimistic ETag Concurrency | Urgent | Sprint 14 | Done |\n| Real-Time WebSocket Rooms | High | Sprint 14 | In Progress |\n| Public Read-Only Share Link | Medium | Sprint 15 | Todo |\n\n## 3. Architecture Overview\n> [toggle] Edge Data Flow Details\n> All JSON metadata files reside in Cloudflare R2. Durable Objects maintain in-memory state and debounce writes.\n\n## 4. Open Questions\n- [ ] What is the maximum payload size for single-document markdown files? (Currently set to 5 MB)\n- [ ] Should public share links support password protection?\n`,
   },
   {
     id: "sprint",
     title: "Sprint Planning",
-    icon: "🎯",
+    icon: "target",
     tags: ["#sprint", "#planning"],
-    content: `# Sprint 15 Planning & Goals\n\n> [!IMPORTANT]\n> **Sprint Theme**: Feature parity with Notion (Slash Menu, Multi-View Kanban/Table, Public Sharing).\n\n## 🎯 Sprint Objectives\n1. Release Notion-style Slash command menu for fluid document authoring.\n2. Add Table View alongside Kanban board in Tasks view.\n3. Complete Red-Team security verification of all edge routes.\n\n## 📋 Workstream Breakdown\n| Workstream | Owner | Estimated Days | Risk Level |\n| :--- | :--- | :---: | ---: |\n| Document Engine | @Elena | 3 days | Low |\n| Kanban & Table Multi-View | @Marcus | 2 days | Low |\n| Edge Auth & Public Sharing | @Alex | 2 days | Medium |\n\n## ⚠️ Identified Risks & Mitigations\n> [!WARNING]\n> Public document sharing must strictly isolate internal workspace metadata, preventing ID enumeration or member leakage.\n`,
+    content: `# Sprint 15 Planning & Goals\n\n> [!IMPORTANT]\n> **Sprint Theme**: Feature parity with Notion (Slash Menu, Multi-View Kanban/Table, Public Sharing).\n\n## Sprint Objectives\n1. Release Notion-style Slash command menu for fluid document authoring.\n2. Add Table View alongside Kanban board in Tasks view.\n3. Complete Red-Team security verification of all edge routes.\n\n## Workstream Breakdown\n| Workstream | Owner | Estimated Days | Risk Level |\n| :--- | :--- | :---: | ---: |\n| Document Engine | @Elena | 3 days | Low |\n| Kanban & Table Multi-View | @Marcus | 2 days | Low |\n| Edge Auth & Public Sharing | @Alex | 2 days | Medium |\n\n## Identified Risks & Mitigations\n> [!WARNING]\n> Public document sharing must strictly isolate internal workspace metadata, preventing ID enumeration or member leakage.\n`,
   },
   {
     id: "wiki",
     title: "Company Knowledge Base",
-    icon: "📚",
+    icon: "book-open",
     tags: ["#wiki", "#handbook"],
-    content: `# Team Handbook & Knowledge Base\n\n> [!NOTE]\n> Welcome to the Clocean workspace! This document outlines team workflows, core repositories, and deployment guides.\n\n## 🚀 Quick Links\n- [GitHub Repository](https://github.com/clocean)\n- [Design System & Figma Tokens](https://figma.com)\n- [Cloudflare Dashboard](https://dash.cloudflare.com)\n\n## 💡 Team Principles\n- **Zero Database Costs**: Persist state as structured JSON in Cloudflare R2.\n- **Sub-Millisecond Edge Latency**: Collab over Durable Objects WebSockets.\n- **Design Fidelity**: Strict adherence to Obsidian Dark & Parchment Light themes.\n\n## ❓ Frequently Asked Questions\n> [toggle] How do I invite team members?\n> Workspace Admins and Owners can invite colleagues directly from the workspace dropdown. An invitation email with a joining link is dispatched automatically.\n\n> [toggle] How does document collaboration work?\n> Cloudflare Durable Objects track connected users, broadcast live cursor positions, and flush debounced markdown content directly into R2.\n`,
+    content: `# Team Handbook & Knowledge Base\n\n> [!NOTE]\n> Welcome to the Clocean workspace! This document outlines team workflows, core repositories, and deployment guides.\n\n## Quick Links\n- [GitHub Repository](https://github.com/waystilos/clocean)\n- [Design System & Figma Tokens](https://figma.com)\n- [Cloudflare Dashboard](https://dash.cloudflare.com)\n\n## Team Principles\n- **Zero Database Costs**: Persist state as structured JSON in Cloudflare R2.\n- **Sub-Millisecond Edge Latency**: Collab over Durable Objects WebSockets.\n- **Design Fidelity**: Strict adherence to Obsidian Dark & Parchment Light themes.\n\n## Frequently Asked Questions\n> [toggle] How do I invite team members?\n> Workspace Admins and Owners can invite colleagues directly from the workspace dropdown. An invitation email with a joining link is dispatched automatically.\n\n> [toggle] How does document collaboration work?\n> Cloudflare Durable Objects track connected users, broadcast live cursor positions, and flush debounced markdown content directly into R2.\n`,
   },
   {
     id: "design_doc",
     title: "Engineering Design Doc",
-    icon: "🛠️",
+    icon: "cpu",
     tags: ["#architecture", "#engineering"],
     content: `# RFC: Edge-Native Transactional Email & Mentions\n\n> [!NOTE]\n> **Author**: Alex Bailey\n> **Status**: Accepted & Implemented\n\n## 1. Context & Motivation\nWhen collaborators are @ mentioned in documents, comments, or sprint tasks, they need immediate email notifications with deep-links to the exact document.\n\n## 2. Technical Design\n\`\`\`typescript\ninterface MentionNotification {\n  id: string;\n  workspaceId: string;\n  recipientEmail: string;\n  documentId: string;\n  contextSnippet: string;\n}\n\`\`\`\n\n## 3. Security Considerations\n> [!CAUTION]\n> Ensure recipient emails are verified against the workspace members roster to prevent arbitrary relay of unsolicited emails.\n`,
   },
@@ -134,7 +189,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [tags, setTags] = useState<string[]>([]);
   const [content, setContent] = useState("");
   const [attachments, setAttachments] = useState<DocAttachment[]>([]);
-  const [icon, setIcon] = useState("📄");
+  const [icon, setIcon] = useState("file-text");
   const [cover, setCover] = useState<string | null>(null);
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({});
@@ -200,7 +255,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         setTags(data.tags || ["#notes"]);
         setContent(data.content || "");
         setAttachments(data.attachments || []);
-        setIcon(data.icon || "📄");
+        setIcon(data.icon || "file-text");
         setCover(data.cover || null);
         setIsPublic(!!data.isPublic);
         setPublicToken(data.publicToken || "");
@@ -528,7 +583,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   </style>
 </head>
 <body>
-  <h1>${icon || "📄"} ${title}</h1>
+  <h1>${title}</h1>
   <div style="color: #666; margin-bottom: 20px;">Tags: ${tags.join(" ")}</div>
   <hr/>
   <pre style="white-space: pre-wrap; font-family: inherit; background: none; color: inherit; padding: 0;">${content}</pre>
@@ -925,7 +980,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 gap: "4px",
               }}
             >
-              <Smile size={13} /> Change icon
+              <Tag size={13} /> Change icon
             </button>
             <button
               onClick={() => setIsCoverPickerOpen(true)}
@@ -992,22 +1047,24 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </div>
         )}
 
-        {/* Page Icon Emoji & Picker */}
+        {/* Page Icon & Picker */}
         <div style={{ position: "relative", display: "inline-block", marginBottom: "8px" }}>
           <button
             onClick={() => setIsEmojiPickerOpen((prev) => !prev)}
             style={{
-              fontSize: "36px",
-              background: "transparent",
-              border: "none",
+              width: "44px",
+              height: "44px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
               cursor: "pointer",
-              padding: "4px",
               borderRadius: "8px",
-              lineHeight: 1,
             }}
             title="Click to change page icon"
           >
-            {icon}
+            {renderPageIcon(icon, 22)}
           </button>
 
           {isEmojiPickerOpen && (
@@ -1025,26 +1082,31 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 zIndex: 100,
                 width: "220px",
                 display: "grid",
-                gridTemplateColumns: "repeat(5, 1fr)",
+                gridTemplateColumns: "repeat(4, 1fr)",
                 gap: "6px",
               }}
             >
-              {EMOJI_PALETTE.map((em) => (
+              {PAGE_ICON_OPTIONS.map((item) => (
                 <button
-                  key={em}
-                  onClick={() => handleUpdateIcon(em)}
+                  key={item.id}
+                  onClick={() => handleUpdateIcon(item.id)}
                   style={{
-                    fontSize: "20px",
-                    background: "transparent",
-                    border: "none",
+                    height: "36px",
+                    background: icon === item.id ? "var(--bg-nav-active)" : "transparent",
+                    border: icon === item.id ? "1px solid var(--accent)" : "1px solid var(--border-subtle)",
+                    color: icon === item.id ? "var(--accent)" : "var(--text-secondary)",
                     cursor: "pointer",
                     padding: "4px",
-                    borderRadius: "4px",
+                    borderRadius: "6px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
+                  title={item.label}
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-nav-active)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = icon === item.id ? "var(--bg-nav-active)" : "transparent")}
                 >
-                  {em}
+                  {item.icon}
                 </button>
               ))}
             </div>
@@ -1329,7 +1391,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
                   onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-subtle)")}
                 >
-                  <span style={{ fontSize: "20px" }}>{tmpl.icon}</span>
+                  <div style={{ flexShrink: 0 }}>{renderTemplateIcon(tmpl.id)}</div>
                   <div>
                     <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)" }}>{tmpl.title}</div>
                     <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{tmpl.tags.join(" ")}</div>

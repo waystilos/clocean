@@ -6,6 +6,7 @@ import {
   Folder,
   Image as ImageIcon,
   Layout,
+  Layers,
   Download,
   Trash2,
   Sun,
@@ -25,7 +26,6 @@ interface SidebarProps {
   currentUser: UserProfile;
   theme: "dark" | "light";
   onToggleTheme: () => void;
-  onSwitchUser: (email: string) => void;
   workspaces?: UserWorkspaceReference[];
   currentWorkspace?: UserWorkspaceReference;
   onSelectWorkspace?: (workspace: UserWorkspaceReference) => void;
@@ -41,9 +41,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentUser,
   theme,
   onToggleTheme,
-  onSwitchUser,
   workspaces = [],
-  currentWorkspace = { id: "default", name: "Clocean Main", icon: "🌊", role: "owner" },
+  currentWorkspace = { id: "default", name: "Clocean Main", icon: "layers", role: "owner" },
   onSelectWorkspace,
   onOpenCreateWorkspace,
   onOpenTeamMembers,
@@ -145,11 +144,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: "16px",
                   flexShrink: 0,
                 }}
               >
-                {currentWorkspace.icon || "🌊"}
+                <Layers size={15} color="var(--accent)" />
               </div>
               <div style={{ display: "flex", flexDirection: "column", textAlign: "left", minWidth: 0 }}>
                 <span
@@ -234,7 +232,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
-                        <span style={{ fontSize: "16px", flexShrink: 0 }}>{ws.icon || "🌊"}</span>
+                        <Layers size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
                         <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                           <span
                             style={{
@@ -386,7 +384,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-nav-active)")}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                 >
-                  <span style={{ fontSize: "14px" }}>{fDoc.icon || "📄"}</span>
+                  <FileText size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
                   <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {fDoc.name}
                   </span>
@@ -563,42 +561,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         </div>
-
-        {/* Multiplayer Persona Switcher (For local testing) */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            fontSize: "11px",
-            color: "var(--text-muted)",
-            padding: "4px 6px",
-            background: "var(--bg-surface)",
-            borderRadius: "var(--radius-sm)",
-          }}
-        >
-          <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-            <Users size={12} /> Test User:
-          </span>
-          <select
-            value={currentUser.email}
-            onChange={(e) => onSwitchUser(e.target.value)}
-            style={{
-              background: "transparent",
-              color: "var(--text-primary)",
-              border: "none",
-              fontSize: "11px",
-              cursor: "pointer",
-              outline: "none",
-            }}
-          >
-            <option value="alex@clocean.co">Alex (Default)</option>
-            <option value="marcus@clocean.co">Marcus</option>
-            <option value="elena@clocean.co">Elena</option>
-            <option value="sofia@clocean.co">Sofia</option>
-          </select>
-        </div>
       </div>
     </aside>
   );
 };
+

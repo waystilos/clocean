@@ -23,6 +23,7 @@ import {
   MentionNotification,
 } from "./types.ts";
 import { MarkdownRenderer } from "./components/MarkdownRenderer.tsx";
+import { Layers, Sun, Moon, FileText } from "lucide-react";
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewMode>("home");
@@ -37,12 +38,12 @@ export const App: React.FC = () => {
 
   // Workspaces / Organizations state
   const [workspaces, setWorkspaces] = useState<UserWorkspaceReference[]>([
-    { id: "default", name: "Clocean Main", icon: "🌊", role: "owner" },
+    { id: "default", name: "Clocean Main", icon: "layers", role: "owner" },
   ]);
   const [currentWorkspace, setCurrentWorkspace] = useState<UserWorkspaceReference>({
     id: "default",
     name: "Clocean Main",
-    icon: "🌊",
+    icon: "layers",
     role: "owner",
   });
   const [isCreateWsOpen, setIsCreateWsOpen] = useState(false);
@@ -154,19 +155,6 @@ export const App: React.FC = () => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
 
-  const handleSwitchUser = (email: string) => {
-    const nameMap: Record<string, string> = {
-      "alex@clocean.co": "Alex Sterling",
-      "marcus@clocean.co": "Marcus Vance",
-      "elena@clocean.co": "Elena Rostova",
-      "sofia@clocean.co": "Sofia Chen",
-    };
-    setCurrentUser({
-      email,
-      name: nameMap[email] || email.split("@")[0],
-      avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(email)}`,
-    });
-  };
 
   const handleUploadFile = async (file: File) => {
     const formData = new FormData();
@@ -241,16 +229,16 @@ export const App: React.FC = () => {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 600 }}>
-            <span style={{ fontSize: "20px" }}>🌊</span>
+            <Layers size={18} color="var(--accent)" />
             <span style={{ color: "var(--text-primary)", fontSize: "15px" }}>Clocean Public Web</span>
           </div>
           <button
             onClick={handleToggleTheme}
             className="btn-icon"
-            style={{ width: "32px", height: "32px", fontSize: "14px" }}
+            style={{ width: "32px", height: "32px", fontSize: "14px", display: "flex", alignItems: "center", justifyContent: "center" }}
             title="Toggle Theme"
           >
-            {theme === "dark" ? "☀️" : "🌙"}
+            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
           </button>
         </header>
 
@@ -276,7 +264,9 @@ export const App: React.FC = () => {
                   }}
                 />
               )}
-              <div style={{ fontSize: "36px", marginBottom: "12px" }}>{publicDoc.icon || "📄"}</div>
+              <div style={{ marginBottom: "12px" }}>
+                <FileText size={32} color="var(--accent)" />
+              </div>
               <h1 className="font-serif" style={{ fontSize: "36px", fontWeight: 600, marginBottom: "12px", color: "var(--text-primary)" }}>
                 {publicDoc.title}
               </h1>
@@ -316,7 +306,6 @@ export const App: React.FC = () => {
         currentUser={currentUser}
         theme={theme}
         onToggleTheme={handleToggleTheme}
-        onSwitchUser={handleSwitchUser}
         workspaces={workspaces}
         currentWorkspace={currentWorkspace}
         onSelectWorkspace={(ws) => setCurrentWorkspace(ws)}

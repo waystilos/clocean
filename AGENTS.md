@@ -4,13 +4,13 @@ Welcome to **Clocean**! This file serves as the definitive reference and operati
 
 ---
 
-## 🎯 What is Clocean?
+## What is Clocean?
 
 **Clocean** is a unified, high-performance workspace combining **Notion-style block document editing** with **Google Drive-style file management**, engineered specifically for the **Cloudflare serverless edge ecosystem** (Workers, Pages, R2, and Durable Objects).
 
 ---
 
-## ⚠️ Core Architectural Principles (DO NOT VIOLATE)
+## Core Architectural Principles (DO NOT VIOLATE)
 
 1. **NO EXTERNAL DATABASES (Zero Database Costs)**:
    - **Never introduce PostgreSQL, MySQL, MongoDB, Supabase, or D1** unless explicitly instructed.
@@ -37,7 +37,7 @@ Welcome to **Clocean**! This file serves as the definitive reference and operati
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 clocean/
@@ -96,7 +96,7 @@ clocean/
 
 ---
 
-## 🗄️ R2 Key Conventions
+## R2 Key Conventions
 
 | Key Pattern | Purpose | Concurrency |
 | :--- | :--- | :--- |
@@ -117,7 +117,7 @@ clocean/
 
 ---
 
-## 🛠️ Common Workflows & Commands
+## Common Workflows & Commands
 
 ### 1. Build and Typecheck
 Always verify that both frontend and worker typecheck cleanly:

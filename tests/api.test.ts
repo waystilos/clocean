@@ -279,11 +279,11 @@ describe("Clocean R2 Edge REST API & Database Tests", () => {
       expect(text).toBe("Clocean zero-egress file storage test payload.");
     });
 
-    it("should return fallback text for non-existent file", async () => {
+    it("should return 404 for non-existent file", async () => {
       const res = await fetch(`${BASE_URL}/api/files/file-ghost/missing.txt`);
-      expect(res.status).toBe(200);
-      const text = await res.text();
-      expect(text).toContain("available in R2 storage");
+      expect(res.status).toBe(404);
+      const data = (await res.json()) as any;
+      expect(data.error).toBe("File not found");
     });
 
     it("should support HTTP Range requests for byte-range streaming", async () => {

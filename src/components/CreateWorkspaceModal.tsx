@@ -1,5 +1,21 @@
 import React, { useState } from "react";
-import { X, Sparkles, FolderPlus } from "lucide-react";
+import {
+  X,
+  Sparkles,
+  FolderPlus,
+  Layers,
+  Briefcase,
+  Cpu,
+  Globe,
+  Terminal,
+  Shield,
+  Zap,
+  Box,
+  Compass,
+  Layout,
+  Tag,
+  Code,
+} from "lucide-react";
 import { UserWorkspaceReference, UserProfile } from "../types.ts";
 
 interface CreateWorkspaceModalProps {
@@ -9,7 +25,25 @@ interface CreateWorkspaceModalProps {
   currentUser: UserProfile;
 }
 
-const PRESET_ICONS = ["🌊", "🌲", "⚡", "🚀", "🎨", "🏛️", "💼", "💎", "💡", "🛡️", "🪐", "🔬"];
+interface PresetIconItem {
+  id: string;
+  icon: React.ReactNode;
+}
+
+const PRESET_ICONS: PresetIconItem[] = [
+  { id: "layers", icon: <Layers size={18} /> },
+  { id: "briefcase", icon: <Briefcase size={18} /> },
+  { id: "cpu", icon: <Cpu size={18} /> },
+  { id: "globe", icon: <Globe size={18} /> },
+  { id: "terminal", icon: <Terminal size={18} /> },
+  { id: "shield", icon: <Shield size={18} /> },
+  { id: "zap", icon: <Zap size={18} /> },
+  { id: "box", icon: <Box size={18} /> },
+  { id: "compass", icon: <Compass size={18} /> },
+  { id: "layout", icon: <Layout size={18} /> },
+  { id: "tag", icon: <Tag size={18} /> },
+  { id: "code", icon: <Code size={18} /> },
+];
 
 export const CreateWorkspaceModal: React.FC<CreateWorkspaceModalProps> = ({
   isOpen,
@@ -18,7 +52,8 @@ export const CreateWorkspaceModal: React.FC<CreateWorkspaceModalProps> = ({
   currentUser,
 }) => {
   const [name, setName] = useState("");
-  const [selectedIcon, setSelectedIcon] = useState("🚀");
+  const [selectedIcon, setSelectedIcon] = useState("layers");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,7 +87,7 @@ export const CreateWorkspaceModal: React.FC<CreateWorkspaceModalProps> = ({
       const created: UserWorkspaceReference = await res.json();
       onCreated(created);
       setName("");
-      setSelectedIcon("🚀");
+      setSelectedIcon("layers");
       onClose();
     } catch (err: any) {
       console.error(err);
@@ -187,23 +222,26 @@ export const CreateWorkspaceModal: React.FC<CreateWorkspaceModalProps> = ({
                 gap: "8px",
               }}
             >
-              {PRESET_ICONS.map((icon) => (
+              {PRESET_ICONS.map((item) => (
                 <button
-                  key={icon}
+                  key={item.id}
                   type="button"
-                  onClick={() => setSelectedIcon(icon)}
+                  onClick={() => setSelectedIcon(item.id)}
                   style={{
-                    height: "44px",
-                    fontSize: "20px",
+                    height: "40px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
+                    color:
+                      selectedIcon === item.id
+                        ? "var(--accent)"
+                        : "var(--text-secondary)",
                     backgroundColor:
-                      selectedIcon === icon
+                      selectedIcon === item.id
                         ? "var(--bg-nav-active)"
                         : "var(--bg-primary)",
                     border:
-                      selectedIcon === icon
+                      selectedIcon === item.id
                         ? "2px solid var(--accent)"
                         : "1px solid var(--border-subtle)",
                     borderRadius: "var(--radius-md)",
@@ -211,7 +249,7 @@ export const CreateWorkspaceModal: React.FC<CreateWorkspaceModalProps> = ({
                     transition: "all 0.15s ease",
                   }}
                 >
-                  {icon}
+                  {item.icon}
                 </button>
               ))}
             </div>

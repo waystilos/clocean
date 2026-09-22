@@ -89,12 +89,15 @@ export class R2Database {
     const key = `workspaces/registry/users/${encodeURIComponent(email)}.json`;
     const res = await this.getJson<UserWorkspacesData>(key);
     if (res.data && res.data.workspaces && res.data.workspaces.length > 0) {
-      return res.data.workspaces;
+      return res.data.workspaces.map((w) => ({
+        ...w,
+        icon: w.icon === "🌊" || !w.icon ? "layers" : w.icon,
+      }));
     }
 
     // Default workspace if none exists for this user
     const defaultWorkspaces: UserWorkspaceReference[] = [
-      { id: "default", name: "Clocean Main", icon: "🌊", role: "owner" },
+      { id: "default", name: "Clocean Main", icon: "layers", role: "owner" },
     ];
     await this.putJson(key, { email, workspaces: defaultWorkspaces });
     return defaultWorkspaces;
@@ -103,14 +106,19 @@ export class R2Database {
   async getWorkspaceMetadata(wsId: string): Promise<WorkspaceMetadata | null> {
     const key = `workspaces/${wsId}/workspace.json`;
     const res = await this.getJson<WorkspaceMetadata>(key);
-    if (res.data) return res.data;
+    if (res.data) {
+      if (res.data.icon === "🌊" || !res.data.icon) {
+        res.data.icon = "layers";
+      }
+      return res.data;
+    }
 
     if (wsId === "default") {
       const now = new Date().toISOString();
       const meta: WorkspaceMetadata = {
         id: "default",
         name: "Clocean Main",
-        icon: "🌊",
+        icon: "layers",
         ownerEmail: "alex@clocean.co",
         createdAt: now,
         updatedAt: now,
@@ -133,7 +141,7 @@ export class R2Database {
     const meta: WorkspaceMetadata = {
       id,
       name,
-      icon: icon || "📁",
+      icon: icon || "layers",
       ownerEmail,
       createdAt: now,
       updatedAt: now,
@@ -202,7 +210,7 @@ export class R2Database {
     // Add to user's registered workspaces
     const userWsList = await this.getUserWorkspaces(ownerEmail);
     if (!userWsList.some((w) => w.id === id)) {
-      userWsList.push({ id, name, icon: icon || "📁", role: "owner" });
+      userWsList.push({ id, name, icon: icon || "layers", role: "owner" });
       await this.putJson(`workspaces/registry/users/${encodeURIComponent(ownerEmail)}.json`, {
         email: ownerEmail,
         workspaces: userWsList,
@@ -287,7 +295,7 @@ export class R2Database {
       userWsList.push({
         id: wsId,
         name: wsMeta?.name || "Team Workspace",
-        icon: wsMeta?.icon || "📁",
+        icon: wsMeta?.icon || "layers",
         role,
       });
     }

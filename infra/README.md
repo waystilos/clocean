@@ -4,7 +4,7 @@ This directory provides a **100% TypeScript** Infrastructure as Code (IaC) progr
 
 ---
 
-## 🏛️ What this Pulumi program provisions:
+## What this Pulumi program provisions:
 
 1. **Cloudflare R2 Bucket**:
    * Creates `clocean-storage` in Western North America (`WNAM`) with zero egress fees.
@@ -20,7 +20,7 @@ This directory provides a **100% TypeScript** Infrastructure as Code (IaC) progr
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 ### 1. Install Dependencies
 ```bash
@@ -70,9 +70,9 @@ Upon successful deployment, Pulumi outputs:
 
 ---
 
-## 🔄 Deploying the Application Code
+## Deploying the Application Code
 After provisioning your infrastructure with Pulumi, deploy the application code and static assets using Wrangler:
 ```bash
 cd ..
-npm run deploy
+pnpm deploy
 ```

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Users, UserPlus, Shield, ShieldCheck, Mail, Check, AlertCircle } from "lucide-react";
+import { X, Users, UserPlus, Shield, ShieldCheck, Mail, Check, AlertCircle, Layers } from "lucide-react";
 import { UserWorkspaceReference, WorkspaceMember, UserProfile } from "../types.ts";
 
 interface TeamMembersModalProps {
@@ -172,7 +172,9 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <span style={{ fontSize: "24px" }}>{workspace.icon || "🌊"}</span>
+            <div style={{ width: "36px", height: "36px", borderRadius: "8px", backgroundColor: "var(--bg-surface-hover)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Layers size={20} color="var(--accent)" />
+            </div>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <h2

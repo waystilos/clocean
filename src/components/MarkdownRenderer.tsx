@@ -497,23 +497,13 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       continue;
     }
 
-    // 4. Callout Alert Block: > [!NOTE], > [!TIP], > [!WARNING], > [!IMPORTANT], > [!CAUTION] or Notion-style > 💡
+    // 4. Callout Alert Block: > [!NOTE], > [!TIP], > [!WARNING], > [!IMPORTANT], > [!CAUTION]
     const alertMatch = line.match(/^>\s*\[!(NOTE|TIP|WARNING|IMPORTANT|CAUTION)\]/i);
-    const emojiCalloutMatch = line.match(/^>\s*(💡|⚠️|ℹ️|🔥|⚡|📌)\s*(.*)$/);
-    if (alertMatch || emojiCalloutMatch) {
-      const calloutType = alertMatch ? alertMatch[1] : (
-        emojiCalloutMatch![1] === "💡" ? "TIP" :
-        emojiCalloutMatch![1] === "⚠️" ? "WARNING" :
-        emojiCalloutMatch![1] === "🔥" ? "CAUTION" : "NOTE"
-      );
+    if (alertMatch) {
+      const calloutType = alertMatch[1];
       const config = getCalloutConfig(calloutType);
       const calloutLines: string[] = [];
       const calloutIdx = i;
-
-      // First line content
-      if (emojiCalloutMatch && emojiCalloutMatch[2]) {
-        calloutLines.push(emojiCalloutMatch[2]);
-      }
 
       i++;
       while (i < lines.length && lines[i].startsWith(">")) {

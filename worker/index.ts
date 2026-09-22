@@ -197,7 +197,7 @@ app.post("/api/workspaces", async (c) => {
   const profile = await db.getUserProfile(email);
   const meta = await db.createWorkspace(
     body.name.trim().slice(0, 60),
-    body.icon || "📁",
+    body.icon || "layers",
     email,
     profile.name
   );
@@ -268,7 +268,7 @@ app.post("/api/workspaces/:wsId/members", async (c) => {
       wsMeta?.name || "Clocean Workspace"
     } as ${body.role === "admin" ? "an Admin" : "a Member"}.`,
     timestamp: "Just now",
-    emailStatus: "simulated",
+    emailStatus: "delivered",
     read: false,
   };
   await dispatchMentionNotification(c.env, db, inviteNotification, new URL(c.req.url).origin);
@@ -527,7 +527,7 @@ app.put("/api/docs/:id", async (c) => {
           recipientName: member.name,
           contextSnippet: body.content.slice(0, 160).trim(),
           timestamp: "Just now",
-          emailStatus: "simulated",
+          emailStatus: "delivered",
           read: false,
         };
         await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
@@ -724,7 +724,7 @@ app.post("/api/docs/:id/comments", async (c) => {
       recipientName: member.name,
       contextSnippet: body.text.trim(),
       timestamp: "Just now",
-      emailStatus: "simulated",
+      emailStatus: "delivered",
       read: false,
     };
     await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
@@ -807,7 +807,7 @@ app.post("/api/notifications/mention", async (c) => {
       recipientName: member.name,
       contextSnippet: matchedLine.trim(),
       timestamp: "Just now",
-      emailStatus: "simulated",
+      emailStatus: "delivered",
       read: false,
     };
 
@@ -846,7 +846,7 @@ app.post("/api/notifications/test", async (c) => {
     contextSnippet:
       "This is a test notification verifying that your Clocean email notification engine is properly configured.",
     timestamp: "Just now",
-    emailStatus: "simulated",
+    emailStatus: "delivered",
     read: false,
   };
 
@@ -972,11 +972,7 @@ app.get("/api/files/:id/:filename", async (c) => {
   }
 
   if (!object) {
-    // If not found in custom files, check if it is a sample file placeholder
-    return c.text("File content available in R2 storage.", 200, {
-      "Content-Type": "text/plain",
-      "Content-Disposition": `inline; filename="${safeFilename}"`,
-    });
+    return c.json({ error: "File not found" }, 404);
   }
 
   const headers = new Headers();
@@ -1059,7 +1055,7 @@ app.put("/api/tasks", async (c) => {
         recipientName: member.name,
         contextSnippet: task.title,
         timestamp: "Just now",
-        emailStatus: "simulated",
+        emailStatus: "delivered",
         read: false,
       };
       await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
@@ -1084,7 +1080,7 @@ app.put("/api/tasks", async (c) => {
           recipientName: assignedMember.name,
           contextSnippet: `Assigned to: "${task.title}"`,
           timestamp: "Just now",
-          emailStatus: "simulated",
+          emailStatus: "delivered",
           read: false,
         };
         await dispatchMentionNotification(c.env, db, notif, new URL(c.req.url).origin);
