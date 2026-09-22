@@ -203,6 +203,8 @@ body {
   cursor: pointer;
 }
 .editor-right-panel-toggle:hover { color: var(--text-primary); background: var(--bg-surface-hover); }
+.editor-workspace { min-width: 0; max-width: 100%; overflow-x: hidden; }
+.editor-content { min-width: 0; }
 
 @media (max-width: 720px) {
   .clocean-shell { height: 100dvh !important; }
@@ -257,6 +259,7 @@ body {
   .editor-cover { margin-left: -16px !important; margin-right: -16px !important; }
   .editor-right-panel { width: 100% !important; min-width: 0 !important; border-left: 0 !important; border-top: 1px solid var(--border-subtle); padding: 18px 14px !important; }
   .editor-right-panel-toggle { top: 10px; right: 10px; }
+  .editor-formatting-toolbar { left: 8px !important; right: 8px; bottom: 74px !important; max-width: calc(100vw - 16px); overflow-x: auto; }
   .database-panel { min-width: 0; }
   .database-toolbar { align-items: stretch; flex-direction: column; }
   .database-actions { width: 100%; }

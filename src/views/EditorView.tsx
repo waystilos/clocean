@@ -1039,6 +1039,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
         display: "flex",
         width: "100%",
         minHeight: "calc(100vh - 64px)",
+        minWidth: 0,
+        maxWidth: "100%",
+        overflowX: "hidden",
         position: "relative",
       }}
     >
@@ -1047,6 +1050,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
         className="editor-content"
         style={{
           flex: 1,
+          minWidth: 0,
+          width: "100%",
           padding: cover ? "0 64px 120px 64px" : "32px 64px 120px 64px",
           maxWidth: "860px",
           margin: "0 auto",
@@ -1241,6 +1246,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
         {/* Document Header Row: Tags & Actions Bar */}
         <div
+          className="editor-formatting-toolbar"
           style={{
             display: "flex",
             alignItems: "center",

@@ -615,6 +615,7 @@ export const App: React.FC = () => {
           height: "100vh",
           overflowY: "auto",
           backgroundColor: "var(--bg-primary)",
+          overflowX: "hidden",
         }}
       >
         {/* Top Header */}

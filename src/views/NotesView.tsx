@@ -125,7 +125,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
     });
 
   return (
-    <div className="notes-workspace" style={{ display: "grid", gridTemplateColumns: isTreeOpen ? "250px minmax(0, 1fr)" : "44px minmax(0, 1fr)", minHeight: "calc(100vh - 64px)" }}>
+    <div className="notes-workspace" style={{ display: "grid", gridTemplateColumns: isTreeOpen ? "250px minmax(0, 1fr)" : "44px minmax(0, 1fr)", minHeight: "calc(100vh - 64px)", width: "100%", maxWidth: "100%", overflowX: "hidden" }}>
       <aside className={isTreeOpen ? "notes-tree" : "notes-tree notes-tree-collapsed"} style={{ borderRight: "1px solid var(--border-subtle)", padding: isTreeOpen ? 16 : 8, background: "var(--bg-sidebar)" }}>
         {!isTreeOpen && <button className="btn-icon" onClick={() => setIsTreeOpen(true)} title="Show notes tree" aria-label="Show notes tree"><PanelLeftOpen size={17} /></button>}
         {isTreeOpen && <>
@@ -176,7 +176,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
         </div>
         </>}
       </aside>
-      <section style={{ minWidth: 0 }}>
+      <section style={{ minWidth: 0, maxWidth: "100%", overflowX: "hidden" }}>
         <EditorView docId={activeDocId} currentUser={currentUser} workspaceId={workspaceId} sessionToken={sessionToken} onOpenFilePreview={onOpenFilePreview} />
       </section>
     </div>
