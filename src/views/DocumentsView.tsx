@@ -76,12 +76,25 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
         maxWidth: "1060px",
         margin: "0 auto",
         padding: "48px 32px",
+        border: isDragging ? "2px dashed var(--accent)" : "2px solid transparent",
+        borderRadius: "var(--radius-lg)",
+        background: isDragging ? "var(--accent-light)" : "transparent",
+        boxShadow: isDragging ? "0 0 0 4px var(--accent-light)" : "none",
+        transition: "background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
+      }}
+      aria-label="Document upload drop zone"
+      onDragEnter={(e) => {
+        e.preventDefault();
+        setIsDragging(true);
       }}
       onDragOver={(e) => {
         e.preventDefault();
         setIsDragging(true);
       }}
-      onDragLeave={() => setIsDragging(false)}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setIsDragging(false);
+      }}
       onDrop={(e) => {
         e.preventDefault();
         setIsDragging(false);

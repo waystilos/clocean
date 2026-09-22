@@ -75,13 +75,21 @@ export const NotesView: React.FC<NotesViewProps> = ({
               setDraggedNodeId(null);
               setDropTargetId(null);
             }}
+            onDragEnter={(event) => {
+              if (node.type !== "folder" || node.id === draggedNodeId) return;
+              event.preventDefault();
+              setDropTargetId(node.id);
+            }}
             onDragOver={(event) => {
               if (node.type !== "folder" || node.id === draggedNodeId) return;
               event.preventDefault();
               event.dataTransfer.dropEffect = "move";
               setDropTargetId(node.id);
             }}
-            onDragLeave={() => setDropTargetId((current) => current === node.id ? null : current)}
+            onDragLeave={(event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+              setDropTargetId((current) => current === node.id ? null : current);
+            }}
             onDrop={(event) => {
               event.preventDefault();
               const nodeId = event.dataTransfer.getData("text/plain") || draggedNodeId;
@@ -98,11 +106,16 @@ export const NotesView: React.FC<NotesViewProps> = ({
             style={{
               display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 8px",
               paddingLeft: 8 + depth * 16, border: 0, borderRadius: 6, textAlign: "left", cursor: "pointer",
-              background: dropTargetId === node.id ? "var(--accent-light)" : isSelected ? "var(--bg-nav-active)" : "transparent", color: "var(--text-primary)",
+              background: dropTargetId === node.id ? "var(--accent)" : isSelected ? "var(--bg-nav-active)" : "transparent",
+              color: dropTargetId === node.id ? "#fff" : "var(--text-primary)",
+              outline: dropTargetId === node.id ? "2px solid var(--accent-hover)" : "none",
+              boxShadow: dropTargetId === node.id ? "0 0 0 3px var(--accent-light)" : "none",
+              opacity: draggedNodeId === node.id ? 0.45 : 1,
+              transition: "background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease",
             }}
           >
             {node.type === "folder" ? (isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <span style={{ width: 14 }} />}
-            {node.type === "folder" ? <Folder size={15} color="var(--accent)" /> : <FileText size={15} color="var(--text-secondary)" />}
+            {node.type === "folder" ? <Folder size={15} color={dropTargetId === node.id ? "#fff" : "var(--accent)"} /> : <FileText size={15} color={dropTargetId === node.id ? "#fff" : "var(--text-secondary)"} />}
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13 }}>{node.name}</span>
           </button>
           {node.type === "folder" && isOpen && renderTree(node.id, depth + 1)}
@@ -125,21 +138,39 @@ export const NotesView: React.FC<NotesViewProps> = ({
         </button>
         {moveError && <div role="alert" style={{ color: "var(--danger, #b42318)", fontSize: 12, marginBottom: 8 }}>{moveError}</div>}
         <div
+          onDragEnter={(event) => {
+            if (!draggedNodeId) return;
+            event.preventDefault();
+            setDropTargetId("root");
+          }}
           onDragOver={(event) => {
             if (!draggedNodeId) return;
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
             setDropTargetId("root");
           }}
-          onDragLeave={() => setDropTargetId((current) => current === "root" ? null : current)}
+          onDragLeave={(event) => {
+            if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+            setDropTargetId((current) => current === "root" ? null : current);
+          }}
           onDrop={(event) => {
             event.preventDefault();
             const nodeId = event.dataTransfer.getData("text/plain") || draggedNodeId;
             if (nodeId) void moveNode(nodeId, null);
           }}
-          style={{ minHeight: 80, borderRadius: 8, outline: dropTargetId === "root" ? "1px dashed var(--accent)" : undefined }}
+          style={{
+            minHeight: 80,
+            borderRadius: 8,
+            padding: dropTargetId === "root" ? 6 : 0,
+            background: dropTargetId === "root" ? "var(--accent)" : "transparent",
+            outline: dropTargetId === "root" ? "2px solid var(--accent-hover)" : "none",
+            boxShadow: dropTargetId === "root" ? "0 0 0 3px var(--accent-light)" : "none",
+            transition: "background 0.15s ease, box-shadow 0.15s ease",
+          }}
           aria-label="Workspace root drop target"
+          aria-dropeffect="move"
         >
+          {dropTargetId === "root" && <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, padding: "4px 6px 8px" }}>Move to workspace root</div>}
           {renderTree(null)}
         </div>
       </aside>

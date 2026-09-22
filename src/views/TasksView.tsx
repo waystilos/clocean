@@ -803,11 +803,18 @@ export const TasksView: React.FC<TasksViewProps> = ({
           return (
             <div
               key={col.id}
-              onDragOver={(e) => {
+              onDragEnter={(e) => {
+                if (!draggedTaskId) return;
                 e.preventDefault();
                 setDragOverColumn(col.id);
               }}
-              onDragLeave={() => {
+              onDragOver={(e) => {
+                if (!draggedTaskId) return;
+                e.preventDefault();
+                setDragOverColumn(col.id);
+              }}
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
                 if (dragOverColumn === col.id) setDragOverColumn(null);
               }}
               onDrop={(e) => {
@@ -822,10 +829,12 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 display: "flex",
                 flexDirection: "column",
                 gap: "14px",
-                backgroundColor: isOver ? "var(--bg-nav-active)" : "transparent",
+                backgroundColor: isOver ? "var(--accent)" : "transparent",
+                border: isOver ? "2px dashed var(--accent-hover)" : "2px solid transparent",
                 borderRadius: "var(--radius-lg)",
                 padding: "8px",
-                transition: "background 0.15s ease",
+                boxShadow: isOver ? "0 0 0 3px var(--accent-light)" : "none",
+                transition: "background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
                 minHeight: "450px",
               }}
             >
@@ -862,6 +871,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 </button>
               </div>
 
+              {isOver && <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, textAlign: "center", padding: "4px 0" }}>Drop task in {col.title}</div>}
+
               {/* Task Cards */}
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 {colTasks.map((task) => {
@@ -890,6 +901,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         transition: "all 0.15s ease",
                         cursor: "grab",
                         boxShadow: "var(--shadow-sm)",
+                        opacity: draggedTaskId === task.id ? 0.5 : 1,
                       }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.borderColor = "var(--border-focus)";
