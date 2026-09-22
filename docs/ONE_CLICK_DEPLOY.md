@@ -20,15 +20,15 @@ npx wrangler login
 
 ### 2. Clone Repository & Install Dependencies
 ```bash
-git clone https://github.com/ardonbailey/clocean.git
+git clone https://github.com/waystilos/clocean.git
 cd clocean
-npm install
+pnpm install
 ```
 
 ### 3. Provision Cloudflare R2 Bucket
 Run the automated bucket setup script:
 ```bash
-npm run setup
+./scripts/setup-r2.sh
 # Or execute manually:
 npx wrangler r2 bucket create clocean-storage
 ```
@@ -36,8 +36,9 @@ npx wrangler r2 bucket create clocean-storage
 ### 4. Deploy Application
 Run the one-step build & deploy command:
 ```bash
-npm run deploy
+pnpm deploy
 ```
+
 
 Wrangler will:
 * Compile the TypeScript React frontend into `./dist`.
@@ -81,4 +82,4 @@ Once configured, Cloudflare Access intercepts all requests before they hit your 
 * **Storage & Bandwidth (R2)**: 10 GB free, 10M read operations free, 1M write operations free. **$0 egress fees**.
 * **Authentication (Zero Trust)**: **Free for up to 50 users**.
 * **Workers & Pages**: Extremely generous free tier (100,000 requests/day).
-* **Durable Objects**: Included on the Workers Paid plan ($5/month). When running locally (`npm run worker:dev`), Durable Objects are simulated locally at **$0 cost**.
+* **Durable Objects**: Included on the Workers Paid plan ($5/month). When running locally (`pnpm worker:dev`), Durable Objects are simulated locally at **$0 cost**.

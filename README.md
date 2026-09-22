@@ -102,18 +102,18 @@ The user interface strictly replicates the **Figma Design System** (`Clocean - A
    ```bash
    git clone https://github.com/waystilos/clocean.git
    cd clocean
-   npm install
+   pnpm install
    ```
 
 2. Provision the Cloudflare R2 bucket:
    ```bash
-   npm run setup
+   ./scripts/setup-r2.sh
    # Or directly: npx wrangler r2 bucket create clocean-storage
    ```
 
 3. Deploy the application:
    ```bash
-   npm run deploy
+   pnpm deploy
    ```
 
 Your application will be live globally on Cloudflare Workers and Pages!
@@ -127,15 +127,16 @@ Run the full local stack (Vite + Cloudflare Worker + Miniflare R2 + Durable Obje
 
 1. Start the Cloudflare Worker with local R2 and Durable Objects emulation:
    ```bash
-   npm run worker:dev
+   pnpm worker:dev
    ```
    *(Listens on `http://127.0.0.1:8787`)*
 
 2. Start the Vite React development server:
    ```bash
-   npm run dev
+   pnpm dev
    ```
    *(Listens on `http://localhost:3000` with hot module replacement and `/api` proxy)*
+
 
 3. Open two browser windows:
    * Window 1: `http://localhost:3000` (logged in as **Alex Sterling**)

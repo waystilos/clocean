@@ -13,4 +13,4 @@ else
   echo "Bucket '$BUCKET_NAME' successfully created!"
 fi
 
-echo "Setup complete! Run 'npm run deploy' to deploy Clocean."
+echo "Setup complete! Run 'pnpm deploy' to deploy Clocean."

@@ -122,20 +122,21 @@ clocean/
 ### 1. Build and Typecheck
 Always verify that both frontend and worker typecheck cleanly:
 ```bash
-npm run build
+pnpm build
 ```
 
 ### 2. Run Local Development Stack
 ```bash
 # Starts Cloudflare Worker with local R2 & Durable Objects emulation
-npm run worker:dev
+pnpm worker:dev
 
 # Starts Vite React dev server on port 3000
-npm run dev
+pnpm dev
 ```
 
 ### 3. Deploy to Cloudflare
 ```bash
-npm run deploy
+pnpm deploy
 ```
-*(Runs `npm run build` and then `wrangler deploy` to push static assets to Pages and edge code to Workers).*
+*(Runs `pnpm build` and then `wrangler deploy` to push static assets to Pages and edge code to Workers).*
+

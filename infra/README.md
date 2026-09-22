@@ -25,8 +25,9 @@ This directory provides a **100% TypeScript** Infrastructure as Code (IaC) progr
 ### 1. Install Dependencies
 ```bash
 cd infra
-npm install
+pnpm install
 ```
+
 
 ### 2. Configure Cloudflare Credentials
 Ensure your Cloudflare API token is exported in your environment:

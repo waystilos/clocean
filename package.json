@@ -8,10 +8,12 @@
     "build": "tsc && vite build",
     "worker:dev": "wrangler dev",
     "worker:deploy": "wrangler deploy",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "pnpm build && wrangler deploy",
     "preview": "vite preview",
     "test": "vitest run --fileParallelism=false"
   },
+  "packageManager": "pnpm@10.29.1",
+
   "dependencies": {
     "hono": "^4.7.2",
     "lucide-react": "^1.16.0",
