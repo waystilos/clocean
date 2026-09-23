@@ -21,6 +21,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Settings2,
+  Link2,
 } from "lucide-react";
 import { TaskBoard, TaskComment, TaskItem, TaskSubtask, TaskType, UserProfile, WorkspaceMember } from "../types.ts";
 
@@ -153,13 +154,15 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
   // Task Detail Modal state
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
+  const [isTaskDetailsOpen, setIsTaskDetailsOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TaskItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [newCommentText, setNewCommentText] = useState("");
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [boards, setBoards] = useState<TaskBoard[]>([]);
-  const [activeBoardId, setActiveBoardId] = useState("default");
+  const [activeBoardId, setActiveBoardId] = useState(() => new URLSearchParams(window.location.search).get("board") || "default");
   const [loadedBoardId, setLoadedBoardId] = useState<string | null>(null);
   const [isBoardLoading, setIsBoardLoading] = useState(false);
   const [newBoardName, setNewBoardName] = useState("");
@@ -172,8 +175,39 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [boardError, setBoardError] = useState<string | null>(null);
 
   useEffect(() => {
+    setIsTaskDetailsOpen(false);
+  }, [selectedTask?.id]);
+
+  const openTask = (task: TaskItem) => {
+    setSelectedTask(task);
+    const params = new URLSearchParams(window.location.search);
+    params.set("task", task.id);
+    params.set("board", activeBoardId);
+    window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
+  };
+
+  const closeTask = () => {
+    setSelectedTask(null);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("task");
+    params.delete("board");
+    const query = params.toString();
+    window.history.pushState({}, "", query ? `${window.location.pathname}?${query}` : window.location.pathname);
+  };
+
+  const copyTaskLink = async () => {
+    if (!selectedTask) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("task", selectedTask.id);
+    params.set("board", activeBoardId);
+    await navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?${params.toString()}`);
+    setLinkCopied(true);
+    window.setTimeout(() => setLinkCopied(false), 1800);
+  };
+
+  useEffect(() => {
     setBoards([]);
-    setActiveBoardId("default");
+    setActiveBoardId(new URLSearchParams(window.location.search).get("board") || "default");
     setBoardError(null);
     fetch("/api/task-boards", { headers: getAuthHeaders() })
       .then((res) => {
@@ -201,6 +235,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
         if (cancelled) return;
         onLoadTasks?.(data as TaskItem[], activeBoardId);
         setLoadedBoardId(activeBoardId);
+        const linkedTaskId = new URLSearchParams(window.location.search).get("task");
+        const linkedTask = (data as TaskItem[]).find((task) => task.id === linkedTaskId);
+        if (linkedTask) setSelectedTask(linkedTask);
         setBoardError(null);
       })
       .catch((error: unknown) => {
@@ -376,7 +413,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Could not delete work item");
       onLoadTasks?.(tasks.filter((task) => task.id !== taskId), activeBoardId);
-      setSelectedTask(null);
+      closeTask();
       setDeleteTarget(null);
     } catch (error: unknown) {
       setBoardError(error instanceof Error ? error.message : "Could not delete work item");
@@ -412,7 +449,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
     if (!selectedTask) return;
     const updated = tasks.map((t) => (t.id === selectedTask.id ? selectedTask : t));
     await onUpdateTasks(updated, activeBoardId);
-    setSelectedTask(null);
+    closeTask();
   };
 
   const handleToggleSubtask = async (taskId: string, subtaskId: string) => {
@@ -528,7 +565,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
         <div className="tasks-filters" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", padding: "10px 12px", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-sm)" }}>
           <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-secondary)" }}>
             Board
-            <select value={activeBoardId} onChange={(e) => setActiveBoardId(e.target.value)} aria-label="Switch task board">
+            <select value={activeBoardId} onChange={(e) => { closeTask(); setActiveBoardId(e.target.value); }} aria-label="Switch task board">
               {(boards.length ? boards : [{ id: "default", name: "Sprint board" } as TaskBoard]).map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
             </select>
           </label>
@@ -702,7 +739,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   return (
                     <tr
                       key={t.id}
-                      onClick={() => setSelectedTask(t)}
+                      onClick={() => openTask(t)}
                       style={{
                         borderBottom: "1px solid var(--border-subtle)",
                         cursor: "pointer",
@@ -940,7 +977,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         setDraggedTaskId(null);
                         setDragOverColumn(null);
                       }}
-                      onClick={() => setSelectedTask(task)}
+                      onClick={() => openTask(task)}
                       style={{
                         backgroundColor: "var(--bg-surface)",
                         border: "1px solid var(--border-subtle)",
@@ -1120,7 +1157,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                       >
                         <button
                           type="button"
-                          onClick={() => setSelectedTask(task)}
+                          onClick={() => openTask(task)}
                           className="btn-secondary"
                           style={{ padding: "5px 9px", fontSize: "11px" }}
                         >
@@ -1308,7 +1345,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
       {/* Task Detail & Edit Modal */}
       {selectedTask && (
         <div
-          onClick={() => setSelectedTask(null)}
+          onClick={closeTask}
           style={{
             position: "fixed",
             inset: 0,
@@ -1326,7 +1363,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
             className="animate-fade-in"
             style={{
               width: "100%",
-              maxWidth: "560px",
+              maxWidth: "620px",
+              maxHeight: "calc(100dvh - 32px)",
               backgroundColor: "var(--bg-surface)",
               border: "1px solid var(--border-subtle)",
               borderRadius: "var(--radius-xl)",
@@ -1343,6 +1381,10 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 alignItems: "center",
                 justifyContent: "space-between",
                 padding: "16px 20px",
+                position: "sticky",
+                top: 0,
+                zIndex: 1,
+                backgroundColor: "var(--bg-surface)",
                 borderBottom: "1px solid var(--border-subtle)",
               }}
             >
@@ -1364,13 +1406,16 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   {selectedTask.status.toUpperCase()}
                 </span>
               </div>
-              <button onClick={() => setSelectedTask(null)} className="btn-icon">
-                <X size={16} />
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <button onClick={() => void copyTaskLink()} className="btn-secondary" style={{ padding: "6px 9px", fontSize: "11px" }} title="Copy link to this task">
+                  <Link2 size={13} /> {linkCopied ? "Copied" : "Copy link"}
+                </button>
+                <button onClick={closeTask} className="btn-icon" aria-label="Close task details"><X size={16} /></button>
+              </div>
             </div>
 
             {/* Modal Body */}
-            <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div className="tasks-modal-body" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px", overflowY: "auto", minHeight: 0 }}>
               {/* Task Title */}
               <div>
                 <label style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "6px" }}>
@@ -1475,6 +1520,18 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 </div>
               </div>
 
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setIsTaskDetailsOpen((open) => !open)}
+                aria-expanded={isTaskDetailsOpen}
+                style={{ alignSelf: "flex-start", padding: "7px 10px", fontSize: "12px" }}
+              >
+                {isTaskDetailsOpen ? "Hide details" : "More details"}
+                <ChevronRight size={13} style={{ transform: `rotate(${isTaskDetailsOpen ? 90 : 0}deg)` }} />
+              </button>
+
+              {isTaskDetailsOpen && <>
               {/* Assignee & Due Date Row */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                 <div>
@@ -1768,6 +1825,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   </button>
                 </div>
               </div>
+              </>}
             </div>
 
             {/* Modal Footer */}
@@ -1777,6 +1835,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 alignItems: "center",
                 justifyContent: "space-between",
                 padding: "16px 20px",
+                position: "sticky",
+                bottom: 0,
+                zIndex: 1,
                 borderTop: "1px solid var(--border-subtle)",
                 backgroundColor: "var(--bg-primary)",
               }}
@@ -1790,7 +1851,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
               </button>
 
               <div style={{ display: "flex", gap: "8px" }}>
-                <button onClick={() => setSelectedTask(null)} className="btn-secondary">
+                <button onClick={closeTask} className="btn-secondary">
                   Cancel
                 </button>
                 <button onClick={handleSaveSelectedTask} className="btn-primary">

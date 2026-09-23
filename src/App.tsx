@@ -28,7 +28,13 @@ import { MarkdownRenderer } from "./components/MarkdownRenderer.tsx";
 import { Layers, Sun, Moon, FileText, Users, Home, ListCheck, Table2, PanelLeftOpen } from "lucide-react";
 
 export const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<ViewMode>("home");
+  const [currentView, setCurrentView] = useState<ViewMode>(() => {
+    try {
+      return new URLSearchParams(window.location.search).has("task") ? "tasks" : "home";
+    } catch {
+      return "home";
+    }
+  });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem("clocean_sidebar_collapsed") === "true"; } catch { return false; }
   });
