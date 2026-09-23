@@ -17,6 +17,13 @@ const records: DatabaseRecord[] = [
 ];
 
 describe("database record query seam", () => {
+  it("allows explicitly clearing typed cells but still rejects unknown and undefined values", () => {
+    for (const type of ["number", "date", "person", "url", "select", "multi_select", "checkbox", "text"] as const) {
+      expect(() => validateDatabaseProperties({ field: null }, [{ id: "field", name: "Field", type }])).not.toThrow();
+    }
+    expect(() => validateDatabaseProperties({ missing: null }, schema.properties)).toThrow("Unknown or unsafe");
+    expect(() => validateDatabaseProperties({ status: undefined }, schema.properties)).toThrow("invalid value");
+  });
   it("rejects unsafe keys and values that do not match the declared type", () => {
     expect(() => validateDatabaseProperties({ constructor: "x" }, schema.properties)).toThrow("Unknown or unsafe");
     expect(() => validateDatabaseProperties({ status: "Unknown" }, schema.properties)).toThrow("invalid option");
@@ -35,5 +42,21 @@ describe("database record query seam", () => {
 
   it("ignores unknown sort fields instead of interpreting them", () => {
     expect(filterAndSortDatabaseRecords(records, schema, undefined, "constructor").map((record) => record.id)).toEqual(["row-1", "row-2"]);
+  });
+
+  it("validates UpdateDatabaseRecordPayloadSchema correctly", async () => {
+    const { UpdateDatabaseRecordPayloadSchema } = await import("../worker/schemas.ts");
+    const valid = UpdateDatabaseRecordPayloadSchema.parse({
+      title: "Updated Title",
+      properties: { status: "Done" },
+    });
+    expect(valid.title).toBe("Updated Title");
+    expect(valid.properties?.status).toBe("Done");
+
+    const partial = UpdateDatabaseRecordPayloadSchema.parse({
+      properties: { status: "Todo" },
+    });
+    expect(partial.title).toBeUndefined();
+    expect(partial.properties?.status).toBe("Todo");
   });
 });

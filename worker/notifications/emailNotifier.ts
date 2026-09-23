@@ -51,7 +51,7 @@ function escapeRegex(string: string) {
 }
 
 /**
- * Generates responsive, high-end HTML email template styled to match Figma design tokens.
+ * Generates responsive, high-end HTML email template styled to match Clocean design tokens.
  */
 export function generateMentionEmailHtml(notification: MentionNotification, appUrl?: string): string {
   const baseUrl = appUrl || "http://localhost:3000";

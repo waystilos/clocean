@@ -107,7 +107,7 @@ export const TaskItemSchema = z.object({
   title: z.string().min(1).max(300),
   description: z.string().max(10000).optional(),
   type: TaskTypeSchema.optional(),
-  status: z.enum(["todo", "inprogress", "in_progress", "done"]),
+  status: z.string().trim().min(1).max(50),
   priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
   dueDate: z.string().optional(),
   assignee: z.union([
@@ -124,6 +124,50 @@ export const TaskItemSchema = z.object({
   lastAlertedAt: z.string().optional(),
 });
 export type TaskItem = z.infer<typeof TaskItemSchema>;
+
+export const TaskBoardColumnSchema = z.object({
+  id: z.string().trim().min(1).max(50),
+  title: z.string().trim().min(1).max(100),
+  color: z.string().trim().max(50).optional(),
+  wipLimit: z.number().int().positive().max(1000).optional(),
+});
+export type TaskBoardColumn = z.infer<typeof TaskBoardColumnSchema>;
+
+export const TaskBoardSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(1000).optional(),
+  icon: z.string().trim().max(30).optional(),
+  color: z.string().trim().max(50).optional(),
+  columns: z.array(TaskBoardColumnSchema).max(20).optional(),
+  defaultView: z.enum(["board", "table"]).optional(),
+  defaultPriority: z.enum(["urgent", "high", "medium", "low"]).optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type TaskBoard = z.infer<typeof TaskBoardSchema>;
+
+export const CreateTaskBoardSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(1000).optional(),
+  icon: z.string().trim().max(30).optional(),
+  color: z.string().trim().max(50).optional(),
+  columns: z.array(TaskBoardColumnSchema).max(20).optional(),
+  defaultView: z.enum(["board", "table"]).optional(),
+  defaultPriority: z.enum(["urgent", "high", "medium", "low"]).optional(),
+});
+export type CreateTaskBoardInput = z.infer<typeof CreateTaskBoardSchema>;
+
+export const UpdateTaskBoardSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  description: z.string().trim().max(1000).optional(),
+  icon: z.string().trim().max(30).optional(),
+  color: z.string().trim().max(50).optional(),
+  columns: z.array(TaskBoardColumnSchema).max(20).optional(),
+  defaultView: z.enum(["board", "table"]).optional(),
+  defaultPriority: z.enum(["urgent", "high", "medium", "low"]).optional(),
+});
+export type UpdateTaskBoardInput = z.infer<typeof UpdateTaskBoardSchema>;
 
 export const PhotoItemSchema = z.object({
   id: z.string().min(1),
@@ -324,8 +368,17 @@ export const CreateDatabaseSchema = z.object({
 });
 export type CreateDatabaseInput = z.infer<typeof CreateDatabaseSchema>;
 
+export const UpdateDatabaseSchema = CreateDatabaseSchema;
+export type UpdateDatabaseInput = z.infer<typeof UpdateDatabaseSchema>;
+
 export const DatabaseRecordPayloadSchema = z.object({
   title: z.string().trim().min(1).max(200),
   properties: z.record(z.string().regex(/^[a-zA-Z0-9_-]+$/).max(40), z.unknown()).default({}),
 });
 export type DatabaseRecordPayload = z.infer<typeof DatabaseRecordPayloadSchema>;
+
+export const UpdateDatabaseRecordPayloadSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  properties: z.record(z.string().regex(/^[a-zA-Z0-9_-]+$/).max(40), z.unknown()).optional(),
+});
+export type UpdateDatabaseRecordPayload = z.infer<typeof UpdateDatabaseRecordPayloadSchema>;

@@ -23,7 +23,9 @@ import {
   Settings2,
   Link2,
 } from "lucide-react";
-import { TaskBoard, TaskComment, TaskItem, TaskSubtask, TaskType, UserProfile, WorkspaceMember } from "../types.ts";
+import { TaskBoard, TaskBoardColumn, TaskComment, TaskItem, TaskSubtask, TaskType, UserProfile, WorkspaceMember } from "../types.ts";
+import { BoardSettingsModal, DEFAULT_BOARD_COLUMNS } from "../components/BoardSettingsModal.tsx";
+import { CreateBoardModal } from "../components/CreateBoardModal.tsx";
 
 export function getTaskDeadlineInfo(dueDate?: string): {
   display: string;
@@ -165,7 +167,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [activeBoardId, setActiveBoardId] = useState(() => new URLSearchParams(window.location.search).get("board") || "default");
   const [loadedBoardId, setLoadedBoardId] = useState<string | null>(null);
   const [isBoardLoading, setIsBoardLoading] = useState(false);
-  const [newBoardName, setNewBoardName] = useState("");
+  const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
   const [isBoardSettingsOpen, setIsBoardSettingsOpen] = useState(false);
   const [isRenamingBoard, setIsRenamingBoard] = useState(false);
   const [renameBoardName, setRenameBoardName] = useState("");
@@ -249,77 +251,88 @@ export const TasksView: React.FC<TasksViewProps> = ({
     return () => { cancelled = true; };
   }, [activeBoardId, workspaceId, onLoadTasks]);
 
-  const createBoard = async () => {
-    if (!newBoardName.trim()) {
-      setBoardError("Enter a name for the new board.");
-      return;
-    }
+  const handleCreateBoard = async (boardData: {
+    name: string;
+    description?: string;
+    icon?: string;
+    color?: string;
+  }) => {
     try {
       const response = await fetch("/api/task-boards", {
         method: "POST",
         headers: getAuthHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ name: newBoardName.trim() }),
+        body: JSON.stringify(boardData),
       });
-      const data = await response.json().catch(() => ({})) as { error?: string };
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Could not create task board");
       const board = data as TaskBoard;
       setBoards((current) => [...current, board]);
-      setNewBoardName("");
       setBoardError(null);
+      closeTask();
       setActiveBoardId(board.id);
     } catch (error: unknown) {
-      setBoardError(error instanceof Error ? error.message : "Could not create task board");
+      const msg = error instanceof Error ? error.message : "Could not create task board";
+      setBoardError(msg);
+      throw error;
     }
   };
 
-  const handleDeleteBoard = async () => {
-    if (!boardToDelete || boardToDelete.id === "default") return;
+  const activeBoard = boards.find((board) => board.id === activeBoardId) || ({
+    id: "default",
+    name: "Sprint board",
+    icon: "📋",
+    color: "#1E7D6B",
+    columns: DEFAULT_BOARD_COLUMNS,
+  } as TaskBoard);
+
+  const columns: TaskBoardColumn[] = Array.isArray(activeBoard.columns) && activeBoard.columns.length > 0
+    ? activeBoard.columns
+    : DEFAULT_BOARD_COLUMNS;
+
+  const handleUpdateBoard = async (updatedBoard: TaskBoard) => {
+    setIsSavingBoard(true);
+    try {
+      const response = await fetch(`/api/task-boards/${encodeURIComponent(updatedBoard.id)}`, {
+        method: "PATCH",
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(updatedBoard),
+      });
+      const data = (await response.json().catch(() => ({}))) as TaskBoard & { error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not update board settings");
+      setBoards((current) => current.map((board) => (board.id === data.id ? data : board)));
+      if (data.id === activeBoardId && data.defaultView && data.defaultView !== viewType) {
+        setViewType(data.defaultView);
+      }
+      setBoardError(null);
+    } catch (error: unknown) {
+      setBoardError(error instanceof Error ? error.message : "Could not update board settings");
+      throw error;
+    } finally {
+      setIsSavingBoard(false);
+    }
+  };
+
+  const handleDeleteBoardById = async (boardId: string) => {
+    if (boardId === "default") return;
     setIsDeletingBoard(true);
     try {
-      const response = await fetch(`/api/task-boards/${encodeURIComponent(boardToDelete.id)}`, {
+      const response = await fetch(`/api/task-boards/${encodeURIComponent(boardId)}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
       });
-      const data = await response.json().catch(() => ({})) as { error?: string };
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Could not remove task board");
-      const remaining = boards.filter((board) => board.id !== boardToDelete.id);
+      const remaining = boards.filter((board) => board.id !== boardId);
       setBoards(remaining);
-      setBoardToDelete(null);
-      setActiveBoardId(remaining.find((board) => board.id === "default")?.id || remaining[0]?.id || "default");
+      const fallback = remaining.find((board) => board.id === "default")?.id || remaining[0]?.id || "default";
+      setActiveBoardId(fallback);
+      setIsBoardSettingsOpen(false);
       setBoardError(null);
     } catch (error: unknown) {
       setBoardError(error instanceof Error ? error.message : "Could not remove task board");
+      throw error;
     } finally {
       setIsDeletingBoard(false);
-    }
-  };
-
-  const activeBoard = boards.find((board) => board.id === activeBoardId) || { id: "default", name: "Sprint board" } as TaskBoard;
-
-  const openBoardSettings = () => {
-    setRenameBoardName(activeBoard.name);
-    setIsRenamingBoard(false);
-    setIsBoardSettingsOpen((open) => !open);
-  };
-
-  const handleRenameBoard = async () => {
-    if (!renameBoardName.trim() || activeBoard.id === "default") return;
-    setIsSavingBoard(true);
-    try {
-      const response = await fetch(`/api/task-boards/${encodeURIComponent(activeBoard.id)}`, {
-        method: "PATCH",
-        headers: getAuthHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ name: renameBoardName.trim() }),
-      });
-      const data = await response.json().catch(() => ({})) as TaskBoard & { error?: string };
-      if (!response.ok) throw new Error(data.error || "Could not rename task board");
-      setBoards((current) => current.map((board) => board.id === data.id ? data : board));
-      setIsRenamingBoard(false);
-      setBoardError(null);
-    } catch (error: unknown) {
-      setBoardError(error instanceof Error ? error.message : "Could not rename task board");
-    } finally {
-      setIsSavingBoard(false);
     }
   };
 
@@ -344,13 +357,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
     return true;
   });
 
-  const columns: { id: "todo" | "inprogress" | "done"; title: string }[] = [
-    { id: "todo", title: "To Do" },
-    { id: "inprogress", title: "In Progress" },
-    { id: "done", title: "Done" },
-  ];
-
-  const handleAddTask = async (status: "todo" | "inprogress" | "done") => {
+  const handleAddTask = async (status: string) => {
     if (!newTaskTitle.trim()) {
       setIsAddingIn(null);
       return;
@@ -391,7 +398,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
     setIsAddingIn(null);
   };
 
-  const handleMoveTask = async (taskId: string, nextStatus: "todo" | "inprogress" | "done") => {
+  const handleMoveTask = async (taskId: string, nextStatus: string) => {
     const updated = tasks.map((t) => (t.id === taskId ? { ...t, status: nextStatus } : t));
     await onUpdateTasks(updated, activeBoardId);
     if (selectedTask && selectedTask.id === taskId) {
@@ -539,51 +546,112 @@ export const TasksView: React.FC<TasksViewProps> = ({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: "36px",
+          marginBottom: "32px",
         }}
       >
-        <div>
-          <h1
-            className="font-serif"
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div
             style={{
-              fontSize: "28px",
-              fontWeight: 500,
-              color: "var(--text-primary)",
-              letterSpacing: "-0.01em",
+              width: "40px",
+              height: "40px",
+              borderRadius: "var(--radius-md)",
+              backgroundColor: `${activeBoard.color || "#1E7D6B"}20`,
+              border: `1.5px solid ${activeBoard.color || "#1E7D6B"}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "20px",
+              flexShrink: 0,
             }}
           >
-            Sprint Task Board
-          </h1>
-          <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "4px" }}>
-            Choose a board and keep each project’s work organized in its own Kanban view.
-          </p>
+            {activeBoard.icon || "📋"}
+          </div>
+          <div>
+            <h1
+              className="font-serif"
+              style={{
+                fontSize: "28px",
+                fontWeight: 500,
+                color: "var(--text-primary)",
+                letterSpacing: "-0.01em",
+                margin: 0,
+              }}
+            >
+              {activeBoard.name}
+            </h1>
+            <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "4px" }}>
+              {activeBoard.description || "Choose a board and keep each project’s work organized in its own Kanban view."}
+            </p>
+          </div>
         </div>
-
       </div>
 
-        {/* Board toolbar */}
-        <div className="tasks-filters" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", padding: "10px 12px", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-sm)" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-secondary)" }}>
-            Board
-            <select className="form-control-sm" value={activeBoardId} onChange={(e) => { closeTask(); setActiveBoardId(e.target.value); }} aria-label="Switch task board">
-              {(boards.length ? boards : [{ id: "default", name: "Sprint board" } as TaskBoard]).map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
-            </select>
-          </label>
-          {isBoardLoading && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading…</span>}
-          <input className="form-control-sm" value={newBoardName} onChange={(e) => setNewBoardName(e.target.value)} placeholder="New board name" aria-label="New board name" maxLength={100} style={{ minWidth: 120, width: "auto" }} />
-          <button className="btn-secondary" onClick={createBoard} style={{ padding: "6px 10px" }}><Plus size={14} /> Add board</button>
-          <div style={{ flex: 1, minWidth: 8 }} />
-          <div style={{ position: "relative" }}>
-            <button className="btn-secondary" onClick={openBoardSettings} aria-haspopup="menu" aria-expanded={isBoardSettingsOpen} aria-label="Open board settings" style={{ padding: "6px 10px" }}><Settings2 size={14} /> Settings</button>
-            {isBoardSettingsOpen && (
-              <div role="menu" aria-label={`${activeBoard.name} settings`} style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20, width: 260, padding: 8, backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)" }}>
-                <div style={{ padding: "8px 10px 10px", borderBottom: "1px solid var(--border-subtle)" }}><div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Board settings</div><div style={{ marginTop: 3, fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeBoard.name}</div></div>
-                {activeBoard.id !== "default" && !isRenamingBoard && <button type="button" role="menuitem" onClick={() => setIsRenamingBoard(true)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 10px", marginTop: 4, background: "transparent", border: 0, borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 12, textAlign: "left", cursor: "pointer" }}><MoreHorizontal size={14} /> Rename board</button>}
-                {isRenamingBoard && <div style={{ padding: "10px 2px 4px" }}><input autoFocus value={renameBoardName} onChange={(e) => setRenameBoardName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void handleRenameBoard(); if (e.key === "Escape") setIsRenamingBoard(false); }} aria-label="Board name" maxLength={100} style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 12 }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 7 }}><button type="button" className="btn-secondary" onClick={() => setIsRenamingBoard(false)} disabled={isSavingBoard} style={{ padding: "5px 8px", fontSize: 11 }}>Cancel</button><button type="button" className="btn-primary" onClick={() => void handleRenameBoard()} disabled={isSavingBoard || !renameBoardName.trim()} style={{ padding: "5px 8px", fontSize: 11 }}>{isSavingBoard ? "Saving…" : "Save"}</button></div></div>}
-                <div style={{ margin: "6px 4px 2px", paddingTop: 6, borderTop: "1px solid var(--border-subtle)" }}>{activeBoard.id === "default" ? <div style={{ padding: "7px 6px", fontSize: 11, color: "var(--text-muted)" }}>The default board is always available.</div> : <button type="button" role="menuitem" onClick={() => { setIsBoardSettingsOpen(false); setBoardToDelete(activeBoard); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 6px", background: "transparent", border: 0, color: "#dc2626", fontSize: 12, textAlign: "left", cursor: "pointer" }}><Trash2 size={14} /> Remove board…</button>}</div>
-              </div>
-            )}
-          </div>
+      {/* Board toolbar */}
+      <div
+        className="tasks-filters"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          flexWrap: "wrap",
+          padding: "10px 12px",
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border-subtle)",
+          borderRadius: "var(--radius-md)",
+          boxShadow: "var(--shadow-sm)",
+        }}
+      >
+        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-secondary)" }}>
+          Board
+          <select
+            className="form-control-sm"
+            value={activeBoardId}
+            onChange={(e) => {
+              if (e.target.value === "__create_board__") {
+                setIsCreateBoardOpen(true);
+                return;
+              }
+              closeTask();
+              setActiveBoardId(e.target.value);
+            }}
+            aria-label="Switch task board"
+          >
+            {(boards.length ? boards : [activeBoard]).map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.icon ? `${b.icon} ` : ""}{b.name}
+              </option>
+            ))}
+            <option value="__create_board__">+ New board…</option>
+          </select>
+        </label>
+        {isBoardLoading && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading…</span>}
+        <div style={{ flex: 1, minWidth: 8 }} />
+        <button
+          className="btn-secondary"
+          onClick={() => setIsBoardSettingsOpen(true)}
+          aria-label="Open board settings"
+          style={{ padding: "6px 12px", gap: "6px" }}
+        >
+          <Settings2 size={14} /> Board Settings
+        </button>
+
+        <BoardSettingsModal
+          isOpen={isBoardSettingsOpen}
+          onClose={() => setIsBoardSettingsOpen(false)}
+          board={activeBoard}
+          tasks={tasks}
+          onUpdateBoard={handleUpdateBoard}
+          onDeleteBoard={handleDeleteBoardById}
+          onTasksUpdated={(updatedTasks) => void onUpdateTasks(updatedTasks, activeBoardId)}
+          sessionToken={sessionToken}
+          workspaceId={workspaceId}
+        />
+
+        <CreateBoardModal
+          isOpen={isCreateBoardOpen}
+          onClose={() => setIsCreateBoardOpen(false)}
+          onCreateBoard={handleCreateBoard}
+        />
           <div style={{ position: "relative" }}>
             <button className="btn-secondary" onClick={() => setIsFilterOpen((open) => !open)} aria-haspopup="menu" aria-expanded={isFilterOpen} style={{ padding: "6px 10px", color: filter === "all" ? "var(--text-secondary)" : "var(--accent-text)", borderColor: filter === "all" ? "var(--border-subtle)" : "var(--accent)" }}><Filter size={14} /> Filter{filter !== "all" ? `: ${filter === "mine" ? "Mine" : filter === "due" ? "Due soon" : "High priority"}` : ""}</button>
             {isFilterOpen && <div role="menu" aria-label="Task filters" style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20, width: 190, padding: 6, backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)" }}>
@@ -694,8 +762,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
             </button>
           </div>
 
-          <div style={{ width: "1px", height: "20px", backgroundColor: "var(--border-subtle)", margin: "0 4px" }} />
-
       </div>
 
       {loadedBoardId !== activeBoardId ? (
@@ -776,9 +842,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
                             cursor: "pointer",
                           }}
                         >
-                          <option value="todo">To Do</option>
-                          <option value="inprogress">In Progress</option>
-                          <option value="done">Done</option>
+                          {columns.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.title}
+                            </option>
+                          ))}
                         </select>
                       </td>
                       <td style={{ padding: "12px 16px" }}>
@@ -879,14 +947,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
           className="task-board-columns"
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
+            gridTemplateColumns: `repeat(${columns.length}, minmax(280px, 1fr))`,
             gap: "24px",
             alignItems: "flex-start",
+            overflowX: "auto",
+            paddingBottom: "16px",
           }}
         >
         {columns.map((col, colIdx) => {
           const colTasks = filteredTasks.filter((t) => t.status === col.id);
           const isOver = dragOverColumn === col.id;
+          const isOverWip = col.wipLimit && colTasks.length > col.wipLimit;
 
           return (
             <div
@@ -936,15 +1007,36 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   borderBottom: "1px solid var(--border-subtle)",
                 }}
               >
-                <h3
-                  className="font-serif"
-                  style={{ fontSize: "16px", fontWeight: 600, color: "var(--text-primary)" }}
-                >
-                  {col.title}{" "}
-                  <span style={{ fontSize: "13px", color: "var(--text-secondary)", fontWeight: 400 }}>
-                    ({colTasks.length})
-                  </span>
-                </h3>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span
+                    style={{
+                      width: "10px",
+                      height: "10px",
+                      borderRadius: "50%",
+                      backgroundColor: col.color || "var(--accent)",
+                      display: "inline-block",
+                      flexShrink: 0,
+                    }}
+                  />
+                  <h3
+                    className="font-serif"
+                    style={{ fontSize: "16px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}
+                  >
+                    {col.title}{" "}
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: isOverWip ? 700 : 400,
+                        color: isOverWip ? "#DC2626" : "var(--text-secondary)",
+                        backgroundColor: isOverWip ? "rgba(239, 68, 68, 0.12)" : "transparent",
+                        padding: isOverWip ? "1px 6px" : "0",
+                        borderRadius: "4px",
+                      }}
+                    >
+                      ({colTasks.length}{col.wipLimit ? ` / ${col.wipLimit}` : ""})
+                    </span>
+                  </h3>
+                </div>
 
                 <button
                   onClick={() => {
@@ -1402,8 +1494,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 >
                   {selectedTask.priority || "Medium"}
                 </span>
-                <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                  {selectedTask.status.toUpperCase()}
+                <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500 }}>
+                  {columns.find((c) => c.id === selectedTask.status)?.title || selectedTask.status.toUpperCase()}
                 </span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -1488,9 +1580,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
                       outline: "none",
                     }}
                   >
-                    <option value="todo">To Do</option>
-                    <option value="inprogress">In Progress</option>
-                    <option value="done">Done</option>
+                    {columns.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -1926,7 +2020,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
             <p style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.5, color: "var(--text-secondary)" }}>The board and all work items on it will be permanently removed.</p>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 22 }}>
               <button type="button" className="btn-secondary" onClick={() => setBoardToDelete(null)} disabled={isDeletingBoard}>Cancel</button>
-              <button type="button" className="btn-primary" onClick={() => void handleDeleteBoard()} disabled={isDeletingBoard} style={{ backgroundColor: "#dc2626", borderColor: "#dc2626" }}>{isDeletingBoard ? "Removing…" : "Remove board"}</button>
+              <button type="button" className="btn-danger" onClick={() => void handleDeleteBoardById(boardToDelete.id)} disabled={isDeletingBoard}>{isDeletingBoard ? "Removing…" : "Remove board"}</button>
             </div>
           </div>
         </div>

@@ -41,7 +41,7 @@ Clocean uses Cloudflare Access as the production authentication boundary:
    * Upon verification (`POST /api/auth/verify-otp`), the server signs an HMAC-SHA256 session token (`Authorization: Bearer <token>`) providing stateless, edge-verified sessions. Production deployments reject this flow and require Cloudflare Access.
 2. **Cloudflare Zero Trust / Access (Production)**:
    * Sits in front of the application domain (`clocean.yourcompany.com`).
-   * Supports Google Workspace, GitHub, Microsoft 365, Okta, or Cloudflare Access OTP.
+   * Supports Google Workspace, GitHub, OIDC/SAML, Okta, or Cloudflare Access OTP.
    * Passes authenticated identity headers down to the Worker:
      * `Cf-Access-Authenticated-User-Email`: Authenticated user's email address.
      * `Cf-Access-Jwt-Assertion`: Cryptographically signed JWT verified by the Worker against Cloudflare's JWKS, including issuer, audience, expiration, and signature checks.
@@ -53,10 +53,12 @@ Clocean uses Cloudflare Access as the production authentication boundary:
 ### Layer 2: Frontend Single Page Application (Cloudflare Pages)
 * **Framework**: React 19 + TypeScript + Vite.
 * **Serving**: Built into `./dist` and served via Cloudflare Workers Static Assets (`env.ASSETS`).
-* **Design Tokens**: Pure CSS variables inspired by the Figma design system:
+* **Database editing**: Text, number, person, and URL cells keep local drafts until Enter or blur; Escape resets the draft. Selection and date controls commit immediately. A failed request leaves an error visible; null represents an explicitly cleared cell. Card view summarizes records and directs users to Table view to edit.
+* **Workspace tools**: Templates create editable pages, Import creates pages from Markdown or text files up to 1 MB each, and Trash restores deleted tree nodes and descendants. Files owns binary uploads; the sidebar links to GitHub issues for bug reports. See `docs/UX_REVIEW.md` for current limitations.
+* **Design Tokens**: Pure CSS variables engineered for Clocean:
   * **Typography**: `Spectral` (Serif) for headings and brand logo; `Schibsted Grotesk` (Sans-serif) for UI components.
   * **Theme**: Warm Parchment (`#FAF8F5`) for an editorial, distraction-free writing surface.
-  * **Icons**: Curated Lucide icons matching the Figma artboard specs.
+  * **Icons**: Curated Lucide icons matching Clocean design specifications.
 
 ---
 
@@ -67,25 +69,44 @@ Powered by [Hono](https://hono.dev/), a lightweight, edge-optimized routing fram
 * `GET /api/me`: Returns user profile, active workspaces, and authentication status.
 * `POST /api/auth/send-otp`: Local-development-only 6-digit verification helper.
 * `POST /api/auth/verify-otp`: Local-development-only OTP validation and session helper.
-* `GET /api/workspaces/:wsId/invite-info`: Unauthenticated endpoint returning public workspace name, icon, and member count for Notion-style share links.
+* `GET /api/workspaces/:wsId/invite-info`: Unauthenticated endpoint returning public workspace name, icon, and member count for workspace share links.
 * `POST /api/workspaces/:wsId/join`: Authenticated endpoint that completes a previously issued invitation; knowing a workspace ID alone is insufficient.
 * `GET /api/workspaces/:wsId/members`: Lists the authenticated workspace roster.
 * `DELETE /api/workspaces/:wsId/members/:email`: Removes a member for an owner or admin; owners and the current user cannot be removed.
 * `GET /api/tree`: Returns workspace folder and document tree.
 * `POST /api/tree/node`: Creates a note or folder with an optional parent folder.
+* `DELETE /api/tree/node/:id`: Moves a node and its descendants into `tree.json` Trash; content and binary objects are retained.
+* `GET /api/trash`, `POST /api/trash/:id/restore`: Lists recoverable items and restores a deleted subtree. Missing parent folders restore at workspace root.
 * `PUT /api/tree/node/:id`: Renames or moves a note or folder.
   * Moves validate that the destination is a folder and reject self or descendant cycles.
+* `GET /api/databases`, `POST /api/databases`: Lists and creates workspace databases configured with custom properties (select, multi-select, text, number, date).
+* `GET /api/databases/:dbId/records`, `POST /api/databases/:dbId/records`: Reads and creates records within an embedded database, persisted in R2.
+* `PATCH /api/databases/:dbId`, `DELETE /api/databases/:dbId`: Schema modification and database removal.
 * `POST /api/upload`: Direct streaming multipart upload to R2 without buffering in RAM.
 * `GET /api/files/:id/:filename`: Streams authenticated binary files from R2 with byte-range requests for documents and media.
 * `POST /api/user/avatar`: Uploads and validates custom profile avatar pictures directly to R2.
-* `GET /api/user/avatar/:email`: Edge-cached streaming of user avatar images with Dicebear fallback.
-* `GET /api/task-boards`, `POST /api/task-boards`: Lists and creates independent task boards.
-* `PATCH /api/task-boards/:boardId`, `DELETE /api/task-boards/:boardId`: Lets workspace owners/admins rename or remove non-default boards from Board Settings; removal deletes that board's task file from R2.
-* `GET /api/tasks?boardId=:id`, `PUT /api/tasks?boardId=:id`: Persists each board's typed ADO-style work items with notes, assignees, priorities, and calendar due dates.
+* `GET /api/task-boards`, `POST /api/task-boards`: Lists and creates independent task boards with custom workflow columns, icons, and WIP limits.
+* `PATCH /api/task-boards/:boardId`, `DELETE /api/task-boards/:boardId`: Updates board metadata, columns, and workflow settings; deletion removes custom boards and their associated R2 task records while protecting the default workspace board.
+* `POST /api/task-boards/:boardId/clear-completed`: Atomically clears all completed tasks from a board using optimistic ETag concurrency.
+* `GET /api/tasks?boardId=:id`, `PUT /api/tasks?boardId=:id`: Persists each board's typed work items with notes, assignees, priorities, and calendar due dates across custom workflow columns.
 * `POST /api/tasks/:taskId/comments`, `DELETE /api/tasks/:taskId`: Adds authenticated discussion comments or removes a work item using the board's R2 ETag.
-* `GET /api/photos`: Legacy media metadata retained for existing R2 records; media is presented from Documents in the main UI.
+* `GET /api/photos`: Media metadata and file streaming integrated into Documents and document Snaps.
 
-#### 2. Durable Objects Real-Time Room Sync (`worker/durable_objects/DocSessionDO.ts`)
+#### 2. Embedded Databases on Pages
+Interactive database blocks can be inserted into pages and edited in place. Standalone databases are available from workspace navigation:
+* **Orientation Toggle**: Supports both **Vertical Mode** (properties as rows, records as columns) and **Horizontal Mode** (classic column-based data grid).
+* **Property Typing**: Name (`Aa`), Priority (`⨀` with pastel badges 1–5), Text (`≡`), Multi-select (`:=` with pastel tag pills), Date (`📅`), and Number (`#`).
+* **In-Document Actions Bar**: Orientation switcher, real-time client filter popover, multi-property sorting, instant search, and blue "+ New" record insertion.
+* **Quick Configuration**: Starter templates (Project Roadmap, Task Checklist, Content Calendar, Bug Tracker) allow 1-click database creation directly into any document.
+
+#### 3. Minimalist Workspace Navigation & Snaps
+The workspace UX reflects a clean, modern minimalist layout:
+* **Workspace Tree**: Direct access to organization documents with intuitive emoji indicators (`🎯`, `👩`, `⏱`, `🎵`, `💻`, `📱`) and an inline `+` button to create pages on the fly.
+* **Quick Actions**: Navigation for `Templates`, `Import`, and `Trash`; mobile Workspace opens the sidebar. Report a bug opens the repository's GitHub issue form.
+* **Snaps Right Panel**: Media, design mockups, and photos live alongside documents in a collapsible right panel with visual cards, one-click `+ Add snap`, and discussion tabs.
+* **Document Canvas**: Editorial typography with amber tag pills (`#morning`, `#ideas`), circular checklist items with strikethrough, and floating bottom action buttons (`+` and `Aa`).
+
+#### 4. Durable Objects Real-Time Room Sync (`worker/durable_objects/DocSessionDO.ts`)
 * When multiple users open a document, their browsers establish a WebSocket connection to:
   ```text
   wss://clocean.yourdomain.com/api/collab/:docId
@@ -200,7 +221,7 @@ graph TD
     subgraph Mention Processing & Notification Engine
         EdgeAPI -->|Extract Mentions| Notifier[emailNotifier.ts]
         Notifier -->|Lookup Recipient & Sender| Roster[(workspaces/{wsId}/members.json)]
-        Notifier -->|Generate Branded HTML Email| EmailRenderer[Obsidian-styled Email Template]
+        Notifier -->|Generate Branded HTML Email| EmailRenderer[Branded HTML Email Template]
         EmailRenderer -->|Cloudflare Email Routing / Transactional API| Mailbox([Recipient Email Inbox])
         Notifier -->|Persist Notification Item| UserInbox[(users/{recipientEmail}/notifications.json)]
         Notifier -->|Audit Log| Outbox[(workspaces/{wsId}/notifications/outbox.json)]
@@ -213,15 +234,15 @@ graph TD
 #### How It Works
 1. **Interactive Autocomplete**: Typing `@` in the editor or comments panel displays a teammate popup with member avatars, names, emails, and roles.
 2. **Edge Regex & Fuzzy Detection**: `extractMentions` scans text for direct email mentions (`@elena@clocean.co`), full names (`@Elena Rostova`), and first names (`@Elena`), while preventing self-notification.
-3. **Figma-Branded HTML Emails**: Generates a responsive dark Obsidian/Warm Parchment HTML email with Clocean branding, sender avatar, context quote snippet, and direct deep-link (`/?doc={id}&ws={wsId}`).
+3. **Branded HTML Emails**: Generates a responsive dark Obsidian/Warm Parchment HTML email with Clocean branding, sender avatar, context quote snippet, and direct deep-link (`/?doc={id}&ws={wsId}`).
 4. **Zero-Database Notification Inboxes**: Notifications are stored directly in Cloudflare R2 at `workspaces/registry/users/{email}/notifications.json` with an outbox audit log at `workspaces/{wsId}/notifications/outbox.json`.
 5. **Real-Time Notification Bell**: The app header features an interactive notification bell with unread count badges and one-click mark-as-read.
 
 ---
 
-### Layer 7: Notion-Style Workspace & Document Sharing Flow
+### Layer 7: Workspace & Document Sharing Flow
 
-Clocean enables frictionless team onboarding and document sharing inspired by Notion's link-sharing model, operating without an external relational database.
+Clocean enables frictionless team onboarding and document sharing with a direct link-sharing model, operating without an external relational database.
 
 ```mermaid
 graph TD

@@ -8,7 +8,7 @@ import {
 
 const BASE_URL = "http://127.0.0.1:8787";
 
-describe("Notion-Style Invites, Avatar Storage, and Edge Schemas", () => {
+describe("Workspace Invites, Avatar Storage, and Edge Schemas", () => {
   const ownerEmail = `invite-owner-${Date.now()}@clocean.co`;
   const ownerToken = signSessionToken(ownerEmail);
   let createdWsId: string;
@@ -34,7 +34,7 @@ describe("Notion-Style Invites, Avatar Storage, and Edge Schemas", () => {
     createdWsId = data.id;
   });
 
-  // 2. Notion-Style Public Workspace Invite Info
+  // 2. Public Workspace Invite Info
   describe("Public Invite Info Endpoint", () => {
     it("should allow unauthenticated visitors to fetch workspace invite info", async () => {
       const res = await fetch(`${BASE_URL}/api/workspaces/${createdWsId}/invite-info`, {
@@ -57,7 +57,7 @@ describe("Notion-Style Invites, Avatar Storage, and Edge Schemas", () => {
     });
   });
 
-  // 3. Notion-Style 1-Click Join for Logged-In Teammates
+  // 3. 1-Click Join for Logged-In Teammates
   describe("1-Click Join for Existing Users", () => {
     const existingMemberEmail = `existing-user-${Date.now()}@clocean.co`;
     const existingMemberToken = signSessionToken(existingMemberEmail);
@@ -104,7 +104,7 @@ describe("Notion-Style Invites, Avatar Storage, and Edge Schemas", () => {
     });
   });
 
-  // 4. Notion-Style New User Sign-Up via Invite Link (OTP Flow)
+  // 4. New User Sign-Up via Invite Link (OTP Flow)
   describe("New User Sign-Up and Auto-Join via Invite OTP", () => {
     const newInviteeEmail = `invite-signup-${Date.now()}@clocean.co`;
 
@@ -267,7 +267,7 @@ describe("Notion-Style Invites, Avatar Storage, and Edge Schemas", () => {
 
       const validTextDate = TaskItemSchema.safeParse({
         id: "task-2",
-        title: "Review Figma mockups",
+        title: "Review design mockups",
         status: "todo",
         dueDate: "Due Friday",
       });

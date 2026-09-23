@@ -83,7 +83,7 @@ The deployed `workers.dev` hostname is a valid Access application hostname. A Pa
 
 ---
 
-## Configure Cloudflare Zero Trust Access (Free for 50 Users)
+## Configure Cloudflare Zero Trust Access (Free for up to 50 Users)
 
 To protect your Clocean instance so only you and your team can log in:
 
@@ -101,6 +101,16 @@ To protect your Clocean instance so only you and your team can log in:
      * **Include** -> **Emails**: Enter team members' emails (e.g. `alex@company.com`, `marcus@company.com`).
      * OR **Include** -> **Email Domains**: Enter your company domain (e.g. `company.com`).
 6. Click **Next** > **Save**.
+
+### Google and Cloudflare sign-in
+
+Cloudflare Access presents the provider choice before the application loads. Clocean verifies the resulting Access JWT; it does not store provider credentials or implement its own social-login buttons.
+
+1. In **Zero Trust > Integrations > Identity providers**, keep or add **Cloudflare**. New Zero Trust organizations normally include it, initially restricted to Cloudflare account members. Existing organizations may need to add it. Choose the membership restriction that matches your intended audience, and retain an Access Allow policy for approved emails or domains.
+2. [Set up Google as an Access identity provider](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/google/). Create a Google OAuth client with the callback `https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/callback`, then enter its client ID and secret in the Cloudflare provider settings. Google Workspace is not required for ordinary Google-account login.
+3. In **Access controls > Applications**, edit the Clocean self-hosted application and select **both Cloudflare and Google** as login methods. Keep instant authentication off so users can choose. Test each provider from the Identity providers page, then test the protected application with an email allowed by the Access policy.
+
+Google and Cloudflare Access are available on the Zero Trust free tier for up to 50 users. The Google OAuth client and Cloudflare provider settings belong to the deployer's accounts and cannot be configured by a Worker deployment alone. Do not put OAuth client secrets in the repository. There is no direct Apple sign-in button: [Sign in with Apple for a website](https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple) requires Apple developer configuration and [membership](https://developer.apple.com/programs/). A user who created a Cloudflare account using Apple may still sign in through the **Cloudflare** option, subject to the Access policy.
 
 ### How Authentication Works:
 Once configured, Cloudflare Access intercepts requests before they hit your Worker. Clocean independently verifies the accompanying `Cf-Access-Jwt-Assertion` against Cloudflare's public JWKS and only then uses the email claim. The email header alone is never trusted in production.

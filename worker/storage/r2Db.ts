@@ -602,7 +602,7 @@ export class R2Database {
     await this.putJson(key, { activities: list.slice(0, 50) });
   }
 
-  // Seed initial data matching the exact Figma designs if R2 is fresh
+  // Seed initial data if R2 is fresh
   async ensureSeeded(): Promise<void> {
     const tree = await this.getJson<WorkspaceTree>("workspaces/default/tree.json");
     if (!tree.data) {
@@ -744,7 +744,7 @@ Clocean replaces heavy SQL servers with structured JSON documents backed by Clou
       };
       await this.putJson("workspaces/default/docs/doc-manifesto/content.json", manifestoDoc);
 
-      // Seed Tasks matching Figma
+      // Seed initial Tasks
       const initialTasks: TasksData = {
         updatedAt: now,
         tasks: [
@@ -794,7 +794,7 @@ Clocean replaces heavy SQL servers with structured JSON documents backed by Clou
       };
       await this.putJson("workspaces/default/tasks.json", initialTasks);
 
-      // Seed Photos matching Figma
+      // Seed initial Photos
       const initialPhotos: PhotosData = {
         updatedAt: now,
         photos: [
@@ -866,7 +866,7 @@ Clocean replaces heavy SQL servers with structured JSON documents backed by Clou
       };
       await this.putJson("workspaces/default/photos.json", initialPhotos);
 
-      // Seed Activity Feed matching Figma
+      // Seed initial Activity Feed
       const initialActivities: ActivitiesData = {
         activities: [
           {

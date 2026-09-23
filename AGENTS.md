@@ -28,12 +28,17 @@ Welcome to **Clocean**! This file serves as the definitive reference and operati
    - Do NOT build a password-based auth system or store user passwords.
    - Local development uses mock header / query fallbacks (`?user=marcus`) to test multiplayer features without configuring Zero Trust locally.
 
-4. **FIGMA DESIGN SYSTEM FIDELITY**:
+4. **DESIGN SYSTEM FIDELITY**:
    - Headings & Brand: **`Spectral`** (Serif 500, 600).
    - UI & Body: **`Schibsted Grotesk`** (Sans-serif 400, 500, 600).
    - Dark Theme (Obsidian): `#1C1C1A` background, `#141412` sidebar, `#232321` surface, `#E8E5E0` text.
    - Light Theme (Warm Parchment): `#FAF8F5` background, `#F2EDE6` sidebar, `#FFFFFF` surface, `#1C1C1A` text.
    - Brand Accent: `#1E7D6B` (Emerald/Teal).
+
+5. **ZERO MICROSOFT AZURE / EXTERNAL CLOUD DEPENDENCIES**:
+   - The project strictly runs on Cloudflare serverless edge infrastructure (Workers, Pages, R2, Durable Objects).
+   - Never introduce Microsoft Azure, AWS (other than S3-compatible R2 API), Google Cloud, or third-party proprietary services.
+   - E2E testing uses native Cypress running against the local Vite build.
 
 ---
 
@@ -68,9 +73,9 @@ clocean/
 │   ├── App.tsx                # App shell, routing, modals, and theme provider
 │   ├── types.ts               # Frontend TypeScript interfaces
 │   ├── styles/
-│   │   └── design-tokens.css  # Extracted Figma CSS tokens (Dark/Light themes)
+│   │   └── design-tokens.css  # Extracted Clocean CSS tokens (Dark/Light themes)
 │   ├── components/
-│   │   ├── Sidebar.tsx        # Left navigation matching Figma v2-dashboard
+│   │   ├── Sidebar.tsx        # Left navigation matching Clocean v2-dashboard
 │   │   ├── Header.tsx         # Contextual header with breadcrumbs & collaborator avatars
 │   │   ├── SearchModal.tsx    # Global Ctrl+K workspace search modal
 │   │   ├── SettingsModal.tsx  # Settings dialog with real R2 avatar upload
@@ -78,7 +83,7 @@ clocean/
 │   │   ├── TeamMembersModal.tsx # Team roster management & invitation modal
 │   │   └── FilePreviewModal.tsx # PDF & Image viewer for R2 files
 │   └── views/
-│       ├── DashboardView.tsx  # Figma v2-dashboard greeting & recent activity
+│       ├── DashboardView.tsx  # Clocean v2-dashboard greeting & recent activity
 │       ├── EditorView.tsx     # Real-time multi-editing collaborative block editor
 │       ├── DocumentsView.tsx  # High-performance file manager with R2 streaming
 │       ├── TasksView.tsx      # Kanban sprint board (To Do, In Progress, Done)
@@ -105,13 +110,15 @@ clocean/
 | `workspaces/registry/otp/{email}.json` | 6-digit OTP verification codes & metadata | Direct JSON write |
 | `workspaces/{wsId}/meta.json` | Organization metadata & ownership | Direct JSON write |
 | `workspaces/{wsId}/members.json` | Team members roster & roles | Direct JSON write |
-| `workspaces/{wsId}/tree.json` | File & document hierarchy index | Optimistic locking via `If-Match` ETags |
+| `workspaces/{wsId}/tree.json` | Active file/document tree and recoverable Trash entries | Optimistic locking via `If-Match` ETags |
 | `workspaces/{wsId}/docs/{id}/content.json` | Document body, blocks, attachments | Debounced write from Durable Object |
 | `workspaces/{wsId}/tasks.json` | Sprint Kanban tasks, assignees & deadlines | Direct JSON write |
 | `workspaces/{wsId}/photos.json` | Photo gallery registry | Direct JSON write |
 | `workspaces/{wsId}/activity.json` | Activity changelog | Appended on upload / edits |
 | `workspaces/{wsId}/favorites.json` | Pinned and starred documents per user | Direct JSON write |
 | `workspaces/{wsId}/public/{token}.json` | Read-only public share mappings | Direct JSON write |
+| `workspaces/{wsId}/databases/index.json` | Authoritative database schema registry | Optimistic locking via `If-Match` ETags |
+| `workspaces/{wsId}/databases/{id}/records.json` | Database rows, cell values, and timestamps | Optimistic locking via `If-Match` ETags |
 | `workspaces/registry/users/{email}/notifications.json` | User mention notifications & email log | Direct JSON write |
 | `workspaces/{wsId}/notifications/outbox.json` | Workspace email dispatch audit outbox | Direct JSON write |
 | `workspaces/{wsId}/docs/{id}/comments.json` | Document discussion comments & @mentions | Direct JSON write |
@@ -126,20 +133,35 @@ clocean/
 ### 1. Build and Typecheck
 Always verify that both frontend and worker typecheck cleanly:
 ```bash
-pnpm build
+npm run build
 ```
 
-### 2. Run Local Development Stack
+### 2. Run Tests & E2E Verification
+```bash
+# Run unit & integration test suite (Vitest)
+npm test
+
+# Run UI & component unit tests
+npm run test:unit
+
+# Run full Cypress E2E test suite (Headless)
+npm run test:e2e
+
+# Open interactive Cypress runner
+npm run cypress:open
+```
+
+### 3. Run Local Development Stack
 ```bash
 # Starts Cloudflare Worker with local R2 & Durable Objects emulation
-pnpm worker:dev
+npm run worker:dev
 
 # Starts Vite React dev server on port 3000
-pnpm dev
+npm run dev
 ```
 
-### 3. Deploy to Cloudflare
+### 4. Deploy to Cloudflare
 ```bash
-pnpm deploy
+npm run deploy
 ```
-*(Runs `pnpm build` and then `wrangler deploy` to push static assets to Pages and edge code to Workers).*
+*(Runs `npm run build` and then `wrangler deploy` to push static assets to Pages and edge code to Workers).*

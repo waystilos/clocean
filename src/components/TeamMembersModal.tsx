@@ -301,7 +301,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
             </div>
           )}
 
-          {/* Notion-style Workspace Invite Link */}
+          {/* Workspace Invite Link */}
           <div
             style={{
               padding: "14px 16px",

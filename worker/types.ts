@@ -16,6 +16,7 @@ export interface WorkspaceTree {
   workspaceId: string;
   updatedAt: string;
   nodes: TreeNode[];
+  trash?: { id: string; name: string; deletedAt: string; nodes: TreeNode[] }[];
 }
 
 export type DatabasePropertyType = "text" | "number" | "select" | "multi_select" | "date" | "checkbox" | "person" | "url";
@@ -115,7 +116,7 @@ export interface TaskItem {
   title: string;
   description?: string;
   type?: TaskType;
-  status: "todo" | "inprogress" | "done";
+  status: "todo" | "inprogress" | "done" | string;
   priority?: "urgent" | "high" | "medium" | "low";
   dueDate: string;
   assignee: {
@@ -134,9 +135,22 @@ export interface TasksData {
   updatedAt: string;
 }
 
+export interface TaskBoardColumn {
+  id: string;
+  title: string;
+  color?: string;
+  wipLimit?: number;
+}
+
 export interface TaskBoard {
   id: string;
   name: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  columns?: TaskBoardColumn[];
+  defaultView?: "board" | "table";
+  defaultPriority?: "urgent" | "high" | "medium" | "low";
   createdAt: string;
   updatedAt: string;
 }

@@ -9,6 +9,7 @@ import {
   TaskComment,
   TasksData,
   TaskBoard,
+  TaskBoardColumn,
   PhotosData,
   ActivitiesData,
   DocComment,
@@ -40,6 +41,8 @@ import {
   SaveDocSchema,
   ShareDocSchema,
   TaskItemSchema,
+  CreateTaskBoardSchema,
+  UpdateTaskBoardSchema,
   AddCommentSchema,
   MentionNotificationPayloadSchema,
   UpdateUserProfileSchema,
@@ -52,7 +55,9 @@ import {
   VerifyOtpSchema,
   CheckDeadlinesSchema,
   CreateDatabaseSchema,
+  UpdateDatabaseSchema,
   DatabaseRecordPayloadSchema,
+  UpdateDatabaseRecordPayloadSchema,
 } from "./schemas.ts";
 
 export { DocSessionDO };
@@ -946,7 +951,7 @@ app.delete("/api/workspaces/:wsId/members/:email", async (c) => {
   return c.json(result.members);
 });
 
-// R2-backed Notion-style databases. All routes inherit workspace membership middleware above.
+// R2-backed custom database tables. All routes inherit workspace membership middleware above.
 app.get("/api/databases", async (c) => {
   const store = new DatabaseStore(new R2Database(c.env.CLOCEAN_STORAGE));
   return c.json({ databases: await store.list(getWorkspaceId(c)) });
@@ -963,6 +968,25 @@ app.post("/api/databases", async (c) => {
   } catch (error) {
     if (error instanceof DatabaseConflictError) return c.json({ error: error.message }, 409);
     return c.json({ error: "Failed to create database" }, 500);
+  }
+});
+
+app.patch("/api/databases/:databaseId", async (c) => {
+  const databaseId = c.req.param("databaseId");
+  if (!isValidId(databaseId)) return c.json({ error: "Invalid database ID" }, 400);
+  const oversized = rejectOversizedRequest(c, 32 * 1024);
+  if (oversized) return oversized;
+  const parsed = UpdateDatabaseSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Invalid database schema", details: parsed.error.issues }, 400);
+  try {
+    const schema = await new DatabaseStore(new R2Database(c.env.CLOCEAN_STORAGE)).update(
+      getWorkspaceId(c), databaseId, parsed.data.name, parsed.data.properties
+    );
+    if (!schema) return c.json({ error: "Database not found" }, 404);
+    return c.json(schema);
+  } catch (error) {
+    if (error instanceof DatabaseConflictError) return c.json({ error: error.message }, 409);
+    return c.json({ error: "Failed to update database" }, 500);
   }
 });
 
@@ -995,6 +1019,31 @@ app.post("/api/databases/:databaseId/records", async (c) => {
   }
 });
 
+app.patch("/api/databases/:databaseId/records/:recordId", async (c) => {
+  const databaseId = c.req.param("databaseId");
+  const recordId = c.req.param("recordId");
+  if (!isValidId(databaseId) || !isValidId(recordId)) return c.json({ error: "Invalid database or record ID" }, 400);
+  const oversized = rejectOversizedRequest(c, 32 * 1024);
+  if (oversized) return oversized;
+  const parsed = UpdateDatabaseRecordPayloadSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Invalid database record update", details: parsed.error.issues }, 400);
+  try {
+    const updated = await new DatabaseStore(new R2Database(c.env.CLOCEAN_STORAGE)).updateRecord(
+      getWorkspaceId(c),
+      databaseId,
+      recordId,
+      parsed.data,
+      getRequesterEmail(c)
+    );
+    if (!updated) return c.json({ error: "Record not found" }, 404);
+    return c.json(updated);
+  } catch (error) {
+    if (error instanceof DatabaseValidationError) return c.json({ error: error.message }, 400);
+    if (error instanceof DatabaseConflictError) return c.json({ error: error.message }, 409);
+    return c.json({ error: "Failed to update database record" }, 500);
+  }
+});
+
 app.delete("/api/databases/:databaseId/records/:recordId", async (c) => {
   const databaseId = c.req.param("databaseId");
   const recordId = c.req.param("recordId");
@@ -1008,12 +1057,52 @@ app.delete("/api/databases/:databaseId/records/:recordId", async (c) => {
   }
 });
 
+app.delete("/api/databases/:databaseId", async (c) => {
+  const databaseId = c.req.param("databaseId");
+  if (!isValidId(databaseId)) return c.json({ error: "Invalid database ID" }, 400);
+  try {
+    const deleted = await new DatabaseStore(new R2Database(c.env.CLOCEAN_STORAGE)).delete(
+      getWorkspaceId(c),
+      databaseId
+    );
+    if (!deleted) return c.json({ error: "Database not found" }, 404);
+    return c.json({ ok: true, deletedId: databaseId });
+  } catch (error) {
+    if (error instanceof DatabaseConflictError) return c.json({ error: error.message }, 409);
+    return c.json({ error: "Failed to delete database" }, 500);
+  }
+});
+
 // Workspace Tree Endpoints
 app.get("/api/tree", async (c) => {
   const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const { data } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
-  return c.json(data || { workspaceId: ws, nodes: [], updatedAt: new Date().toISOString() });
+  return c.json(data ? { workspaceId: ws, nodes: data.nodes, updatedAt: data.updatedAt } : { workspaceId: ws, nodes: [], updatedAt: new Date().toISOString() });
+});
+
+app.get("/api/trash", async (c) => {
+  const { data } = await new R2Database(c.env.CLOCEAN_STORAGE).getJson<WorkspaceTree>(`workspaces/${getWorkspaceId(c)}/tree.json`);
+  return c.json({ items: (data?.trash || []).map(({ nodes, ...item }) => ({ ...item, count: nodes.length })) });
+});
+
+app.post("/api/trash/:id/restore", async (c) => {
+  const id = c.req.param("id");
+  if (!isValidId(id)) return c.json({ error: "Invalid item ID" }, 400);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const key = `workspaces/${getWorkspaceId(c)}/tree.json`;
+  const { data, etag } = await db.getJson<WorkspaceTree>(key);
+  const item = data?.trash?.find((entry) => entry.id === id);
+  if (!data || !item) return c.json({ error: "Trash item not found" }, 404);
+  const ids = new Set(data.nodes.map((node) => node.id));
+  if (item.nodes.some((node) => ids.has(node.id))) return c.json({ error: "An item with this ID already exists" }, 409);
+  const folderIds = new Set([...data.nodes, ...item.nodes].filter((node) => node.type === "folder").map((node) => node.id));
+  data.nodes.push(...item.nodes.map((node) => ({ ...node, parentId: node.parentId && folderIds.has(node.parentId) ? node.parentId : null })));
+  data.trash = data.trash!.filter((entry) => entry.id !== id);
+  data.updatedAt = new Date().toISOString();
+  const result = await db.putJson(key, data, etag || undefined);
+  if (!result.ok) return c.json({ error: "Workspace changed. Reload Trash and try again." }, 409);
+  return c.json({ success: true });
 });
 
 app.post("/api/tree/node", async (c) => {
@@ -1029,6 +1118,12 @@ app.post("/api/tree/node", async (c) => {
   if (!data) return c.json({ error: "Tree not found" }, 404);
 
   const body = parsed.data;
+  if (body.parentId && !data.nodes.some((node) => node.id === body.parentId && node.type === "folder")) {
+    return c.json({ error: "Parent folder not found" }, 400);
+  }
+  if (body.id && (data.nodes.some((node) => node.id === body.id) || data.trash?.some((entry) => entry.nodes.some((node) => node.id === body.id)))) {
+    return c.json({ error: "An item with this ID already exists" }, 409);
+  }
   const newNode: TreeNode = {
     id: body.id && isValidId(body.id) ? body.id : `node-${crypto.randomUUID()}`,
     name: sanitizeFilename(body.name),
@@ -1054,7 +1149,8 @@ app.post("/api/tree/node", async (c) => {
       updatedAt: new Date().toISOString(),
       attachments: [],
     };
-    await db.putJson(`workspaces/${ws}/docs/${newNode.id}/content.json`, docData);
+    const initialized = await db.putJson(`workspaces/${ws}/docs/${newNode.id}/content.json`, docData);
+    if (!initialized.ok) return c.json({ error: "Could not initialize document" }, 409);
   }
 
   const write = await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
@@ -1116,12 +1212,29 @@ app.delete("/api/tree/node/:id", async (c) => {
   const { data, etag } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
   if (!data) return c.json({ error: "Tree not found" }, 404);
 
-  data.nodes = data.nodes.filter((n) => n.id !== id);
+  // Find all descendant IDs if deleting a folder
+  const idsToDelete = new Set<string>([id]);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const n of data.nodes) {
+      if (n.parentId && idsToDelete.has(n.parentId) && !idsToDelete.has(n.id)) {
+        idsToDelete.add(n.id);
+        added = true;
+      }
+    }
+  }
+
+  const deletedNodes = data.nodes.filter((n) => idsToDelete.has(n.id));
+  if (!deletedNodes.length) return c.json({ error: "Item not found" }, 404);
+  data.trash = [...(data.trash || []), { id, name: deletedNodes.find((node) => node.id === id)!.name, deletedAt: new Date().toISOString(), nodes: deletedNodes }];
+  data.nodes = data.nodes.filter((n) => !idsToDelete.has(n.id));
   data.updatedAt = new Date().toISOString();
 
   const write = await db.putJson(`workspaces/${ws}/tree.json`, data, etag || undefined);
   if (!write.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
-  return c.json({ success: true, deletedId: id });
+  // Content and binaries are retained. Trash and active nodes change in one ETag write.
+  return c.json({ success: true, deletedId: id, deletedCount: idsToDelete.size });
 });
 
 // Document Content Endpoints
@@ -1354,6 +1467,8 @@ app.get("/api/public/docs/:token", async (c) => {
   if (!lookup.data) return c.json({ error: "Public document not found or sharing disabled" }, 404);
 
   const { workspaceId, docId } = lookup.data;
+  const tree = await db.getJson<WorkspaceTree>(`workspaces/${workspaceId}/tree.json`);
+  if (tree.data?.trash?.some((entry) => entry.nodes.some((node) => node.id === docId))) return c.json({ error: "Document is in Trash" }, 404);
   const docRes = await db.getJson<DocContent>(`workspaces/${workspaceId}/docs/${docId}/content.json`);
   if (!docRes.data || !docRes.data.isPublic || docRes.data.publicToken !== token) {
     return c.json({ error: "Public document not found or sharing disabled" }, 404);
@@ -1644,14 +1759,28 @@ app.post("/api/upload", async (c) => {
     },
   });
 
-  // Record node in tree
+  // Record node in tree with optional parentId (folder placement)
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const { data, etag } = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
+
+  const parentIdRaw =
+    (typeof body["parentId"] === "string" ? body["parentId"].trim() : "") ||
+    c.req.query("parentId") ||
+    c.req.header("x-parent-id") ||
+    null;
+
+  let assignedParentId: string | null = null;
+  if (parentIdRaw && isValidId(parentIdRaw)) {
+    if (data && data.nodes.some((n) => n.id === parentIdRaw && n.type === "folder")) {
+      assignedParentId = parentIdRaw;
+    }
+  }
+
   const newNode: TreeNode = {
     id: fileId,
     name: filename,
     type: "file",
-    parentId: null,
+    parentId: assignedParentId,
     size: file.size,
     mimeType: file.type,
     updatedAt: "Just now",
@@ -1701,6 +1830,7 @@ app.post("/api/upload", async (c) => {
     name: filename,
     size: file.size,
     mimeType: file.type,
+    parentId: newNode.parentId,
     url: `/api/files/${fileId}/${encodeURIComponent(filename)}`,
   });
 });
@@ -1749,31 +1879,65 @@ app.get("/api/files/:id/:filename", async (c) => {
   });
 });
 
-// Kanban Tasks
+// Kanban Tasks & Board Settings
+const DEFAULT_BOARD_COLUMNS: TaskBoardColumn[] = [
+  { id: "todo", title: "To Do", color: "#64748B" },
+  { id: "inprogress", title: "In Progress", color: "#2563EB", wipLimit: 10 },
+  { id: "done", title: "Done", color: "#16A34A" },
+];
+
 app.get("/api/task-boards", async (c) => {
   const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const key = `workspaces/${ws}/task-boards.json`;
   const existing = await db.getJson<{ boards: TaskBoard[] }>(key);
-  if (existing.data?.boards) return c.json(existing.data.boards);
+  if (existing.data?.boards) {
+    const normalizedBoards = existing.data.boards.map((b) => ({
+      ...b,
+      columns: Array.isArray(b.columns) && b.columns.length > 0 ? b.columns : DEFAULT_BOARD_COLUMNS,
+    }));
+    return c.json(normalizedBoards);
+  }
   const current = await db.getJson<TasksData>(`workspaces/${ws}/tasks.json`);
   const now = new Date().toISOString();
-  const board: TaskBoard = { id: "default", name: "Sprint board", createdAt: now, updatedAt: now };
+  const board: TaskBoard = {
+    id: "default",
+    name: "Sprint board",
+    columns: DEFAULT_BOARD_COLUMNS,
+    defaultView: "board",
+    defaultPriority: "medium",
+    createdAt: now,
+    updatedAt: now,
+  };
   await db.putJson(key, { boards: [board] });
   if (current.data) await db.putJson(`workspaces/${ws}/task-boards/default.json`, current.data);
   return c.json([board]);
 });
 
 app.post("/api/task-boards", async (c) => {
-  const json = await c.req.json().catch(() => null) as { name?: unknown } | null;
-  const name = typeof json?.name === "string" ? json.name.trim().slice(0, 100) : "";
-  if (!name) return c.json({ error: "Board name is required" }, 400);
+  const json = await c.req.json().catch(() => null);
+  const parsed = CreateTaskBoardSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.issues[0]?.message || "Board name is required" }, 400);
+  }
+  const { name, description, icon, color, columns, defaultView, defaultPriority } = parsed.data;
   const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const key = `workspaces/${ws}/task-boards.json`;
   const current = await db.getJson<{ boards: TaskBoard[] }>(key);
   const now = new Date().toISOString();
-  const board: TaskBoard = { id: `board-${crypto.randomUUID()}`, name, createdAt: now, updatedAt: now };
+  const board: TaskBoard = {
+    id: `board-${crypto.randomUUID()}`,
+    name,
+    description: description || undefined,
+    icon: icon || undefined,
+    color: color || undefined,
+    columns: Array.isArray(columns) && columns.length > 0 ? columns : DEFAULT_BOARD_COLUMNS,
+    defaultView: defaultView || "board",
+    defaultPriority: defaultPriority || "medium",
+    createdAt: now,
+    updatedAt: now,
+  };
   const write = await db.putJson(key, { boards: [...(current.data?.boards || []), board] }, current.etag || undefined);
   if (!write.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
   await db.putJson(`workspaces/${ws}/task-boards/${board.id}.json`, { tasks: [], updatedAt: now });
@@ -1782,23 +1946,47 @@ app.post("/api/task-boards", async (c) => {
 
 app.patch("/api/task-boards/:boardId", async (c) => {
   const boardId = c.req.param("boardId");
-  const json = await c.req.json().catch(() => null) as { name?: unknown } | null;
-  const name = typeof json?.name === "string" ? json.name.trim().slice(0, 100) : "";
-  if (!isValidId(boardId) || boardId === "default" || !name) return c.json({ error: "A valid non-default board name is required" }, 400);
+  if (!isValidId(boardId)) return c.json({ error: "A valid board ID is required" }, 400);
+  const json = await c.req.json().catch(() => null);
+  const parsed = UpdateTaskBoardSchema.safeParse(json);
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.issues[0]?.message || "Invalid board update payload" }, 400);
+  }
   const ws = getWorkspaceId(c);
   const email = getRequesterEmail(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const members = await db.getWorkspaceMembers(ws);
   const requester = members.find((member) => member.email.toLowerCase() === email.toLowerCase());
-  if (!requester || (requester.role !== "owner" && requester.role !== "admin")) {
-    return c.json({ error: "Only workspace owners and admins can rename task boards" }, 403);
+  if (members.length > 0 && (!requester || (requester.role !== "owner" && requester.role !== "admin"))) {
+    return c.json({ error: "Only workspace owners and admins can modify board settings" }, 403);
   }
   const key = `workspaces/${ws}/task-boards.json`;
   const current = await db.getJson<{ boards: TaskBoard[] }>(key);
-  const board = current.data?.boards?.find((item) => item.id === boardId);
+  let existingBoards = current.data?.boards || [];
+  let board = existingBoards.find((item) => item.id === boardId);
+
+  // If default board not yet recorded explicitly, create placeholder
+  if (!board && boardId === "default") {
+    const now = new Date().toISOString();
+    board = { id: "default", name: "Sprint board", columns: DEFAULT_BOARD_COLUMNS, createdAt: now, updatedAt: now };
+    existingBoards = [board, ...existingBoards];
+  }
+
   if (!board) return c.json({ error: "Task board not found" }, 404);
-  const updatedBoard = { ...board, name, updatedAt: new Date().toISOString() };
-  const boards = current.data!.boards.map((item) => item.id === boardId ? updatedBoard : item);
+
+  const updatedBoard: TaskBoard = {
+    ...board,
+    ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+    ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+    ...(parsed.data.icon !== undefined ? { icon: parsed.data.icon } : {}),
+    ...(parsed.data.color !== undefined ? { color: parsed.data.color } : {}),
+    ...(parsed.data.columns !== undefined ? { columns: parsed.data.columns } : {}),
+    ...(parsed.data.defaultView !== undefined ? { defaultView: parsed.data.defaultView } : {}),
+    ...(parsed.data.defaultPriority !== undefined ? { defaultPriority: parsed.data.defaultPriority } : {}),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const boards = existingBoards.map((item) => (item.id === boardId ? updatedBoard : item));
   const write = await db.putJson(key, { boards }, current.etag || undefined);
   if (!write.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
   return c.json(updatedBoard);
@@ -1812,7 +2000,7 @@ app.delete("/api/task-boards/:boardId", async (c) => {
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const members = await db.getWorkspaceMembers(ws);
   const requester = members.find((member) => member.email.toLowerCase() === email.toLowerCase());
-  if (!requester || (requester.role !== "owner" && requester.role !== "admin")) {
+  if (members.length > 0 && (!requester || (requester.role !== "owner" && requester.role !== "admin"))) {
     return c.json({ error: "Only workspace owners and admins can remove task boards" }, 403);
   }
   const key = `workspaces/${ws}/task-boards.json`;
@@ -1823,6 +2011,34 @@ app.delete("/api/task-boards/:boardId", async (c) => {
   if (!write.ok) return c.json({ error: "Workspace changed concurrently; please retry" }, 409);
   await db.deleteKey(`workspaces/${ws}/task-boards/${boardId}.json`);
   return c.json({ success: true });
+});
+
+app.post("/api/task-boards/:boardId/clear-completed", async (c) => {
+  const boardId = c.req.param("boardId");
+  if (!isValidId(boardId)) return c.json({ error: "Invalid board ID" }, 400);
+  const ws = getWorkspaceId(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const tasksKey = boardId === "default" ? `workspaces/${ws}/tasks.json` : `workspaces/${ws}/task-boards/${boardId}.json`;
+  const existing = await db.getJson<TasksData>(tasksKey);
+  const tasks = existing.data?.tasks || [];
+  const remaining = tasks.filter((t) => t.status !== "done");
+  const removedCount = tasks.length - remaining.length;
+  const write = await db.putJson(tasksKey, { tasks: remaining, updatedAt: new Date().toISOString() }, existing.etag || undefined);
+  if (!write.ok) return c.json({ error: "Tasks changed concurrently; please retry" }, 409);
+  return c.json({ success: true, removedCount });
+});
+
+app.post("/api/task-boards/:boardId/clear-all", async (c) => {
+  const boardId = c.req.param("boardId");
+  if (!isValidId(boardId)) return c.json({ error: "Invalid board ID" }, 400);
+  const ws = getWorkspaceId(c);
+  const db = new R2Database(c.env.CLOCEAN_STORAGE);
+  const tasksKey = boardId === "default" ? `workspaces/${ws}/tasks.json` : `workspaces/${ws}/task-boards/${boardId}.json`;
+  const existing = await db.getJson<TasksData>(tasksKey);
+  const tasks = existing.data?.tasks || [];
+  const write = await db.putJson(tasksKey, { tasks: [], updatedAt: new Date().toISOString() }, existing.etag || undefined);
+  if (!write.ok) return c.json({ error: "Tasks changed concurrently; please retry" }, 409);
+  return c.json({ success: true, removedCount: tasks.length });
 });
 
 app.get("/api/tasks", async (c) => {
@@ -2012,7 +2228,9 @@ app.get("/api/photos", async (c) => {
   const ws = getWorkspaceId(c);
   const db = new R2Database(c.env.CLOCEAN_STORAGE);
   const { data } = await db.getJson<PhotosData>(`workspaces/${ws}/photos.json`);
-  return c.json(data?.photos || []);
+  const tree = await db.getJson<WorkspaceTree>(`workspaces/${ws}/tree.json`);
+  const trashed = new Set(tree.data?.trash?.flatMap((entry) => entry.nodes.map((node) => node.id)) || []);
+  return c.json((data?.photos || []).filter((photo) => !trashed.has(photo.id)));
 });
 
 // Activity Feed

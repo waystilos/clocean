@@ -196,7 +196,7 @@ describe("Clocean @ Mentions & Email Notification System", () => {
       const tasksPayload = [
         {
           id: taskId,
-          title: "Complete Figma design export @Elena Rostova",
+          title: "Complete design export @Elena Rostova",
           status: "todo",
           priority: "urgent",
           dueDate: "Due tomorrow",
@@ -221,7 +221,7 @@ describe("Clocean @ Mentions & Email Notification System", () => {
       const elenaNotifs = await fetch(`${BASE_URL}/api/notifications?user=elena`);
       expect(elenaNotifs.status).toBe(200);
       const notifications = (await elenaNotifs.json()) as MentionNotification[];
-      const found = notifications.find((n) => n.taskId === taskId || n.contextSnippet.includes("Figma design export"));
+      const found = notifications.find((n) => n.taskId === taskId || n.contextSnippet.includes("design export"));
       expect(found).toBeDefined();
       expect(found?.type).toBe("task");
       expect(found?.recipientEmail).toBe("elena@clocean.co");

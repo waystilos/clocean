@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "worker:dev": "wrangler dev",
+    "worker:dev": "wrangler dev --local --var ENVIRONMENT:development",
     "worker:deploy": "wrangler deploy",
-    "deploy": "pnpm build && wrangler deploy",
-    "deploy:app": "pnpm build && wrangler deploy",
-    "ship": "pnpm build && wrangler deploy",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:app": "npm run build && wrangler deploy",
+    "ship": "npm run build && wrangler deploy",
     "deploy:one-click": "bash scripts/one-click-deploy.sh",
     "setup:r2": "bash scripts/setup-r2.sh",
     "login:local": "pulumi login --local",
@@ -18,7 +18,11 @@
     "login:r2": "bash scripts/pulumi-r2-login.sh",
     "infra:login:r2": "bash scripts/pulumi-r2-login.sh",
     "preview": "vite preview",
-    "test": "vitest run --fileParallelism=false"
+    "test": "vitest run --fileParallelism=false",
+    "test:unit": "vitest run --fileParallelism=false",
+    "test:e2e": "npm run build && node scripts/run-cypress.js",
+    "cypress:open": "cypress open",
+    "cypress:run": "node scripts/run-cypress.js"
   },
   "packageManager": "pnpm@10.29.1",
   "dependencies": {
@@ -36,6 +40,7 @@
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
+    "cypress": "^16.1.0",
     "typescript": "^5.7.3",
     "vite": "^6.2.0",
     "vitest": "^5.0.1",

@@ -1,13 +1,14 @@
 import React, { useState } from "react";
-import { Upload, X, Eye, Download } from "lucide-react";
+import { Upload, X, Eye, Download, Trash2 } from "lucide-react";
 import { PhotoItem } from "../types.ts";
 
 interface PhotosViewProps {
   photos: PhotoItem[];
   onUploadPhoto?: (file: File) => void;
+  onDeletePhoto?: (photo: PhotoItem) => Promise<void>;
 }
 
-export const PhotosView: React.FC<PhotosViewProps> = ({ photos, onUploadPhoto }) => {
+export const PhotosView: React.FC<PhotosViewProps> = ({ photos, onUploadPhoto, onDeletePhoto }) => {
   const [tab, setTab] = useState<"all" | "albums" | "recent">("all");
   const [activePhoto, setActivePhoto] = useState<PhotoItem | null>(null);
 
@@ -52,8 +53,8 @@ export const PhotosView: React.FC<PhotosViewProps> = ({ photos, onUploadPhoto })
         </div>
 
         {/* Upload Button */}
-        <label className="btn-primary" style={{ cursor: "pointer" }}>
-          <Upload size={16} /> + Upload
+        <label className="btn-primary" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+          <Upload size={14} /> Upload photo
           <input
             type="file"
             accept="image/*"
@@ -67,7 +68,7 @@ export const PhotosView: React.FC<PhotosViewProps> = ({ photos, onUploadPhoto })
         </label>
       </div>
 
-      {/* Tabs (Matching Figma: All, Albums, Recent) */}
+      {/* Tabs: All, Albums, Recent */}
       <div style={{ display: "flex", gap: "16px", marginBottom: "32px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "12px" }}>
         <button
           onClick={() => setTab("all")}
@@ -110,68 +111,115 @@ export const PhotosView: React.FC<PhotosViewProps> = ({ photos, onUploadPhoto })
         </button>
       </div>
 
-      {/* Grid Layout (4 columns matching Figma artboard) */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
-          gap: "20px",
-        }}
-      >
-        {filtered.map((photo) => (
+      {/* Grid Layout or Empty State */}
+      {filtered.length === 0 ? (
+        <div
+          style={{
+            padding: "64px 24px",
+            textAlign: "center",
+            backgroundColor: "var(--bg-surface)",
+            borderRadius: "var(--radius-lg)",
+            border: "1px dashed var(--border-subtle)",
+          }}
+        >
           <div
-            key={photo.id}
-            onClick={() => setActivePhoto(photo)}
             style={{
-              position: "relative",
-              borderRadius: "var(--radius-lg)",
-              overflow: "hidden",
-              aspectRatio: "16/10",
-              cursor: "pointer",
-              backgroundColor: "var(--bg-surface)",
-              border: "1px solid var(--border-subtle)",
-              transition: "transform 0.2s ease, box-shadow 0.2s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "scale(1.02)";
-              e.currentTarget.style.boxShadow = "var(--shadow-md)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "scale(1)";
-              e.currentTarget.style.boxShadow = "none";
+              width: "48px",
+              height: "48px",
+              borderRadius: "50%",
+              backgroundColor: "var(--bg-subtle)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 16px",
+              color: "var(--text-secondary)",
             }}
           >
-            <img
-              src={photo.url}
-              alt={photo.name}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
+            <Upload size={20} />
+          </div>
+          <h3 style={{ fontSize: "16px", fontWeight: 500, color: "var(--text-primary)", marginBottom: "4px" }}>
+            No photos yet
+          </h3>
+          <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "20px" }}>
+            Upload visual inspirations, moodboards, or project screenshots.
+          </p>
+          <label className="btn-primary" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <Upload size={14} /> Upload photo
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0] && onUploadPhoto) {
+                  onUploadPhoto(e.target.files[0]);
+                }
               }}
             />
+          </label>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
+            gap: "20px",
+          }}
+        >
+          {filtered.map((photo) => (
             <div
+              key={photo.id}
+              onClick={() => setActivePhoto(photo)}
               style={{
-                position: "absolute",
-                bottom: 0,
-                left: 0,
-                right: 0,
-                padding: "24px 12px 8px 12px",
-                background: "linear-gradient(to top, rgba(0,0,0,0.7), transparent)",
-                color: "#FFFFFF",
-                fontSize: "12px",
-                fontWeight: 500,
-                whiteSpace: "nowrap",
+                position: "relative",
+                borderRadius: "var(--radius-lg)",
                 overflow: "hidden",
-                textOverflow: "ellipsis",
+                aspectRatio: "16/10",
+                cursor: "pointer",
+                backgroundColor: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
+                transition: "transform 0.2s ease, box-shadow 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "scale(1.02)";
+                e.currentTarget.style.boxShadow = "var(--shadow-md)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "scale(1)";
+                e.currentTarget.style.boxShadow = "none";
               }}
             >
-              {photo.name}
+              <img
+                src={photo.url}
+                alt={photo.name}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: "block",
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  padding: "24px 12px 8px 12px",
+                  background: "linear-gradient(to top, rgba(0,0,0,0.7), transparent)",
+                  color: "#FFFFFF",
+                  fontSize: "12px",
+                  fontWeight: 500,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {photo.name}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Lightbox Modal */}
       {activePhoto && (
@@ -201,13 +249,10 @@ export const PhotosView: React.FC<PhotosViewProps> = ({ photos, onUploadPhoto })
           >
             <div style={{ display: "flex", justifyContent: "space-between", color: "#FFFFFF" }}>
               <span style={{ fontSize: "14px", fontWeight: 500 }}>{activePhoto.name}</span>
-              <button
-                onClick={() => setActivePhoto(null)}
-                className="btn-icon"
-                style={{ color: "#FFFFFF" }}
-              >
-                <X size={18} />
-              </button>
+              <div style={{ display: "flex", gap: 6 }}>
+                {onDeletePhoto && <button onClick={async () => { if (!confirm(`Delete ${activePhoto.name}?`)) return; await onDeletePhoto(activePhoto); setActivePhoto(null); }} className="btn-icon" style={{ color: "#FFFFFF" }} aria-label="Delete photo" title="Delete photo"><Trash2 size={16} /></button>}
+                <button onClick={() => setActivePhoto(null)} className="btn-icon" style={{ color: "#FFFFFF" }} aria-label="Close preview"><X size={18} /></button>
+              </div>
             </div>
             <img
               src={activePhoto.url}

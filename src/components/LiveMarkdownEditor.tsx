@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { WorkspaceMember } from "../types.ts";
 import { renderInline, getCalloutConfig, CalloutConfig } from "./MarkdownRenderer.tsx";
+import { EmbeddedDatabase } from "./EmbeddedDatabase.tsx";
 
 export interface LiveMarkdownEditorProps {
   content: string;
@@ -29,6 +30,8 @@ export interface LiveMarkdownEditorProps {
   slashMenuVisible?: boolean;
   onSlashKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   activeOverlay?: React.ReactNode;
+  workspaceId?: string;
+  getAuthHeaders?: (extra?: Record<string, string>) => Record<string, string>;
 }
 
 interface LineMeta {
@@ -42,6 +45,12 @@ interface LineMeta {
   isTable: boolean;
   isTableHeader: boolean;
   isTableDivider: boolean;
+  isDatabaseStart?: boolean;
+  isDatabaseBody?: boolean;
+  databaseId?: string;
+  databaseName?: string;
+  databaseBlockStartLine?: number;
+  databaseBlockEndLine?: number;
 }
 
 export const LiveMarkdownEditor: React.FC<LiveMarkdownEditorProps> = ({
@@ -57,6 +66,8 @@ export const LiveMarkdownEditor: React.FC<LiveMarkdownEditorProps> = ({
   slashMenuVisible = false,
   onSlashKeyDown,
   activeOverlay,
+  workspaceId = "default",
+  getAuthHeaders = (extra) => extra || {},
 }) => {
   const [internalActiveLineIndex, setInternalActiveLineIndex] = useState<number | null>(0);
   const activeLineIndex =
@@ -86,6 +97,59 @@ export const LiveMarkdownEditor: React.FC<LiveMarkdownEditorProps> = ({
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
+
+      // Database block detection: ```database
+      if (trimmed.startsWith("```database")) {
+        let endIdx = i + 1;
+        let jsonContent = "";
+        while (endIdx < lines.length && !lines[endIdx].trim().startsWith("```")) {
+          jsonContent += lines[endIdx] + "\n";
+          endIdx++;
+        }
+        let dbId = "";
+        let dbName = "Database";
+        try {
+          const parsed = JSON.parse(jsonContent);
+          dbId = parsed.id || "";
+          dbName = parsed.name || "Database";
+        } catch {
+          const match = jsonContent.match(/"id"\s*:\s*"([^"]+)"/);
+          if (match) dbId = match[1];
+        }
+
+        if (dbId) {
+          metas.push({
+            isCodeFence: false,
+            isCodeBlock: false,
+            isCalloutHeader: false,
+            isCalloutBody: false,
+            isTable: false,
+            isTableHeader: false,
+            isTableDivider: false,
+            isDatabaseStart: true,
+            isDatabaseBody: false,
+            databaseId: dbId,
+            databaseName: dbName,
+            databaseBlockStartLine: i,
+            databaseBlockEndLine: endIdx < lines.length ? endIdx : lines.length - 1,
+          });
+          for (let k = i + 1; k <= endIdx && k < lines.length; k++) {
+            metas.push({
+              isCodeFence: false,
+              isCodeBlock: false,
+              isCalloutHeader: false,
+              isCalloutBody: false,
+              isTable: false,
+              isTableHeader: false,
+              isTableDivider: false,
+              isDatabaseStart: false,
+              isDatabaseBody: true,
+            });
+          }
+          i = endIdx;
+          continue;
+        }
+      }
 
       // Code fence detection
       if (trimmed.startsWith("```")) {
@@ -676,6 +740,7 @@ export const LiveMarkdownEditor: React.FC<LiveMarkdownEditorProps> = ({
       return (
         <div
           key={`line-${idx}`}
+          className={`circular-task-item ${isChecked ? "checked" : ""}`}
           onClick={() => {
             setActiveLineIndex(idx);
             setCursorTargetPos(line.length);
@@ -690,6 +755,7 @@ export const LiveMarkdownEditor: React.FC<LiveMarkdownEditorProps> = ({
           }}
         >
           <div
+            className="circular-checkbox-circle"
             onClick={(e) => {
               e.stopPropagation();
               toggleCheckbox(idx);
@@ -697,11 +763,11 @@ export const LiveMarkdownEditor: React.FC<LiveMarkdownEditorProps> = ({
             style={{
               cursor: "pointer",
               marginTop: "4px",
-              width: "16px",
-              height: "16px",
-              borderRadius: "4px",
-              background: isChecked ? "var(--accent)" : "var(--bg-surface)",
-              border: `1.5px solid ${isChecked ? "var(--accent)" : "var(--border-subtle)"}`,
+              width: "18px",
+              height: "18px",
+              borderRadius: "50%",
+              background: isChecked ? "var(--text-muted)" : "transparent",
+              border: `1.5px solid ${isChecked ? "var(--text-muted)" : "var(--border-subtle)"}`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -921,6 +987,36 @@ export const LiveMarkdownEditor: React.FC<LiveMarkdownEditorProps> = ({
         </div>
       ) : (
         lines.map((line, idx) => {
+          const meta = lineMetadata[idx] || {};
+
+                    if (meta.isDatabaseStart) {
+            return (
+              <div key={`database-block-${idx}`} style={{ cursor: "default" }}>
+                <EmbeddedDatabase
+                  databaseId={meta.databaseId!}
+                  initialName={meta.databaseName}
+                  workspaceId={workspaceId}
+                  getAuthHeaders={getAuthHeaders}
+                  onRemoveFromPage={() => {
+                    if (meta.databaseBlockStartLine !== undefined && meta.databaseBlockEndLine !== undefined) {
+                      const newLines = [...lines];
+                      newLines.splice(
+                        meta.databaseBlockStartLine,
+                        meta.databaseBlockEndLine - meta.databaseBlockStartLine + 1
+                      );
+                      updateContent(newLines.length > 0 ? newLines : [""]);
+                    }
+                  }}
+                />
+              </div>
+            );
+          }
+
+          if (meta.isDatabaseBody) {
+            return null;
+          }
+
+
           if (activeLineIndex === idx) {
             return (
               <div key={`active-wrapper-${idx}`} style={{ position: "relative" }}>

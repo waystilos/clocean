@@ -26,7 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onOpenTeamMembers,
   collaborators = [],
-  isSaving = false,
+  isSaving,
   notifications = [],
   onSelectDoc,
   onMarkNotificationsRead,
@@ -113,8 +113,8 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Right: Collaborators, Sync Status, Notifications, Search & Settings */}
       <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
         {/* R2 Sync Indicator */}
-        <div
-          title="Synced to Cloudflare R2"
+        {isSaving !== undefined && <div
+          title={isSaving ? "Saving changes" : "Changes saved"}
           style={{
             display: "flex",
             alignItems: "center",
@@ -128,8 +128,8 @@ export const Header: React.FC<HeaderProps> = ({
           ) : (
             <Cloud size={14} />
           )}
-          <span style={{ fontSize: "11px" }}>{isSaving ? "Saving..." : "R2 Synced"}</span>
-        </div>
+          <span style={{ fontSize: "11px" }}>{isSaving ? "Saving…" : "Saved"}</span>
+        </div>}
 
         {/* Live Multiplayer Collaborator Avatars */}
         {collaborators.length > 0 && (

@@ -12,6 +12,7 @@ import {
   Download,
   Plus,
   Trash,
+  Trash2,
   AtSign,
   MessageSquare,
   Send,
@@ -22,6 +23,7 @@ import {
   Columns,
   Edit3,
   Table as TableIcon,
+  Table2,
   Code,
   Quote,
   Star,
@@ -65,6 +67,8 @@ import {
 } from "../types.ts";
 import { MarkdownRenderer } from "../components/MarkdownRenderer.tsx";
 import { LiveMarkdownEditor } from "../components/LiveMarkdownEditor.tsx";
+import { AddDatabaseToPageModal } from "../components/AddDatabaseToPageModal.tsx";
+import { AddSnapModal } from "../components/AddSnapModal.tsx";
 
 interface EditorViewProps {
   docId: string;
@@ -73,6 +77,8 @@ interface EditorViewProps {
   onUpdateAttachments?: () => void;
   onOpenFilePreview?: (attachment: DocAttachment) => void;
   sessionToken?: string | null;
+  openSnapsTrigger?: number;
+  onDeleteDoc?: (docId: string) => Promise<void> | void;
 }
 
 interface RemoteCursor {
@@ -174,7 +180,7 @@ const STARTER_TEMPLATES = [
     title: "Company Knowledge Base",
     icon: "book-open",
     tags: ["#wiki", "#handbook"],
-    content: `# Team Handbook & Knowledge Base\n\n> [!NOTE]\n> Welcome to the Clocean workspace! This document outlines team workflows, core repositories, and deployment guides.\n\n## Quick Links\n- [GitHub Repository](https://github.com/waystilos/clocean)\n- [Design System & Figma Tokens](https://figma.com)\n- [Cloudflare Dashboard](https://dash.cloudflare.com)\n\n## Team Principles\n- **Zero Database Costs**: Persist state as structured JSON in Cloudflare R2.\n- **Sub-Millisecond Edge Latency**: Collab over Durable Objects WebSockets.\n- **Design Fidelity**: Strict adherence to Obsidian Dark & Parchment Light themes.\n\n## Frequently Asked Questions\n> [toggle] How do I invite team members?\n> Workspace Admins and Owners can invite colleagues directly from the workspace dropdown. An invitation email with a joining link is dispatched automatically.\n\n> [toggle] How does document collaboration work?\n> Cloudflare Durable Objects track connected users, broadcast live cursor positions, and flush debounced markdown content directly into R2.\n`,
+    content: `# Team Handbook & Knowledge Base\n\n> [!NOTE]\n> Welcome to the Clocean workspace! This document outlines team workflows, core repositories, and deployment guides.\n\n## Quick Links\n- [GitHub Repository](https://github.com/waystilos/clocean)\n- [Design System & Tokens](https://github.com/waystilos/clocean)\n- [Cloudflare Dashboard](https://dash.cloudflare.com)\n\n## Team Principles\n- **Zero Database Costs**: Persist state as structured JSON in Cloudflare R2.\n- **Sub-Millisecond Edge Latency**: Collab over Durable Objects WebSockets.\n- **Design Fidelity**: Strict adherence to Obsidian Dark & Parchment Light themes.\n\n## Frequently Asked Questions\n> [toggle] How do I invite team members?\n> Workspace Admins and Owners can invite colleagues directly from the workspace dropdown. An invitation email with a joining link is dispatched automatically.\n\n> [toggle] How does document collaboration work?\n> Cloudflare Durable Objects track connected users, broadcast live cursor positions, and flush debounced markdown content directly into R2.\n`,
   },
   {
     id: "design_doc",
@@ -191,12 +197,16 @@ export const EditorView: React.FC<EditorViewProps> = ({
   workspaceId = "default",
   onOpenFilePreview,
   sessionToken,
+  openSnapsTrigger,
+  onDeleteDoc,
 }) => {
   const getAuthHeaders = (extra: Record<string, string> = {}) => {
     const token = sessionToken || localStorage.getItem("clocean_session_token");
     return { ...extra, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   };
   const [doc, setDoc] = useState<DocContent | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [content, setContent] = useState("");
@@ -236,6 +246,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isCoverPickerOpen, setIsCoverPickerOpen] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [isAddDbModalOpen, setIsAddDbModalOpen] = useState(false);
+  const [isAddSnapModalOpen, setIsAddSnapModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Slash Command Menu state
   const [slashMenu, setSlashMenu] = useState<{
@@ -245,9 +259,16 @@ export const EditorView: React.FC<EditorViewProps> = ({
     pos: number;
   }>({ visible: false, query: "", selectedIndex: 0, pos: 0 });
 
-  // Discussion & Mentions State
+  // Discussion & Mentions State (collapsed by default for distraction-free writing)
   const [activeTab, setActiveTab] = useState<"attachments" | "discussion">("attachments");
-  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
+
+  useEffect(() => {
+    if (openSnapsTrigger && openSnapsTrigger > 0) {
+      setIsRightPanelOpen(true);
+      setActiveTab("attachments");
+    }
+  }, [openSnapsTrigger]);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [comments, setComments] = useState<DocComment[]>([]);
   const [commentText, setCommentText] = useState("");
@@ -266,11 +287,17 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   // Load initial document from API
   useEffect(() => {
+    let active = true;
+    setLoadError("");
     fetch(`/api/docs/${docId}`, {
       headers: getAuthHeaders({ "x-workspace-id": workspaceId }),
     })
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error("Could not load this page. Check your connection and try again.");
+        return res.json();
+      })
       .then((raw) => {
+        if (!active) return;
         const data = raw as DocContent;
         setDoc(data);
         setTitle(data.title || "Untitled Document");
@@ -282,8 +309,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
         setIsPublic(!!data.isPublic);
         setPublicToken(data.publicToken || "");
       })
-      .catch((err) => console.error("Error loading document:", err));
-  }, [docId, workspaceId]);
+      .catch((err) => { if (active) setLoadError(err instanceof Error ? err.message : "Could not load this page."); });
+    return () => { active = false; };
+  }, [docId, workspaceId, loadAttempt]);
 
   // Load favorites
   useEffect(() => {
@@ -406,101 +434,75 @@ export const EditorView: React.FC<EditorViewProps> = ({
   }, [mentionPopup.visible, slashMenu.visible]);
 
   // Send edits to peers & Durable Object
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSave = useRef<Record<string, unknown> | null>(null);
+  const saveInFlight = useRef(false);
+  const [saveError, setSaveError] = useState("");
+  const flushSave = async () => {
+    if (saveInFlight.current || !pendingSave.current) return;
+    saveInFlight.current = true;
+    const payload = pendingSave.current;
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/docs/${encodeURIComponent(docId)}?user=${encodeURIComponent(currentUser.email)}`, {
+        method: "PUT",
+        headers: getAuthHeaders({ "Content-Type": "application/json", "x-workspace-id": workspaceId }),
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(response.status === 409 ? "Another edit arrived. Your draft is still here; retry to save it." : "Couldn't save. Your draft is still here.");
+      if (pendingSave.current === payload) pendingSave.current = null;
+      setSaveError("");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Couldn't save.");
+      setIsSaving(false);
+      saveInFlight.current = false;
+      return;
+    }
+    saveInFlight.current = false;
+    if (pendingSave.current) void flushSave();
+    else setIsSaving(false);
+  };
+  const scheduleSave = (patch: Record<string, unknown>) => {
+    pendingSave.current = { title, content, tags, attachments, icon, cover, ...pendingSave.current, ...patch };
+    setIsSaving(true);
+    setSaveError("");
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => void flushSave(), 800);
+  };
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (pendingSave.current) { event.preventDefault(); event.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      void flushSave();
+    };
+  }, []);
   const handleContentChange = (newContent: string) => {
     setContent(newContent);
-    setIsSaving(true);
-
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(
-        JSON.stringify({
-          type: "edit",
-          content: newContent,
-          title,
-          tags,
-          attachments,
-        })
-      );
+    scheduleSave({ content: newContent });
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: "edit", content: newContent, title, tags, attachments }));
     }
-
-    // Debounced persist to Cloudflare R2
-    const timeout = setTimeout(() => {
-      fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
-        method: "PUT",
-        headers: getAuthHeaders({
-          "Content-Type": "application/json",
-          "x-workspace-id": workspaceId,
-        }),
-        body: JSON.stringify({
-          title,
-          content: newContent,
-          tags,
-          attachments,
-          icon,
-          cover,
-          isPublic,
-          publicToken,
-        }),
-      }).then(() => setIsSaving(false));
-    }, 1200);
-
-    return () => clearTimeout(timeout);
   };
-
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle);
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(
-        JSON.stringify({
-          type: "edit",
-          title: newTitle,
-          content,
-          tags,
-          attachments,
-        })
-      );
+    scheduleSave({ title: newTitle });
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: "edit", title: newTitle, content, tags, attachments }));
     }
-
-    fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
-      method: "PUT",
-      headers: getAuthHeaders({
-        "Content-Type": "application/json",
-        "x-workspace-id": workspaceId,
-      }),
-      body: JSON.stringify({
-        title: newTitle,
-        content,
-        tags,
-        attachments,
-        icon,
-        cover,
-      }),
-    });
   };
-
   const handleUpdateIcon = (newIcon: string) => {
     setIcon(newIcon);
     setIsEmojiPickerOpen(false);
-    fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
-      method: "PUT",
-      headers: getAuthHeaders({
-        "Content-Type": "application/json",
-        "x-workspace-id": workspaceId,
-      }),
-      body: JSON.stringify({ title, content, tags, attachments, icon: newIcon, cover }),
-    });
+    scheduleSave({ icon: newIcon });
   };
-
   const handleUpdateCover = (newCover: string | null) => {
     setCover(newCover);
     setIsCoverPickerOpen(false);
-    fetch(`/api/docs/${docId}?user=${encodeURIComponent(currentUser.email)}`, {
-      method: "PUT",
-      headers: getAuthHeaders({
-        "Content-Type": "application/json",
-        "x-workspace-id": workspaceId,
-      }),
-      body: JSON.stringify({ title, content, tags, attachments, icon, cover: newCover }),
-    });
+    scheduleSave({ cover: newCover });
   };
 
   // Toggle favorite
@@ -541,7 +543,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     }
   };
 
-  // Fetch members for Notion-style Share modal
+  // Fetch members for Share modal
   useEffect(() => {
     if (!isShareOpen) return;
     const ws = workspaceId || "default";
@@ -684,6 +686,22 @@ export const EditorView: React.FC<EditorViewProps> = ({
     setIsTemplatePickerOpen(false);
   };
 
+  // Insert Database block into document
+  const handleInsertDatabase = (dbId: string, dbName: string) => {
+    const blockSnippet = `\n\n\`\`\`database\n{\n  "id": "${dbId}",\n  "name": "${dbName}"\n}\n\`\`\`\n\n`;
+    const newContent = (content || "") + blockSnippet;
+    setContent(newContent);
+    handleContentChange(newContent);
+  };
+
+  // Remove Database block from document
+  const handleRemoveDatabaseBlock = (databaseId: string) => {
+    const regex = new RegExp(`\`\`\`database[\\s\\S]*?"id"\\s*:\\s*"${databaseId}"[\\s\\S]*?\`\`\`\\n?`, "g");
+    const newContent = content.replace(regex, "");
+    setContent(newContent);
+    handleContentChange(newContent);
+  };
+
   // Execute Slash Command
   const executeSlashCommand = (snippet: string) => {
     if (viewMode === "edit" && activeLineIndex !== null) {
@@ -761,6 +779,17 @@ export const EditorView: React.FC<EditorViewProps> = ({
           "\n| Feature | Status | Assignee |\n| :--- | :---: | ---: |\n| Document Sync | Done | Engineering lead |\n| Kanban Tasks | In Progress | Product team |\n| Workspace Media | Todo | Unassigned |\n\n"
         ),
     },
+        {
+      id: "database",
+      label: "Database Table",
+      description: "Insert an interactive structured database",
+      icon: <Table2 size={16} color="var(--accent)" />,
+      execute: () => {
+        setIsAddDbModalOpen(true);
+        setSlashMenu({ visible: false, query: "", selectedIndex: 0, pos: 0 });
+      },
+    },
+
     {
       id: "callout_tip",
       label: "Callout: Tip",
@@ -1046,6 +1075,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
       }}
     >
       {/* Main Document Content Area */}
+      <div className="editor-save-status" role={saveError || loadError ? "alert" : "status"}>{loadError ? <>{loadError} <button className="btn-secondary" onClick={() => setLoadAttempt((n) => n + 1)}>Retry load</button></> : !doc ? "Loading page…" : saveError ? <>{saveError} <button className="btn-secondary" onClick={() => void flushSave()}>Retry save</button></> : isSaving ? "Saving…" : "Saved"}</div>
+      {!doc && <div className="editor-load-cover" aria-busy={!loadError} />}
       <div
         className="editor-content"
         style={{
@@ -1261,12 +1292,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             {tags.map((tag, i) => (
               <span
                 key={i}
-                style={{
-                  fontSize: "13px",
-                  fontWeight: 500,
-                  color: "var(--accent-text)",
-                  letterSpacing: "0.01em",
-                }}
+                className="amber-tag-pill"
               >
                 {tag}
               </span>
@@ -1369,6 +1395,30 @@ export const EditorView: React.FC<EditorViewProps> = ({
               <span>Templates</span>
             </button>
 
+                        <button
+              onClick={() => setIsAddDbModalOpen(true)}
+              className="btn-icon"
+              title="Add interactive database to page"
+              style={{
+                width: "auto",
+                padding: "3px 9px",
+                height: "26px",
+                fontSize: "12px",
+                color: "var(--accent)",
+                backgroundColor: "var(--accent-light)",
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid rgba(30, 125, 107, 0.25)",
+                fontWeight: 500,
+              }}
+            >
+              <Table2 size={13} />
+              <span>+ Database</span>
+            </button>
+
+
             {/* Export Menu */}
             <button
               onClick={handleExportMarkdown}
@@ -1389,99 +1439,64 @@ export const EditorView: React.FC<EditorViewProps> = ({
               <span>Export</span>
             </button>
 
-            {/* View Mode Switcher: Edit | Split | Preview */}
-            <div
+            {/* Discussion & Files Drawer Toggle */}
+            <button
+              onClick={() => {
+                if (isRightPanelOpen && activeTab === "discussion") {
+                  setIsRightPanelOpen(false);
+                } else {
+                  setActiveTab("discussion");
+                  setIsRightPanelOpen(true);
+                }
+              }}
+              className="btn-icon"
+              title={isRightPanelOpen && activeTab === "discussion" ? "Hide discussion" : "View discussion and files"}
               style={{
+                width: "auto",
+                padding: "3px 8px",
+                height: "26px",
+                fontSize: "12px",
+                color: isRightPanelOpen && activeTab === "discussion" ? "var(--accent)" : "var(--text-muted)",
+                backgroundColor: isRightPanelOpen && activeTab === "discussion" ? "var(--bg-nav-active)" : "transparent",
                 display: "flex",
                 alignItems: "center",
-                backgroundColor: "var(--bg-surface)",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "var(--radius-md)",
-                padding: "2px",
-                gap: "2px",
+                gap: "4px",
               }}
             >
+              <MessageSquare size={13} />
+              <span>Discussion{comments.length > 0 ? ` (${comments.length})` : ""}</span>
+            </button>
+
+            {/* Delete Page Action */}
+            {onDeleteDoc && (
               <button
-                onClick={() => setViewMode("edit")}
+                onClick={() => setIsDeleteModalOpen(true)}
                 className="btn-icon"
+                title="Delete this page"
                 style={{
                   width: "auto",
                   padding: "3px 8px",
-                  height: "24px",
-                  fontSize: "11px",
-                  borderRadius: "var(--radius-sm)",
-                  backgroundColor: viewMode === "edit" ? "var(--bg-nav-active)" : "transparent",
-                  color: viewMode === "edit" ? "var(--text-primary)" : "var(--text-muted)",
-                  fontWeight: viewMode === "edit" ? 600 : 400,
+                  height: "26px",
+                  fontSize: "12px",
+                  color: "var(--text-muted)",
                   display: "flex",
                   alignItems: "center",
                   gap: "4px",
+                  transition: "all 0.15s ease",
                 }}
-                title="Live Editor (Renders regular unless editing that line)"
-              >
-                <Edit3 size={11} /> Edit
-              </button>
-              <button
-                onClick={() => setViewMode("source")}
-                className="btn-icon"
-                style={{
-                  width: "auto",
-                  padding: "3px 8px",
-                  height: "24px",
-                  fontSize: "11px",
-                  borderRadius: "var(--radius-sm)",
-                  backgroundColor: viewMode === "source" ? "var(--bg-nav-active)" : "transparent",
-                  color: viewMode === "source" ? "var(--text-primary)" : "var(--text-muted)",
-                  fontWeight: viewMode === "source" ? 600 : 400,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "var(--danger, #ef4444)";
+                  e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.08)";
                 }}
-                title="Raw Markdown Source"
-              >
-                <Code size={11} /> Source
-              </button>
-              <button
-                onClick={() => setViewMode("split")}
-                className="btn-icon"
-                style={{
-                  width: "auto",
-                  padding: "3px 8px",
-                  height: "24px",
-                  fontSize: "11px",
-                  borderRadius: "var(--radius-sm)",
-                  backgroundColor: viewMode === "split" ? "var(--bg-nav-active)" : "transparent",
-                  color: viewMode === "split" ? "var(--text-primary)" : "var(--text-muted)",
-                  fontWeight: viewMode === "split" ? 600 : 400,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--text-muted)";
+                  e.currentTarget.style.backgroundColor = "transparent";
                 }}
-                title="Side-by-side Live Split View"
               >
-                <Columns size={11} /> Split
+                <Trash2 size={13} />
+                <span>Delete</span>
               </button>
-              <button
-                onClick={() => setViewMode("preview")}
-                className="btn-icon"
-                style={{
-                  width: "auto",
-                  padding: "3px 8px",
-                  height: "24px",
-                  fontSize: "11px",
-                  borderRadius: "var(--radius-sm)",
-                  backgroundColor: viewMode === "preview" ? "var(--bg-nav-active)" : "transparent",
-                  color: viewMode === "preview" ? "var(--text-primary)" : "var(--text-muted)",
-                  fontWeight: viewMode === "preview" ? 600 : 400,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-                title="Rendered Document Preview"
-              >
-                <Eye size={11} /> Preview
-              </button>
-            </div>
+            )}
           </div>
         </div>
 
@@ -1609,7 +1624,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
         {/* Document Body: Preview vs Split vs Source vs Edit (Live WYSIWYG) */}
         {viewMode === "preview" ? (
           <div style={{ minHeight: "450px", padding: "12px 0" }}>
-            <MarkdownRenderer content={content} onToggleCheckbox={toggleCheckbox} members={members} />
+            <MarkdownRenderer
+              content={content}
+              onToggleCheckbox={toggleCheckbox}
+              members={members}
+              workspaceId={workspaceId}
+              getAuthHeaders={getAuthHeaders}
+              onRemoveDatabaseBlock={handleRemoveDatabaseBlock}
+            />
           </div>
         ) : viewMode === "split" ? (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px", minHeight: "500px" }}>
@@ -1663,7 +1685,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
               >
                 <Eye size={12} color="var(--accent)" /> Live Markdown & Table Preview
               </div>
-              <MarkdownRenderer content={content} onToggleCheckbox={toggleCheckbox} members={members} />
+              <MarkdownRenderer
+                content={content}
+                onToggleCheckbox={toggleCheckbox}
+                members={members}
+                workspaceId={workspaceId}
+                getAuthHeaders={getAuthHeaders}
+                onRemoveDatabaseBlock={handleRemoveDatabaseBlock}
+              />
             </div>
           </div>
         ) : viewMode === "source" ? (
@@ -1697,6 +1726,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
             content={content}
             onChange={handleContentChange}
             members={members}
+            workspaceId={workspaceId}
+            getAuthHeaders={getAuthHeaders}
             activeLineIndex={activeLineIndex}
             onActiveLineChange={setActiveLineIndex}
             slashMenuVisible={slashMenu.visible}
@@ -2195,14 +2226,35 @@ export const EditorView: React.FC<EditorViewProps> = ({
         </div>
       </div>
 
-      {/* Right Sidebar: Attachments & Discussion */}
+      {/* Floating Action Pills */}
+      <div className="floating-action-bar">
+                <button
+          className="floating-action-pill"
+          title="Add Database or Block"
+          aria-label="Add Database"
+          onClick={() => setIsAddDbModalOpen(true)}
+        >
+          <Plus size={20} />
+        </button>
+
+        <button
+          className="floating-action-pill"
+          title="Toggle Formatting"
+          aria-label="Format text"
+          onClick={() => setViewMode(viewMode === "edit" ? "split" : "edit")}
+        >
+          Aa
+        </button>
+      </div>
+
+      {/* Right Sidebar: Snaps & Discussion */}
       {isRightPanelOpen ? <aside
         className="editor-right-panel"
         style={{
-          width: "280px",
-          minWidth: "280px",
+          width: "290px",
+          minWidth: "290px",
           borderLeft: "1px solid var(--border-subtle)",
-          padding: "24px 16px",
+          padding: "20px 16px",
           display: "flex",
           flexDirection: "column",
           gap: "16px",
@@ -2224,7 +2276,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
               cursor: "pointer",
             }}
           >
-            Files ({attachments.length})
+            Attachments ({attachments.length})
           </button>
           <button
             onClick={() => setActiveTab("discussion")}
@@ -2256,9 +2308,36 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </button>
         </div>
 
-        {/* Tab: Attachments */}
+        {/* Tab: Snaps */}
         {activeTab === "attachments" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1 }}>
+            {/* Visual Snap Card */}
+            <div className="snap-card" style={{ padding: "12px", background: "var(--bg-surface)", borderRadius: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)" }}>UI Snapshot</span>
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Pinned</span>
+              </div>
+              <div
+                style={{
+                  width: "100%",
+                  height: "140px",
+                  borderRadius: "8px",
+                  background: "linear-gradient(135deg, rgba(30, 125, 107, 0.15) 0%, rgba(217, 119, 6, 0.15) 100%)",
+                  border: "1px solid var(--border-subtle)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <ImageIcon size={28} color="var(--accent)" />
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Design Mockup Preview</span>
+              </div>
+            </div>
+
+            {/* List of Attached Snaps / Files */}
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {attachments.map((att) => (
                 <div
@@ -2268,7 +2347,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     backgroundColor: "var(--bg-surface)",
                     border: "1px solid var(--border-subtle)",
                     borderRadius: "var(--radius-md)",
@@ -2278,15 +2357,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--border-focus)")}
                   onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-subtle)")}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px", overflow: "hidden" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden" }}>
                     {att.name.endsWith(".png") || att.name.endsWith(".jpg") ? (
-                      <ImageIcon size={16} color="var(--accent)" />
+                      <ImageIcon size={15} color="var(--accent)" />
                     ) : (
-                      <FileText size={16} color="var(--accent)" />
+                      <FileText size={15} color="var(--accent)" />
                     )}
                     <span
                       style={{
-                        fontSize: "13px",
+                        fontSize: "12px",
                         fontWeight: 400,
                         color: "var(--text-primary)",
                         whiteSpace: "nowrap",
@@ -2302,44 +2381,37 @@ export const EditorView: React.FC<EditorViewProps> = ({
                     download={att.name}
                     onClick={(e) => e.stopPropagation()}
                     className="btn-icon"
-                    style={{ width: "24px", height: "24px" }}
+                    style={{ width: "22px", height: "22px" }}
                   >
-                    <Download size={13} />
+                    <Download size={12} />
                   </a>
                 </div>
               ))}
             </div>
 
+            {/* Attach File Button */}
             <button
               onClick={() => {
-                const fileName = prompt("Enter attachment name from Drive (e.g. brand_guidelines.pdf):");
-                if (fileName) {
-                  const newAtt: DocAttachment = {
-                    id: `att-${Date.now()}`,
-                    name: fileName,
-                    type: "application/octet-stream",
-                    size: 1048576,
-                    url: `/api/files/sample/${encodeURIComponent(fileName)}`,
-                  };
-                  const updated = [...attachments, newAtt];
-                  setAttachments(updated);
-                  fetch(`/api/docs/${docId}`, {
-                    method: "PUT",
-                    headers: getAuthHeaders({
-                      "Content-Type": "application/json",
-                      "x-workspace-id": workspaceId,
-                    }),
-                    body: JSON.stringify({ title, content, tags, attachments: updated, icon, cover }),
-                  });
-                }
+                setIsAddSnapModalOpen(true);
               }}
-              className="btn-secondary"
-              style={{ width: "100%", justifyContent: "center", fontSize: "12px" }}
+              className="snap-add-btn"
+              title="Attach a file, design mockup, or image"
             >
-              <Paperclip size={14} /> Attach from Drive
+              <div className="snap-add-circle">
+                <Plus size={16} />
+              </div>
+              <span>Attach file</span>
             </button>
+
+            {/* Customise Panel */}
+            <div style={{ marginTop: "auto", textAlign: "center", paddingTop: "14px" }}>
+              <span style={{ fontSize: "11px", color: "var(--text-muted)", cursor: "pointer" }}>
+                Customise panel
+              </span>
+            </div>
           </div>
         )}
+
 
         {/* Tab: Discussion & Mentions */}
         {activeTab === "discussion" && (
@@ -2490,7 +2562,31 @@ export const EditorView: React.FC<EditorViewProps> = ({
         </button>
       )}
 
-      {/* Notion-Style Share & Invite Modal */}
+      {/* Add Snap Modal */}
+      <AddSnapModal
+        isOpen={isAddSnapModalOpen}
+        onClose={() => setIsAddSnapModalOpen(false)}
+        activeDocId={docId}
+        docs={[{ id: docId, name: title || "Current Document", type: "doc", parentId: null, createdAt: "", updatedAt: "" }]}
+        workspaceId={workspaceId}
+        sessionToken={sessionToken}
+        onAddSnapToDoc={async (_targetId, newAtt) => {
+          const updated = [...attachments, newAtt];
+          setAttachments(updated);
+          setIsRightPanelOpen(true);
+          setActiveTab("attachments");
+          await fetch(`/api/docs/${docId}`, {
+            method: "PUT",
+            headers: getAuthHeaders({
+              "Content-Type": "application/json",
+              "x-workspace-id": workspaceId,
+            }),
+            body: JSON.stringify({ title, content, tags, attachments: updated, icon, cover }),
+          });
+        }}
+      />
+
+      {/* Share & Invite Modal */}
       {isShareOpen && (
         <div
           className="modal-overlay"
@@ -2530,7 +2626,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
               </button>
             </div>
 
-            {/* Notion-Style Tab Navigation */}
+            {/* Tab Navigation */}
             <div
               style={{
                 display: "flex",
@@ -3011,6 +3107,131 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+            <AddDatabaseToPageModal
+        isOpen={isAddDbModalOpen}
+        onClose={() => setIsAddDbModalOpen(false)}
+        workspaceId={workspaceId}
+        getAuthHeaders={getAuthHeaders}
+        onInsertDatabase={handleInsertDatabase}
+      />
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.65)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+          onClick={() => !isDeleting && setIsDeleteModalOpen(false)}
+        >
+          <div
+            className="animate-fade-in"
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              backgroundColor: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "0 20px 40px rgba(0, 0, 0, 0.4)",
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "24px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+                <div
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "50%",
+                    backgroundColor: "rgba(239, 68, 68, 0.15)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "var(--danger, #ef4444)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Trash2 size={20} />
+                </div>
+                <div>
+                  <h3
+                    className="font-serif"
+                    style={{ fontSize: "18px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}
+                  >
+                    Delete Page
+                  </h3>
+                  <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: "2px 0 0 0" }}>
+                    Permanently remove from workspace
+                  </p>
+                </div>
+              </div>
+
+              <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: "20px" }}>
+                Move <strong style={{ color: "var(--text-primary)" }}>{title || "Untitled page"}</strong> to Trash? Its content and files will be kept so you can restore it later.
+              </p>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  disabled={isDeleting}
+                  className="btn-secondary"
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: "13px",
+                    borderRadius: "var(--radius-sm)",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!onDeleteDoc) return;
+                    setIsDeleting(true);
+                    try {
+                      await onDeleteDoc(docId);
+                      setIsDeleteModalOpen(false);
+                    } catch (err) {
+                      console.error("Failed to delete page:", err);
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  }}
+                  disabled={isDeleting}
+                  style={{
+                    padding: "8px 18px",
+                    fontSize: "13px",
+                    fontWeight: 500,
+                    borderRadius: "var(--radius-sm)",
+                    backgroundColor: "var(--danger, #ef4444)",
+                    color: "#ffffff",
+                    border: "none",
+                    cursor: isDeleting ? "not-allowed" : "pointer",
+                    opacity: isDeleting ? 0.7 : 1,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <Trash2 size={14} />
+                  <span>{isDeleting ? "Deleting..." : "Delete Page"}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -236,5 +236,55 @@ describe("LiveMarkdownEditor Hybrid WYSIWYG Engine", () => {
     expect(html).toContain("Next milestone in progress");
     expect(html).toContain("line-through");
   });
-});
 
+  it("should render embedded database component for ```database code blocks", () => {
+    const docWithDatabase = `# Sprint Planning
+Here are the deliverables for this sprint:
+
+\`\`\`database
+{
+  "id": "db_sprint_deliverables",
+  "name": "Sprint 15 Deliverables"
+}
+\`\`\`
+
+Additional notes follow.`;
+
+    const html = renderToString(
+      React.createElement(MarkdownRenderer, {
+        content: docWithDatabase,
+        workspaceId: "default",
+      })
+    );
+
+    // MarkdownRenderer should recognize database block and render embedded database structure
+    expect(html).toContain("Sprint 15 Deliverables");
+    expect(html).not.toContain("```database");
+  });
+
+  it("renders database blocks as interactive tables in the live editor", () => {
+    const docWithDatabase = `# Project Board
+
+\`\`\`database
+{
+  "id": "db_project_board",
+  "name": "Q4 Feature Tracker"
+}
+\`\`\`
+
+Done.`;
+
+    const html = renderToString(
+      React.createElement(LiveMarkdownEditor, {
+        content: docWithDatabase,
+        onChange: () => {},
+        activeLineIndex: 0,
+        workspaceId: "default",
+      })
+    );
+
+    expect(html).toContain("Q4 Feature Tracker");
+    expect(html).not.toContain("```database");
+    expect(html).toContain("embedded-table-container");
+  });
+});

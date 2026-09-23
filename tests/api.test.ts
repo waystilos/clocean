@@ -324,7 +324,7 @@ describe("Clocean R2 Edge REST API & Database Tests", () => {
   });
 
   // 5. R2 Database Schemas & Records
-  describe("Notion-style databases", () => {
+  describe("Custom database tables", () => {
     it("should create a database, persist its schema, and create a record", async () => {
       const name = `Project database ${Date.now()}`;
       const createRes = await fetch(`${BASE_URL}/api/databases`, {

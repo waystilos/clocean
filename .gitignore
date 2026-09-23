@@ -15,3 +15,6 @@ credentials.json
 workspaces/
 .wrangler_config/
 .wrangler_data/
+.wrangler-home/
+playwright-report/
+test-results/

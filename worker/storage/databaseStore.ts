@@ -19,7 +19,11 @@ export function validateDatabaseProperties(properties: Record<string, unknown>, 
   for (const [id, value] of Object.entries(properties)) {
     if (FORBIDDEN_KEYS.has(id) || !allowed.has(id)) throw new DatabaseValidationError("Unknown or unsafe database property");
     const property = allowed.get(id)!;
-    if (JSON.stringify(value).length > MAX_PROPERTY_VALUE_BYTES) throw new DatabaseValidationError("Database property value is too large");
+    // Null explicitly clears a cell; unknown/unsafe keys are still rejected above.
+    if (value === null) continue;
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) throw new DatabaseValidationError(`${property.name} has an invalid value`);
+    if (serialized.length > MAX_PROPERTY_VALUE_BYTES) throw new DatabaseValidationError("Database property value is too large");
     if (property.type === "text" && typeof value !== "string") throw new DatabaseValidationError(`${property.name} must be text`);
     if (property.type === "number" && (typeof value !== "number" || !Number.isFinite(value))) throw new DatabaseValidationError(`${property.name} must be a finite number`);
     if (property.type === "checkbox" && typeof value !== "boolean") throw new DatabaseValidationError(`${property.name} must be boolean`);
@@ -53,7 +57,8 @@ export class DatabaseStore {
   }
 
   async getSchema(workspaceId: string, databaseId: string) {
-    return (await this.db.getJson<DatabaseSchema>(key(workspaceId, databaseId, "schema"))).data;
+    // The registry is authoritative, so list and record validation observe the same schema.
+    return (await this.list(workspaceId)).find((database) => database.id === databaseId) ?? null;
   }
 
   async create(workspaceId: string, name: string, properties: DatabaseProperty[], actor: string): Promise<DatabaseSchema> {
@@ -70,6 +75,23 @@ export class DatabaseStore {
     const indexResult = await this.db.putJson(indexKey, { databases: updatedIndex }, index.etag ?? undefined);
     if (!indexResult.ok) throw new DatabaseConflictError("Workspace databases changed; reload and try again");
     return schema;
+  }
+
+  async update(workspaceId: string, databaseId: string, name: string, properties: DatabaseProperty[]) {
+    const indexKey = `workspaces/${workspaceId}/databases/index.json`;
+    const index = await this.db.getJson<{ databases: DatabaseSchema[] }>(indexKey);
+    const currentSchema = index.data?.databases.find((database) => database.id === databaseId);
+    if (!currentSchema || !index.data) return null;
+    const updated: DatabaseSchema = {
+      ...currentSchema,
+      name,
+      properties,
+      updatedAt: new Date().toISOString(),
+    };
+    const databases = index.data.databases.map((database) => database.id === databaseId ? updated : database);
+    const indexResult = await this.db.putJson(indexKey, { databases }, index.etag ?? undefined);
+    if (!indexResult.ok) throw new DatabaseConflictError("Workspace databases changed; reload and try again");
+    return updated;
   }
 
   async listRecords(workspaceId: string, databaseId: string, query?: string, sort?: string, direction?: "asc" | "desc") {
@@ -93,6 +115,38 @@ export class DatabaseStore {
     return record;
   }
 
+  async updateRecord(
+    workspaceId: string,
+    databaseId: string,
+    recordId: string,
+    payload: { title?: string; properties?: Record<string, unknown> },
+    actor: string
+  ) {
+    const schema = await this.getSchema(workspaceId, databaseId);
+    if (!schema) return null;
+    if (payload.properties) {
+      validateDatabaseProperties(payload.properties, schema.properties);
+    }
+    const current = await this.db.getJson<RecordFile>(key(workspaceId, databaseId, "records"));
+    const records = current.data?.records ?? [];
+    const index = records.findIndex((r) => r.id === recordId);
+    if (index === -1) return null;
+
+    const existing = records[index];
+    const updated: DatabaseRecord = {
+      ...existing,
+      title: payload.title !== undefined ? payload.title : existing.title,
+      properties: payload.properties ? { ...existing.properties, ...payload.properties } : existing.properties,
+      updatedAt: new Date().toISOString(),
+      updatedBy: actor,
+    };
+    records[index] = updated;
+
+    const result = await this.db.putJson(key(workspaceId, databaseId, "records"), { records }, current.etag ?? undefined);
+    if (!result.ok) throw new DatabaseConflictError("Database changed; reload and try again");
+    return updated;
+  }
+
   async deleteRecord(workspaceId: string, databaseId: string, recordId: string) {
     const current = await this.db.getJson<RecordFile>(key(workspaceId, databaseId, "records"));
     if (!current.data) return false;
@@ -100,6 +154,21 @@ export class DatabaseStore {
     if (records.length === current.data.records.length) return false;
     const result = await this.db.putJson(key(workspaceId, databaseId, "records"), { records }, current.etag ?? undefined);
     if (!result.ok) throw new DatabaseConflictError("Database changed; reload and try again");
+    return true;
+  }
+
+  async delete(workspaceId: string, databaseId: string): Promise<boolean> {
+    const indexKey = `workspaces/${workspaceId}/databases/index.json`;
+    const index = await this.db.getJson<{ databases: DatabaseSchema[] }>(indexKey);
+    if (!index.data) return false;
+    const filtered = index.data.databases.filter((d) => d.id !== databaseId);
+    if (filtered.length === index.data.databases.length) return false;
+
+    const indexResult = await this.db.putJson(indexKey, { databases: filtered }, index.etag ?? undefined);
+    if (!indexResult.ok) throw new DatabaseConflictError("Workspace databases changed; reload and try again");
+
+    await this.db.deleteKey(key(workspaceId, databaseId, "schema"));
+    await this.db.deleteKey(key(workspaceId, databaseId, "records"));
     return true;
   }
 }

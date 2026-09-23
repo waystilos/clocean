@@ -111,7 +111,7 @@ export interface TaskItem {
   title: string;
   description?: string;
   type?: TaskType;
-  status: "todo" | "inprogress" | "done";
+  status: "todo" | "inprogress" | "done" | string;
   priority?: "urgent" | "high" | "medium" | "low";
   dueDate: string;
   assignee: {
@@ -125,9 +125,22 @@ export interface TaskItem {
   lastAlertedAt?: string;
 }
 
+export interface TaskBoardColumn {
+  id: string;
+  title: string;
+  color?: string;
+  wipLimit?: number;
+}
+
 export interface TaskBoard {
   id: string;
   name: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  columns?: TaskBoardColumn[];
+  defaultView?: "board" | "table";
+  defaultPriority?: "urgent" | "high" | "medium" | "low";
   createdAt: string;
   updatedAt: string;
 }

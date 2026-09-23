@@ -33,6 +33,11 @@ workspaces/{workspaceId}/              # Multi-tenant partitioned team root (e.g
 ├── meta.json                          # Workspace metadata (name, icon, owner, createdAt)
 ├── members.json                       # Team roster (emails, names, avatars, roles: owner/admin/member)
 ├── tree.json                          # Workspace File & Document Hierarchy
+├── databases/
+│   ├── index.json                     # Authoritative database schemas and registry
+│   └── {dbId}/
+│       ├── schema.json                # Creation-time compatibility snapshot; index is authoritative
+│       └── records.json               # Records, cell property values, and timestamps
 ├── tasks.json                         # Default Sprint Kanban Board and work items
 ├── task-boards.json                   # Task board registry
 ├── task-boards/{boardId}.json         # Tasks for additional boards
@@ -166,7 +171,7 @@ Stores team members and their permission levels.
 ```
 
 ### 6. Tasks with Calendar Due Dates (`workspaces/{wsId}/tasks.json`)
-Stores ADO-style work items with assignees, notes, discussion, and optional due dates. `type` is one of `task`, `bug`, `feature`, `improvement`, or `question`; older records may omit it and are treated as tasks.
+Stores typed work items with assignees, notes, discussion, and optional due dates. `type` is one of `task`, `bug`, `feature`, `improvement`, or `question`; older records may omit it and are treated as tasks.
 ```json
 [
   {
@@ -197,17 +202,68 @@ Stores ADO-style work items with assignees, notes, discussion, and optional due 
 
 The authenticated API supports `POST /api/tasks/:taskId/comments` for discussion and `DELETE /api/tasks/:taskId` for direct work-item removal. Both routes enforce workspace membership and use the board's R2 ETag for optimistic concurrency.
 
-Additional boards are registered in `workspaces/{wsId}/task-boards.json` and store their tasks under `workspaces/{wsId}/task-boards/{boardId}.json`. The default board remains compatible with `tasks.json`, allowing existing installations to migrate without changing their current task data.
+### 7. Task Boards Registry (`workspaces/{wsId}/task-boards.json`)
+Stores the workspace's task boards metadata, custom columns, WIP limits, and presentation settings:
+```json
+[
+  {
+    "id": "default",
+    "name": "General Tasks",
+    "description": "Primary sprint board for day-to-day deliverables",
+    "icon": "⚡",
+    "color": "#1E7D6B",
+    "columns": [
+      { "id": "todo", "title": "To Do", "color": "#787672" },
+      { "id": "inprogress", "title": "In Progress", "color": "#1E7D6B", "wipLimit": 5 },
+      { "id": "done", "title": "Done", "color": "#2E7D32" }
+    ],
+    "defaultView": "board",
+    "defaultPriority": "medium",
+    "updatedAt": "2026-09-22T17:00:00.000Z"
+  }
+]
+```
+
+- **Board APIs**:
+  - `GET /api/task-boards`: Retrieves all boards with fallback default columns.
+  - `POST /api/task-boards`: Creates a new board with custom columns, icon, color, and WIP limits.
+  - `PATCH /api/task-boards/:boardId`: Updates board metadata and workflow columns (supported for both default and custom boards).
+  - `DELETE /api/task-boards/:boardId`: Deletes a custom board and purges its tasks (protected: default board cannot be deleted).
+  - `POST /api/task-boards/:boardId/clear-completed`: Prunes all tasks in the "done" column in a single optimistic ETag transaction.
+  - `POST /api/task-boards/:boardId/clear-all`: Clears all tasks on the board.
+
+Additional boards store their tasks under `workspaces/{wsId}/task-boards/{boardId}.json`. The default board remains backwards-compatible with `tasks.json`.
 
 In production, the first authenticated Cloudflare Access request removes the historical demo roster from the default workspace and registers the real Access identity. Subsequent roster changes are stored in `members.json`; owners and admins can remove non-owner members through the authenticated API.
 
-### 7. Notes, folders, and authenticated file previews
+### 8. Photos Gallery Registry (`workspaces/{wsId}/photos.json`)
+Stores visual inspirations, project moodboards, and photo metadata with direct R2 streaming URLs:
+```json
+[
+  {
+    "id": "photo-moodboard-1",
+    "name": "Brand Design System.png",
+    "url": "/api/files/photo-moodboard-1/Brand%20Design%20System.png",
+    "album": "Inspirations",
+    "size": 2450120,
+    "createdAt": "2026-09-22T12:00:00.000Z"
+  }
+]
+```
+
+### 9. Notes, folders, and authenticated file previews
 
 Notes and folders share `tree.json`. Each node stores a `parentId`, allowing arbitrary nesting while document content remains in `docs/{docId}/content.json`. Uploaded files use `files/{fileId}/{filename}` and are served through authenticated API requests. The browser fetches files with its session token, creates temporary blob URLs for image, PDF, or text previews, and revokes those URLs after use.
 
 ---
 
 ## Concurrency Control with HTTP ETags
+
+Database record patches merge only the supplied property keys. A property value of `null` explicitly clears a cell; omitted properties stay unchanged. Unknown or unsafe property IDs remain invalid even when their value is null. Empty select values must not be displayed as the schema's first option.
+
+`databases/index.json` is authoritative for both database lists and record validation. Schema updates use one conditional write to the index, so a successful response cannot leave a stale list/schema pair. `schema.json` is retained as a creation-time compatibility snapshot, not read as the current schema. Database creation and deletion still touch several objects, and R2 does not provide a transaction across them. Clients surface 409 conflicts.
+
+`tree.json` contains active `nodes` plus optional `trash` entries with a deleted root ID, name, timestamp, and retained subtree. `GET /api/tree` exposes only active nodes; `GET /api/trash` exposes summaries; `POST /api/trash/:id/restore` restores the subtree with an ETag write. If an ancestor folder is missing, its child returns to the root. Document content and uploaded bytes remain in R2 while in Trash, and public document shares return 404 until restored. Restoring a previously public page makes its old share link work again unless sharing is revoked. There is currently no permanent purge or automatic retention period.
 
 To prevent race conditions when two users modify the file tree simultaneously, `worker/storage/r2Db.ts` implements optimistic concurrency using **HTTP ETags**. If the ETag no longer matches, the write fails and the API returns a conflict so the client can reload before retrying. It is never silently downgraded to an unconditional write:
 

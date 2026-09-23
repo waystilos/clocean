@@ -105,8 +105,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated, accessRequi
         body: JSON.stringify({
           email: cleanEmail,
           purpose: mode,
-          name: name.trim(),
-          workspaceName: mode === "join" ? inviteInfo?.name : finalWsName,
+          name: mode === "signin" ? undefined : name.trim(),
+          workspaceName: mode === "signin" ? undefined : mode === "join" ? inviteInfo?.name : finalWsName,
           workspaceId: joinWorkspaceId || undefined,
         }),
       });
@@ -163,8 +163,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated, accessRequi
           email: cleanEmail,
           code: cleanCode,
           purpose: mode,
-          name: name.trim(),
-          workspaceName: mode === "join" ? inviteInfo?.name : finalWsName,
+          name: mode === "signin" ? undefined : name.trim(),
+          workspaceName: mode === "signin" ? undefined : mode === "join" ? inviteInfo?.name : finalWsName,
           workspaceId: joinWorkspaceId || undefined,
         }),
       });
@@ -264,7 +264,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated, accessRequi
         {step === "details" ? (
           <>
             {/* Mode Switcher Tabs */}
-            {/* Notion-Style Mode Switcher or Invitation Header */}
+            {/* Workspace Mode Switcher or Invitation Header */}
             {mode === "join" ? (
               <div>
                 {inviteInfo && (

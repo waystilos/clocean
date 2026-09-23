@@ -16,7 +16,7 @@ interface DashboardViewProps {
   tree?: TreeNode[];
   photos?: PhotoItem[];
   onNavigateDoc: (docId: string) => void;
-  onNavigateView: (view: "tasks" | "notes" | "documents" | "photos") => void;
+  onNavigateView: (view: "tasks" | "notes" | "documents") => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -116,7 +116,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </strong>
           ,{" "}
           <strong style={{ color: "var(--text-primary)" }}>
-            {notesCount} {notesCount === 1 ? "note" : "notes"}
+            {notesCount} {notesCount === 1 ? "document" : "documents"}
           </strong>
           , and{" "}
           <strong style={{ color: "var(--text-primary)" }}>
@@ -160,10 +160,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <ArrowRight size={16} color="var(--text-muted)" />
           </div>
           <h3 className="font-serif" style={{ fontSize: "16px", fontWeight: 600, marginBottom: "4px" }}>
-            {firstDoc ? firstDoc.name : "New Note"}
+            {firstDoc ? firstDoc.name : "New Document"}
           </h3>
           <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-            {firstDoc ? "Active multiplayer document" : "Create your first document"}
+            {firstDoc ? "Collaborative workspace document" : "Create your first document"}
           </p>
         </div>
 
@@ -187,7 +187,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <ArrowRight size={16} color="var(--text-muted)" />
           </div>
           <h3 className="font-serif" style={{ fontSize: "16px", fontWeight: 600, marginBottom: "4px" }}>
-            Cloudflare Drive
+            Files & Storage
           </h3>
           <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
             Manage R2 files & uploads
@@ -252,7 +252,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 if (item.type === "doc") onNavigateDoc("doc-manifesto");
                 else if (item.type === "file") onNavigateView("documents");
                 else if (item.type === "task") onNavigateView("tasks");
-                else if (item.type === "photo") onNavigateView("photos");
+                else if (item.type === "photo") onNavigateView("documents");
               }}
               style={{
                 display: "flex",

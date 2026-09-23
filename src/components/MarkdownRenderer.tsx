@@ -15,11 +15,15 @@ import {
   List,
 } from "lucide-react";
 import { WorkspaceMember } from "../types.ts";
+import { EmbeddedDatabase } from "./EmbeddedDatabase.tsx";
 
 interface MarkdownRendererProps {
   content: string;
   onToggleCheckbox?: (lineIndex: number) => void;
   members?: WorkspaceMember[];
+  workspaceId?: string;
+  getAuthHeaders?: (extra?: Record<string, string>) => Record<string, string>;
+  onRemoveDatabaseBlock?: (databaseId: string) => void;
 }
 
 export interface CalloutConfig {
@@ -216,6 +220,9 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   content,
   onToggleCheckbox,
   members = [],
+  workspaceId = "default",
+  getAuthHeaders = (extra) => extra || {},
+  onRemoveDatabaseBlock,
 }) => {
   const [copiedCodeIdx, setCopiedCodeIdx] = useState<number | null>(null);
 
@@ -260,6 +267,34 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       }
       i++; // skip closing ```
       const fullCode = codeLines.join("\n");
+
+      // Interactive Database Block: ```database
+      if (lang === "database") {
+        let dbId = "";
+        let dbName = "Database";
+        try {
+          const parsed = JSON.parse(fullCode);
+          dbId = parsed.id || "";
+          dbName = parsed.name || "Database";
+        } catch {
+          const match = fullCode.match(/"id"\s*:\s*"([^"]+)"/);
+          if (match) dbId = match[1];
+        }
+
+        if (dbId) {
+          renderedElements.push(
+            <EmbeddedDatabase
+              key={`database-${codeIdx}`}
+              databaseId={dbId}
+              initialName={dbName}
+              workspaceId={workspaceId}
+              getAuthHeaders={getAuthHeaders}
+              onRemoveFromPage={onRemoveDatabaseBlock ? () => onRemoveDatabaseBlock(dbId) : undefined}
+            />
+          );
+          continue;
+        }
+      }
 
       renderedElements.push(
         <div
@@ -716,37 +751,21 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
         <div
           key={`check-${lineIdx}`}
           onClick={() => onToggleCheckbox?.(lineIdx)}
+          className={`circular-task-item ${isChecked ? "checked" : ""}`}
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            padding: "4px 0",
             cursor: onToggleCheckbox ? "pointer" : "default",
-            userSelect: "none",
+            margin: "4px 6px 4px 0",
           }}
         >
-          <div
-            style={{
-              width: "16px",
-              height: "16px",
-              borderRadius: "3px",
-              backgroundColor: isChecked ? "var(--accent)" : "transparent",
-              border: `1.5px solid ${isChecked ? "var(--accent)" : "var(--border-subtle)"}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transition: "all 0.1s ease",
-              flexShrink: 0,
-            }}
-          >
-            {isChecked && <CheckSquare size={12} color="#FFFFFF" />}
+          <div className="circular-checkbox-circle">
+            {isChecked && <Check size={11} strokeWidth={3} />}
           </div>
           <span
             style={{
-              fontSize: "15px",
-              color: isChecked ? "var(--text-secondary)" : "var(--text-primary)",
+              fontSize: "13px",
+              fontWeight: 400,
               textDecoration: isChecked ? "line-through" : "none",
-              lineHeight: 1.5,
+              color: isChecked ? "var(--text-muted)" : "var(--text-primary)",
             }}
           >
             {renderInline(itemText)}

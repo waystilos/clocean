@@ -2,28 +2,38 @@
 
 Clocean is an open-source collaborative workspace built to run entirely on Cloudflare (Workers, Pages, R2, and Durable Objects).
 
-Think of it like Notion or Craft, but without needing a traditional database like Postgres, MySQL, or MongoDB. All workspace trees, document content, sprint tasks, and uploaded files live directly in Cloudflare R2 as structured JSON and binary objects.
+Clocean is engineered without needing a traditional database like Postgres, MySQL, or MongoDB. All workspace trees, document content, sprint tasks, and uploaded files live directly in Cloudflare R2 as structured JSON and binary objects.
 
-Because it runs on Cloudflare's serverless edge and R2 has zero egress fees, you can self-host a full team workspace for basically $0/month.
+Deployment costs depend on usage and your Cloudflare plan. The app uses R2 object storage rather than a separately provisioned database; review your account's billing before deployment.
 
 ---
 
 ## What's Inside
 
-- **Collaborative Document Editor**: Write documents with rich markdown, interactive checklists, code blocks, and linked attachments. Multi-user editing is powered by Cloudflare Durable Objects over WebSockets with live cursor tracking.
-- **Notion-Style Workspace & Doc Invites**: Share a workspace or document with a link (`?join=workspaceId` or `?join=ws&doc=docId`). Teammates authenticate through the Cloudflare Access protected application before joining.
-- **Workspace Navigation**: Organize notes and documents in nested folders, create notes from the tree, drag items between folders, and move between workspace resources without losing context.
-- **Sprint Tasks & Boards**: Create separate Kanban boards and ADO-style work items for tasks, bugs, features, improvements, or questions, with notes, comments, assignees, tags, and calendar due dates.
-- **Cloudflare Drive & Media**: Upload PDFs, design specs, text files, and images directly to R2. Documents owns the file and media experience, with authenticated previews and no bandwidth egress charges.
+- **Workspaces & Organizations**: The top-level team container (e.g., `Clocean Main`, `Engineering`). Each workspace provides an isolated environment for team members, role permissions (Owner, Admin, Member), documents, sprint boards, and R2 storage (`workspaces/{wsId}/`). Switch between organizations instantly via the sidebar switcher.
+- **Docs & Collaborative Canvas**: Real-time multiplayer document authoring canvas powered by Cloudflare Durable Objects. Features live cursors, revision history, tag pills (`#launch`), circular checklists, markdown export, and auto-flushing directly to R2.
+- **Workspace Navigation & Pages**: Sidebar workspace switcher, pages, Databases, Templates, Import, Trash, and a Report a bug link. File uploads live in Files; the sidebar has no upload action. On small screens, the Workspace button opens the sidebar.
+- **Snaps Visual Panel**: Design mockups, photos, and clippings live alongside documents in a collapsible right "Snaps" panel with visual preview cards, instant snap uploads, and discussion threads.
+- **Files & Cloudflare Drive**: Upload PDFs, design specs, text files, and images directly to R2. Dedicated file manager with folder organization, authenticated previews, and $0 bandwidth egress charges.
+- **Workspace & Document Invites**: Share a workspace or document with a link (`?join=workspaceId` or `?join=ws&doc=docId`). Teammates authenticate through Cloudflare Access before joining.
+- **Sprint Tasks & Boards**: Create separate Kanban boards and typed work items for tasks, bugs, features, improvements, or questions, with notes, comments, assignees, tags, and calendar due dates.
 - **Custom Profile Avatars**: Upload profile photos directly to R2 with instant client preview and edge-cached streaming.
 - **Zero-Database Architecture**: Every piece of data is stored in R2. Writes to tree structures use R2 HTTP ETags (`If-Match`) for optimistic concurrency control so edits never overwrite each other silently.
-- **Authentication**: Production uses cryptographically verified Cloudflare Access JWTs and workspace membership checks. Local development keeps mock identity and OTP helpers for testing; production email signup is disabled, so no transactional email service is required.
-- **Security**: R2 previews are fetched through authenticated API requests, workspace-scoped, rendered from temporary blob URLs, and protected by a restrictive CSP. File responses are sandboxed and unsafe formats remain downloads.
-- **Design**: Built with a warm parchment aesthetic, using Spectral for serif typography and Schibsted Grotesk for the interface.
+- **Authentication**: Production uses cryptographically verified Cloudflare Access JWTs and workspace membership checks. The Access login page can offer Cloudflare and Google providers after [provider setup](docs/ONE_CLICK_DEPLOY.md#google-and-cloudflare-sign-in). There is no direct Apple sign-in option. Local development keeps mock identity and OTP helpers for testing.
+- **Design System**: Obsidian Dark (`#1C1C1A`) and Warm Parchment (`#FAF8F5`) themes, using Spectral for serif brand typography and Schibsted Grotesk for the interface.
 
 ---
 
 ## How It Works Under the Hood
+
+### Feature status and everyday use
+
+- **Databases:** Open Databases from the sidebar or embed a database in a page. Create databases and records, edit cells and schemas, search and filter records, and delete with confirmation. Table is the editing view; Cards summarizes records. Text/number/person/URL cells save on Enter or blur; Escape discards the draft. Empty select cells show Empty, and clearing a cell saves `null`. Database deletion is permanent.
+- **Notes, files, tasks, and snaps:** Files owns upload and folder organization. Page and file deletion moves items into recoverable Trash. See the [UX review](docs/UX_REVIEW.md) for workflow coverage and limitations.
+- **Templates, Import, and Trash:** Choose from three page templates; import `.md`, `.markdown`, or `.txt` files up to 1 MB each as new pages; restore deleted pages, files, and folders from Trash. Imported files never overwrite an existing page. Trash has no permanent-delete or automatic expiration control yet.
+- **Design:** both themes use the shared typography and color tokens, visible keyboard focus, and a horizontally scrollable database table. The database panel fits the available width.
+
+Any code change that changes user behavior, API contracts, storage, or setup must update the corresponding documentation in the same change. Record remaining limitations rather than describing planned features as shipped.
 
 ```
                          Browser (React 19 SPA)
@@ -78,25 +88,56 @@ pnpm dev
 ```
 Open `http://localhost:3000`. Local development uses mock identity and OTP helpers, so no email provider is required.
 
+Existing-user sign-in sends only the email and sign-in purpose when requesting a code; setup-only name/workspace fields are omitted. This avoids rejecting sign-in with an empty name. Verification likewise omits setup fields for sign-in. Production continues to require Cloudflare Access.
+
 To test multi-user collaboration locally, open a second browser window in incognito mode or visit with a different email.
 
 ---
 
 ## Running Tests
 
-The test suite runs with Vitest and tests the full edge API, authentication, R2 schemas, and multiplayer sync:
+### 1. Vitest Unit & Integration Suite
+
+The integration suites require a **local development Worker on port 8787**. They mutate test data, so use an isolated local state directory; never point them at production. Build first so the Worker can serve the static assets tested by the suite:
 
 ```bash
-pnpm test
+npm run build
+npm run worker:dev -- --persist-to /private/tmp/clocean-tests
+# In a second terminal:
+npm test
 ```
 
-This runs the Vitest integration and security suites covering:
+`worker:dev` explicitly selects local emulation and development authentication. The production Wrangler configuration stays in production mode. `test:unit` currently aliases the entire Vitest suite and also requires the Worker; it is not a component-only test command.
+
+```bash
+npm test
+```
+Runs the Vitest integration and security suites covering:
+- Embedded databases & schema querying
+- Minimalist workspace navigation and sidebar rendering
+- Circular checklists and Markdown WYSIWYG renderer
 - Document CRUD and revision history
 - R2 byte-range file streaming
 - Local-only invite links and OTP verification
 - Avatar uploads and edge image streaming
 - Durable Object WebSockets and room isolation
 - Security boundaries (Access JWT validation, workspace authorization, path traversal sanitization, CSWSH protection, XSS defense headers, and authenticated file previews)
+
+### 2. Cypress End-to-End Suite
+```bash
+# Run headless Cypress E2E test suite against built preview bundle
+npm run test:e2e
+
+# Or launch the interactive Cypress test dashboard:
+npm run cypress:open
+```
+Runs browser UI journeys against a built preview with intercepted API responses. These tests verify client interactions, not persistence, production authentication, or real multiplayer behavior. The preview uses port 4173 and fails if that port is occupied; an interrupted Cypress process reports failure. The interactive runner requires a separately running preview on port 4173.
+
+The Cypress scenarios cover:
+- Loading the application and navigating the minimalist sidebar (emoji doc icons, quick actions, `+ Add snap`)
+- Editing documents with amber tag pills, circular task checklists, and floating action bar
+- Opening and editing embedded databases in a page
+- Opening and interacting with the collapsible right Snaps panel, UI snapshot preview cards, and discussion threads
 
 ---
 
@@ -112,7 +153,7 @@ This runs Wrangler to create the `clocean-storage` bucket in your Cloudflare acc
 ```bash
 pnpm deploy
 ```
-This builds the React frontend (`pnpm build`) and deploys both the worker and static assets with `wrangler deploy`.
+This builds the React frontend (`npm run build`) and deploys both the Worker and static assets with `wrangler deploy`. The deploy scripts invoke npm internally, so they do not require pnpm at deployment time once dependencies are installed.
 
 ### Step 3: Set up Cloudflare Zero Trust
 Production requires Cloudflare Access. If you want corporate SSO (Google Workspace, GitHub, Okta) or domain-wide access control:
@@ -141,6 +182,8 @@ clocean/
 │   ├── auth/                  # Local OTP, session HMAC, and Cloudflare Access
 │   └── notifications/         # Mention, comment, and invitation notifications
 ├── tests/                     # Vitest integration and security suites
+├── cypress/                   # Cypress E2E test specs (Workspace UI, Embedded databases)
+├── cypress.config.ts          # Cypress configuration
 ├── docs/                      # Architectural deep dives
 │   ├── ARCHITECTURE.md        # Edge layers, WebSockets, and data flow
 │   ├── R2_DATABASE.md         # R2 JSON database schema and concurrency
@@ -154,6 +197,7 @@ clocean/
 ## Documentation
 
 - [System Architecture](docs/ARCHITECTURE.md)
+- [UX Review and Feature Limitations](docs/UX_REVIEW.md)
 - [R2 Database & Schema Reference](docs/R2_DATABASE.md)
 - [Zero Trust Deployment Guide](docs/ONE_CLICK_DEPLOY.md)
 - [Infrastructure as Code (Pulumi)](infra/README.md)
@@ -161,7 +205,7 @@ clocean/
 
 ## Feedback and Bug Reports
 
-Please read [Bugs and Feature Feedback](BUGS.md) before opening an issue. Bug reports and feature ideas are welcome; code contributions and pull requests are paused while the project is being consolidated.
+Use **Report a bug** in the sidebar to open the [GitHub issue form](https://github.com/waystilos/clocean/issues/new/choose). Read [Bugs and Feature Feedback](BUGS.md) before posting. Bug reports and feature ideas are welcome; code contributions and pull requests are paused while the project is being consolidated.
 
 ---
 

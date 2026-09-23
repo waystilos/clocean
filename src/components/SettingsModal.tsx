@@ -668,7 +668,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   Theme & Typography
                 </h3>
                 <p style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
-                  Select the visual tone inspired by the Figma design system.
+                  Select the visual tone for your workspace.
                 </p>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
@@ -688,7 +688,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       Obsidian (Dark)
                     </div>
                     <div style={{ fontSize: "11px", color: "#8E8B84" }}>
-                      Figma Dark Mode
+                      Dark Theme
                     </div>
                   </div>
 
@@ -708,7 +708,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       Warm Parchment (Light)
                     </div>
                     <div style={{ fontSize: "11px", color: "#75736E" }}>
-                      Figma Light Mode
+                      Light Theme
                     </div>
                   </div>
                 </div>

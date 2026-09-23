@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Header } from "./components/Header.tsx";
 import { DashboardView } from "./views/DashboardView.tsx";
@@ -6,12 +6,14 @@ import { EditorView } from "./views/EditorView.tsx";
 import { DocumentsView } from "./views/DocumentsView.tsx";
 import { TasksView } from "./views/TasksView.tsx";
 import { NotesView } from "./views/NotesView.tsx";
+import { WorkspaceToolsView } from "./views/WorkspaceToolsView.tsx";
 import { DatabasesView } from "./views/DatabasesView.tsx";
 import { SearchModal } from "./components/SearchModal.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { FilePreviewModal } from "./components/FilePreviewModal.tsx";
 import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal.tsx";
 import { TeamMembersModal } from "./components/TeamMembersModal.tsx";
+import { AddSnapModal } from "./components/AddSnapModal.tsx";
 import { AuthGate } from "./components/AuthGate.tsx";
 import {
   ViewMode,
@@ -25,9 +27,14 @@ import {
   MentionNotification,
 } from "./types.ts";
 import { MarkdownRenderer } from "./components/MarkdownRenderer.tsx";
-import { Layers, Sun, Moon, FileText, Users, Home, ListCheck, Table2, PanelLeftOpen } from "lucide-react";
+import { Layers, Sun, Moon, FileText, Users, Home, ListCheck, Folder, PanelLeftOpen } from "lucide-react";
 
 export const App: React.FC = () => {
+  const [workspaceError, setWorkspaceError] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [searchTaskId, setSearchTaskId] = useState<string | null>(null);
+  const refreshGeneration = useRef(0);
+  const loadedWorkspaceId = useRef<string | null>(null);
   const [currentView, setCurrentView] = useState<ViewMode>(() => {
     try {
       return new URLSearchParams(window.location.search).has("task") ? "tasks" : "home";
@@ -94,6 +101,8 @@ export const App: React.FC = () => {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAddSnapOpen, setIsAddSnapOpen] = useState(false);
+  const [openSnapsTrigger, setOpenSnapsTrigger] = useState(0);
   const [previewFile, setPreviewFile] = useState<TreeNode | DocAttachment | null>(null);
 
   // Authenticated headers helper attaching bearer session token & identity
@@ -240,33 +249,41 @@ export const App: React.FC = () => {
   // Load initial data from Worker API (backed by Cloudflare R2 for the active workspace)
   const refreshData = async () => {
     if (!currentUser?.email) return;
+    const generation = ++refreshGeneration.current;
     try {
       const headers = getAuthHeaders({
         "x-workspace-id": currentWorkspace.id,
       });
+      const read = async <T,>(url: string): Promise<T> => {
+        const response = await fetch(url, { headers });
+        if (!response.ok) throw new Error("Could not refresh workspace data. Displayed items may be out of date.");
+        return response.json() as Promise<T>;
+      };
       const [treeRes, tasksRes, photosRes, actRes, notifRes] = await Promise.all([
-        fetch("/api/tree", { headers }).then((r) => (r.ok ? r.json() : { nodes: [] }) as Promise<{ nodes?: TreeNode[] }>),
-        fetch("/api/tasks", { headers }).then((r) => (r.ok ? r.json() : []) as Promise<TaskItem[]>),
-        fetch("/api/photos", { headers }).then((r) => (r.ok ? r.json() : []) as Promise<PhotoItem[]>),
-        fetch("/api/activity", { headers }).then((r) => (r.ok ? r.json() : []) as Promise<ActivityItem[]>),
+        read<{ nodes?: TreeNode[] }>("/api/tree"),
+        read<TaskItem[]>("/api/tasks"),
+        read<PhotoItem[]>("/api/photos"),
+        read<ActivityItem[]>("/api/activity"),
         fetch(`/api/notifications?user=${encodeURIComponent(currentUser.email)}`, { headers })
           .then((r) => (r.ok ? r.json() : []) as Promise<MentionNotification[]>)
           .catch(() => []),
       ]);
+      if (generation !== refreshGeneration.current) return;
+      setWorkspaceError("");
 
       if (treeRes?.nodes) {
         setTree(treeRes.nodes);
         const firstDoc = treeRes.nodes.find((n) => n.type === "doc");
         if (firstDoc && (activeDocId === "doc-manifesto" || !treeRes.nodes.some((t) => t.id === activeDocId))) {
           setActiveDocId(firstDoc.id);
-        }
+        } else if (!firstDoc) setActiveDocId("");
       }
       if (Array.isArray(tasksRes)) setTasks(tasksRes);
       if (Array.isArray(photosRes)) setPhotos(photosRes);
       if (Array.isArray(actRes)) setActivities(actRes);
       if (Array.isArray(notifRes)) setNotifications(notifRes);
     } catch (err) {
-      console.error("Failed to load workspace data:", err);
+      if (generation === refreshGeneration.current) setWorkspaceError(err instanceof Error ? err.message : "Could not load workspace data.");
     }
   };
 
@@ -281,6 +298,16 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (currentUser?.email && currentWorkspace?.id) {
+      if (loadedWorkspaceId.current !== currentWorkspace.id) {
+        loadedWorkspaceId.current = currentWorkspace.id;
+        setTree([]);
+        setActiveDocId("");
+        setTasks([]);
+        setPhotos([]);
+        setActivities([]);
+        setNotifications([]);
+        setWorkspaceError("");
+      }
       refreshData();
     }
   }, [currentUser?.email, currentWorkspace?.id]);
@@ -290,6 +317,8 @@ export const App: React.FC = () => {
   };
 
   const handleSignOut = () => {
+    refreshGeneration.current++;
+    loadedWorkspaceId.current = null;
     localStorage.removeItem("clocean_session_token");
     localStorage.removeItem("clocean_user");
     localStorage.removeItem("clocean_workspace");
@@ -303,10 +332,13 @@ export const App: React.FC = () => {
     setActivities([]);
   };
 
-  const handleUploadFile = async (file: File) => {
+  const handleUploadFile = async (file: File, parentId?: string | null) => {
     if (!currentUser?.email) return;
     const formData = new FormData();
     formData.append("file", file);
+    if (parentId) {
+      formData.append("parentId", parentId);
+    }
 
     const res = await fetch("/api/upload", {
       method: "POST",
@@ -320,15 +352,91 @@ export const App: React.FC = () => {
     await refreshData();
   };
 
+  const handleMoveNode = async (nodeId: string, parentId: string | null) => {
+    if (!currentUser?.email) return;
+    let res = await fetch(`/api/tree/node/${encodeURIComponent(nodeId)}`, {
+      method: "PUT",
+      headers: getAuthHeaders({
+        "Content-Type": "application/json",
+        "x-workspace-id": currentWorkspace.id,
+      }),
+      body: JSON.stringify({ parentId }),
+    });
+    if (res.status === 409) {
+      await refreshData();
+      res = await fetch(`/api/tree/node/${encodeURIComponent(nodeId)}`, {
+        method: "PUT",
+        headers: getAuthHeaders({
+          "Content-Type": "application/json",
+          "x-workspace-id": currentWorkspace.id,
+        }),
+        body: JSON.stringify({ parentId }),
+      });
+    }
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(err.error || "Failed to move item");
+    }
+    const updated = (await res.json()) as TreeNode;
+    setTree((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+    await refreshData();
+  };
+
+  const handleAddSnapToDoc = async (docId: string, attachment: DocAttachment) => {
+    try {
+      const headers = getAuthHeaders({ "x-workspace-id": currentWorkspace.id });
+      const docRes = await fetch(`/api/docs/${encodeURIComponent(docId)}`, { headers });
+      let docData: any = {};
+      if (docRes.ok) {
+        docData = await docRes.json();
+      }
+      const currentAtts = docData.attachments || [];
+      const updatedAtts = [...currentAtts, attachment];
+
+      await fetch(`/api/docs/${encodeURIComponent(docId)}`, {
+        method: "PUT",
+        headers: getAuthHeaders({
+          "Content-Type": "application/json",
+          "x-workspace-id": currentWorkspace.id,
+        }),
+        body: JSON.stringify({
+          ...docData,
+          attachments: updatedAtts,
+        }),
+      });
+
+      setActiveDocId(docId);
+      setCurrentView("notes");
+      setOpenSnapsTrigger((prev) => prev + 1);
+      await refreshData();
+    } catch (err) {
+      console.error("Failed to add snap:", err);
+    }
+  };
+
   const handleDeleteFile = async (fileId: string) => {
     if (!currentUser?.email) return;
-    await fetch(`/api/tree/node/${fileId}`, {
+    const response = await fetch(`/api/tree/node/${fileId}`, {
       method: "DELETE",
       headers: getAuthHeaders({
         "x-workspace-id": currentWorkspace.id,
       }),
     });
-    setTree((prev) => prev.filter((n) => n.id !== fileId));
+    if (!response.ok) throw new Error("Could not move item to Trash. Please try again.");
+    await refreshData();
+  };
+
+  const handleDeleteDoc = async (nodeId: string) => {
+    if (!currentUser?.email) return;
+      const res = await fetch(`/api/tree/node/${encodeURIComponent(nodeId)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders({
+          "x-workspace-id": currentWorkspace.id,
+        }),
+      });
+      if (!res.ok) throw new Error("Could not move page to Trash. Please try again.");
+      if (activeDocId === nodeId) setActiveDocId("");
+        await refreshData();
   };
 
   const handleUpdateTasks = async (newTasks: TaskItem[], boardId = "default") => {
@@ -365,21 +473,30 @@ export const App: React.FC = () => {
       headers: getAuthHeaders({ "Content-Type": "application/json", "x-workspace-id": currentWorkspace.id }),
       body: JSON.stringify({ type, parentId, name }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) throw new Error("Could not create item. Please try again.");
     const node = await res.json() as TreeNode;
     setTree((current) => [node, ...current]);
     return node;
   };
 
   const handleMoveTreeNode = async (nodeId: string, parentId: string | null) => {
-    const res = await fetch(`/api/tree/node/${encodeURIComponent(nodeId)}`, {
+    let res = await fetch(`/api/tree/node/${encodeURIComponent(nodeId)}`, {
       method: "PUT",
       headers: getAuthHeaders({ "Content-Type": "application/json", "x-workspace-id": currentWorkspace.id }),
       body: JSON.stringify({ parentId }),
     });
+    if (res.status === 409) {
+      await refreshData();
+      res = await fetch(`/api/tree/node/${encodeURIComponent(nodeId)}`, {
+        method: "PUT",
+        headers: getAuthHeaders({ "Content-Type": "application/json", "x-workspace-id": currentWorkspace.id }),
+        body: JSON.stringify({ parentId }),
+      });
+    }
     if (!res.ok) return null;
     const moved = await res.json() as TreeNode;
     setTree((current) => current.map((node) => node.id === moved.id ? moved : node));
+    await refreshData();
     return moved;
   };
 
@@ -418,9 +535,18 @@ export const App: React.FC = () => {
     if (currentView === "notes") {
       const activeDoc = tree.find((t) => t.id === activeDocId);
       return [
-        { label: "Notes", onClick: () => setCurrentView("notes") },
-        { label: activeDoc ? activeDoc.name : "Note" },
+        { label: "Docs", onClick: () => setCurrentView("notes") },
+        { label: activeDoc ? activeDoc.name : "Document" },
       ];
+    }
+    if (currentView === "tasks") {
+      return [
+        { label: "Tasks", onClick: () => setCurrentView("tasks") },
+        { label: "Sprint Board" },
+      ];
+    }
+    if (currentView === "documents") {
+      return [{ label: "Files", onClick: () => setCurrentView("documents") }];
     }
     return undefined;
   };
@@ -581,35 +707,47 @@ export const App: React.FC = () => {
 
   return (
     <div className="clocean-shell" style={{ display: "flex", width: "100vw", height: "100vh", overflow: "hidden" }}>
-      {/* Figma Sidebar */}
-      {isSidebarCollapsed ? (
+      {/* Sidebar */}
+      {isSidebarCollapsed && !mobileNavOpen ? (
         <button className="desktop-sidebar-toggle" onClick={toggleSidebar} title="Show navigation sidebar" aria-label="Show navigation sidebar">
           <PanelLeftOpen size={18} />
         </button>
       ) : (
         <Sidebar
-          className="clocean-sidebar"
+          className={`clocean-sidebar${mobileNavOpen ? " mobile-open" : ""}`}
           currentView={currentView}
-          onSelectView={(v) => setCurrentView(v)}
+          onSelectView={(v) => { setCurrentView(v); setMobileNavOpen(false); }}
           currentUser={currentUser}
           theme={theme}
           onToggleTheme={handleToggleTheme}
           workspaces={workspaces}
           currentWorkspace={currentWorkspace}
-          onSelectWorkspace={(ws) => setCurrentWorkspace(ws)}
+          onSelectWorkspace={(ws) => { setCurrentWorkspace(ws); setMobileNavOpen(false); }}
           onOpenCreateWorkspace={() => setIsCreateWsOpen(true)}
           onOpenTeamMembers={() => setIsTeamMembersOpen(true)}
           tree={tree}
-          onSelectDoc={handleNavigateDoc}
+          activeDocId={activeDocId}
+          onSelectDoc={(id) => { handleNavigateDoc(id); setMobileNavOpen(false); }}
+          onCreateDoc={async () => {
+            const newDoc = await handleCreateTreeNode("doc", null, "Untitled page");
+            if (newDoc) {
+              handleNavigateDoc(newDoc.id);
+            }
+          }}
+          onAddSnap={() => {
+            setIsAddSnapOpen(true);
+          }}
           onSignOut={handleSignOut}
           sessionToken={sessionToken}
+          onDeleteDoc={handleDeleteDoc}
         />
       )}
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
+        <button aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}><Layers size={18} /><span>{mobileNavOpen ? "Close" : "Workspace"}</span></button>
         <button className={currentView === "home" ? "active" : ""} onClick={() => setCurrentView("home")}><Home size={18} /><span>Home</span></button>
         <button className={currentView === "tasks" ? "active" : ""} onClick={() => setCurrentView("tasks")}><ListCheck size={18} /><span>Tasks</span></button>
-        <button className={currentView === "databases" ? "active" : ""} onClick={() => setCurrentView("databases")}><Table2 size={18} /><span>Data</span></button>
-        <button className={currentView === "notes" ? "active" : ""} onClick={() => setCurrentView("notes")}><FileText size={18} /><span>Notes</span></button>
+        <button className={currentView === "notes" ? "active" : ""} onClick={() => setCurrentView("notes")}><FileText size={18} /><span>Docs</span></button>
+        <button className={currentView === "documents" ? "active" : ""} onClick={() => setCurrentView("documents")}><Folder size={18} /><span>Files</span></button>
       </nav>
 
       {/* Main Content Area */}
@@ -634,8 +772,9 @@ export const App: React.FC = () => {
           onSelectDoc={(docId) => handleNavigateDoc(docId)}
           onMarkNotificationsRead={handleMarkNotificationsRead}
           sidebarCollapsed={isSidebarCollapsed}
-          onToggleSidebar={toggleSidebar}
+          onToggleSidebar={() => window.matchMedia("(max-width: 720px)").matches ? setMobileNavOpen((open) => !open) : toggleSidebar()}
         />
+        {workspaceError && <div role="alert" className="workspace-error">{workspaceError} <button className="btn-secondary" onClick={() => void refreshData()}>Retry</button></div>}
 
         {/* View Routing */}
         <main style={{ flex: 1 }}>
@@ -662,6 +801,8 @@ export const App: React.FC = () => {
               onCreateNode={handleCreateTreeNode}
               onMoveNode={handleMoveTreeNode}
               onOpenFilePreview={(att) => setPreviewFile(att)}
+              openSnapsTrigger={openSnapsTrigger}
+              onDeleteNode={handleDeleteDoc}
             />
           )}
 
@@ -671,11 +812,14 @@ export const App: React.FC = () => {
               onUploadFile={handleUploadFile}
               onDeleteFile={handleDeleteFile}
               onPreviewFile={(f) => setPreviewFile(f)}
+              onCreateFolder={(name, parentId) => handleCreateTreeNode("folder", parentId || null, name)}
+              onMoveNode={handleMoveNode}
             />
           )}
 
           {currentView === "tasks" && (
             <TasksView
+              key={`${currentWorkspace.id}:${searchTaskId || "board"}`}
               tasks={tasks}
               currentUser={currentUser}
               workspaceId={currentWorkspace.id}
@@ -685,38 +829,13 @@ export const App: React.FC = () => {
             />
           )}
 
-          {currentView === "databases" && (
-            <DatabasesView workspaceId={currentWorkspace.id} currentUser={currentUser} getAuthHeaders={getAuthHeaders} />
-          )}
 
 
-          {(currentView === "templates" || currentView === "import" || currentView === "trash") && (
-            <div
-              className="animate-fade-in"
-              style={{
-                padding: "80px 32px",
-                maxWidth: "600px",
-                margin: "0 auto",
-                textAlign: "center",
-                color: "var(--text-secondary)",
-              }}
-            >
-              <h2 className="font-serif" style={{ fontSize: "24px", color: "var(--text-primary)", marginBottom: "12px" }}>
-                {currentView.charAt(0).toUpperCase() + currentView.slice(1)}
-              </h2>
-              <p style={{ fontSize: "14px", lineHeight: 1.6 }}>
-                All document templates, imported packages, and recycled assets are indexed and
-                persisted inside Cloudflare R2 bucket storage.
-              </p>
-              <button
-                onClick={() => setCurrentView("home")}
-                className="btn-primary"
-                style={{ marginTop: "24px" }}
-              >
-                Back to Dashboard
-              </button>
-            </div>
-          )}
+
+
+
+          {currentView === "databases" && <DatabasesView key={currentWorkspace.id} workspaceId={currentWorkspace.id} currentUser={currentUser} getAuthHeaders={getAuthHeaders} />}
+          {(currentView === "templates" || currentView === "import" || currentView === "trash") && <WorkspaceToolsView key={`${currentWorkspace.id}:${currentView}`} mode={currentView} workspaceId={currentWorkspace.id} headers={getAuthHeaders} onRefresh={refreshData} onOpenDoc={handleNavigateDoc} />}
         </main>
       </div>
 
@@ -726,6 +845,8 @@ export const App: React.FC = () => {
         onClose={() => setIsSearchOpen(false)}
         files={tree}
         tasks={tasks}
+        onSelectFile={(file) => setPreviewFile(file)}
+        onSelectTask={(task) => { const url = new URL(window.location.href); url.searchParams.set("task", task.id); window.history.replaceState({}, "", url); setSearchTaskId(task.id); setCurrentView("tasks"); }}
         onSelectDoc={handleNavigateDoc}
         onSelectView={(v) => setCurrentView(v)}
       />
@@ -751,6 +872,7 @@ export const App: React.FC = () => {
         onCreated={(newWs) => {
           setWorkspaces((prev) => [...prev, newWs]);
           setCurrentWorkspace(newWs);
+          setCurrentView("home");
         }}
         currentUser={currentUser}
         sessionToken={sessionToken}
@@ -831,6 +953,16 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Add Snap Modal */}
+      <AddSnapModal
+        isOpen={isAddSnapOpen}
+        onClose={() => setIsAddSnapOpen(false)}
+        activeDocId={activeDocId}
+        docs={tree}
+        onAddSnapToDoc={handleAddSnapToDoc}
+        workspaceId={currentWorkspace.id}
+        sessionToken={sessionToken}
+      />
     </div>
   );
 };
