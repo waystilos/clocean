@@ -31,6 +31,14 @@ if (!app.app_launcher_visible) {
   console.error("The Access App Launcher exists, but Clocean is not shown as a tile.");
   process.exit(1);
 }
+const appResponse = await fetch(`https://${domain}/`, { redirect: "manual" });
+const redirect = appResponse.headers.get("location");
+const login = redirect ? new URL(redirect, `https://${domain}`) : null;
+if (appResponse.status !== 302 || !login || !login.hostname.endsWith(".cloudflareaccess.com") ||
+    !login.pathname.startsWith(`/cdn-cgi/access/login/${domain}`)) {
+  console.error("The application URL does not redirect directly to Clocean's Access login page.");
+  process.exit(1);
+}
 const providersResponse = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/access/identity_providers`, {
   headers: { Authorization: `Bearer ${token}` },
 });
@@ -39,8 +47,9 @@ if (!providersResponse.ok || !providers.success || !Array.isArray(providers.resu
   console.error("Could not inspect Cloudflare Access login methods.");
   process.exit(2);
 }
-if (!providers.result.some((item) => item.type === "onetimepin")) {
-  console.error("Email-code sign-in is unavailable: no One-time PIN identity provider exists.");
+const methods = providers.result.filter((item) => item.type === "onetimepin" || item.type === "google").map((item) => item.type);
+if (methods.length === 0) {
+  console.error("Only Cloudflare-account login is available: configure Google OAuth or One-time PIN in Cloudflare Access.");
   process.exit(1);
 }
-console.log(`Access App Launcher, Clocean tile, and email-code sign-in are configured for ${domain}.`);
+console.log(`The application URL redirects to Clocean's login page with ${methods.join(" and ")} configured for ${domain}.`);
