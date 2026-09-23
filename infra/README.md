@@ -10,6 +10,8 @@ This directory provides a **100% TypeScript** Infrastructure as Code (IaC) progr
    * Creates `clocean-storage` in Western North America (`WNAM`) with zero egress fees.
 2. **Cloudflare Zero Trust Access Application**:
    * Registers a self-hosted Access Application on your custom domain (e.g. `clocean.yourcompany.com`).
+   * Creates an App Launcher at the Access team domain with the same approved-email policy and a visible Clocean tile.
+   * Adds Cloudflare Access email-code sign-in without an external mail service. Google requires a separately configured OAuth client.
    * Configures CORS headers and 24-hour session durations.
 3. **Team Access Policy (Free for 50 Users)**:
    * Restricts workspace access to your specified team email addresses or corporate email domain (e.g. `@yourcompany.com`).

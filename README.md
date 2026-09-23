@@ -19,7 +19,7 @@ Deployment costs depend on usage and your Cloudflare plan. The app uses R2 objec
 - **Sprint Tasks & Boards**: Create separate Kanban boards and typed work items for tasks, bugs, features, improvements, or questions, with notes, comments, assignees, tags, and calendar due dates.
 - **Custom Profile Avatars**: Upload profile photos directly to R2 with instant client preview and edge-cached streaming.
 - **Zero-Database Architecture**: Every piece of data is stored in R2. Writes to tree structures use R2 HTTP ETags (`If-Match`) for optimistic concurrency control so edits never overwrite each other silently.
-- **Authentication**: Production uses cryptographically verified Cloudflare Access JWTs and workspace membership checks. The Access login page can offer Cloudflare and Google providers after [provider setup](docs/ONE_CLICK_DEPLOY.md#google-and-cloudflare-sign-in). There is no direct Apple sign-in option. Local development keeps mock identity and OTP helpers for testing.
+- **Authentication**: Production uses cryptographically verified Cloudflare Access JWTs and workspace membership checks. The one-click setup provisions an Access App Launcher and email-code sign-in for approved addresses; [Google sign-in requires separate OAuth setup](docs/ONE_CLICK_DEPLOY.md#google-and-cloudflare-sign-in). There is no direct Apple sign-in option. Local development keeps mock identity and OTP helpers for testing.
 - **Design System**: Obsidian Dark (`#1C1C1A`) and Warm Parchment (`#FAF8F5`) themes, using Spectral for serif brand typography and Schibsted Grotesk for the interface.
 
 ---

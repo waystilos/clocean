@@ -1,7 +1,7 @@
 # Deployment Guide
 
 > [!IMPORTANT]
-> The one-command deployment provisions the R2 bucket, deploys the Worker, creates the Cloudflare Access application and allow policy, configures production secrets, and redeploys with authentication enabled.
+> The one-command deployment provisions the R2 bucket, deploys the Worker, creates the Cloudflare Access application, App Launcher, approved-email policies, and email-code sign-in, configures production secrets, and redeploys with authentication enabled.
 
 This guide walks you through deploying **Clocean** to your Cloudflare account with zero database setup required.
 
@@ -28,7 +28,11 @@ pnpm deploy:one-click
 
 `CLOUDFLARE_ACCOUNT_ID` is detected from Wrangler when possible. Set it explicitly when using an API token instead of an interactive Wrangler login. The command stores encrypted Pulumi values for the Access team domain and generated session secret, and sends runtime secrets to Wrangler without writing them into Git. The API token is read by Pulumi and Wrangler from the environment and is never written to the repository.
 
-The only required identity setup is the Cloudflare Access team domain and the email address allowed into the application. No email delivery service is used.
+The API token must include **Access: Apps and Policies Write** and **Access: Organizations, Identity Providers, and Groups Write** for the App Launcher and email-code provider, in addition to the Worker/R2 permissions needed by Wrangler. If the identity-provider resource fails with Cloudflare error `1010`, add the latter permission to the token in Cloudflare, update `CLOUDFLARE_API_TOKEN` locally, and rerun the command (or `pulumi up` in `infra/`). Until that succeeds, approved users can only use an already configured provider such as Cloudflare-account login.
+
+The only required identity setup is the Cloudflare Access team domain and the email address allowed into the application. Cloudflare sends Access one-time codes; no separate email delivery service is needed.
+
+Open the deployed **application URL** (for example, `https://clocean.example.workers.dev`) to sign in directly. The Access **team-domain root** (for example, `https://example.cloudflareaccess.com/`) is the App Launcher, where an approved user can click the Clocean tile. If the team-domain root says “contact your administrator to enable the Access App Launcher,” apply the current Pulumi stack with `pnpm deploy:one-click`; the Worker alone cannot configure that Cloudflare page. Confirm the live configuration with `node --env-file=.env scripts/check-access-experience.mjs <app-hostname>`.
 
 ## Command-Line Deployment (Wrangler)
 
@@ -102,15 +106,17 @@ To protect your Clocean instance so only you and your team can log in:
      * OR **Include** -> **Email Domains**: Enter your company domain (e.g. `company.com`).
 6. Click **Next** > **Save**.
 
+For manual deployments, also create an **App Launcher** application and an Allow policy with the *same approved emails or domains*, make the Clocean application visible in the launcher, and add the **One-time PIN** identity provider under **Integrations > Identity providers**. A team-domain URL is not a substitute for the protected application URL. Keep the allow policy narrow: an authenticated identity is not automatically entitled to every workspace, but the production default workspace has special first-user bootstrap behavior.
+
 ### Google and Cloudflare sign-in
 
-Cloudflare Access presents the provider choice before the application loads. Clocean verifies the resulting Access JWT; it does not store provider credentials or implement its own social-login buttons.
+Cloudflare Access presents the provider choice before the application loads. The one-click setup includes email-code sign-in for approved addresses. Clocean verifies the resulting Access JWT; it does not store provider credentials or implement its own social-login buttons.
 
 1. In **Zero Trust > Integrations > Identity providers**, keep or add **Cloudflare**. New Zero Trust organizations normally include it, initially restricted to Cloudflare account members. Existing organizations may need to add it. Choose the membership restriction that matches your intended audience, and retain an Access Allow policy for approved emails or domains.
 2. [Set up Google as an Access identity provider](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/google/). Create a Google OAuth client with the callback `https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/callback`, then enter its client ID and secret in the Cloudflare provider settings. Google Workspace is not required for ordinary Google-account login.
 3. In **Access controls > Applications**, edit the Clocean self-hosted application and select **both Cloudflare and Google** as login methods. Keep instant authentication off so users can choose. Test each provider from the Identity providers page, then test the protected application with an email allowed by the Access policy.
 
-Google and Cloudflare Access are available on the Zero Trust free tier for up to 50 users. The Google OAuth client and Cloudflare provider settings belong to the deployer's accounts and cannot be configured by a Worker deployment alone. Do not put OAuth client secrets in the repository. There is no direct Apple sign-in button: [Sign in with Apple for a website](https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple) requires Apple developer configuration and [membership](https://developer.apple.com/programs/). A user who created a Cloudflare account using Apple may still sign in through the **Cloudflare** option, subject to the Access policy.
+Google and Cloudflare Access are available on the Zero Trust free tier for up to 50 users. Google is **not automatically configured**: the Google OAuth client ID and secret must be supplied by the deployer's account and must not be committed to the repository. Once the email-code provider is successfully provisioned, approved users can use it without a Google account. There is no direct Apple sign-in button: [Sign in with Apple for a website](https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple) requires Apple developer configuration and [membership](https://developer.apple.com/programs/). A user who created a Cloudflare account using Apple may still sign in through the **Cloudflare** option, subject to the Access policy.
 
 ### How Authentication Works:
 Once configured, Cloudflare Access intercepts requests before they hit your Worker. Clocean independently verifies the accompanying `Cf-Access-Jwt-Assertion` against Cloudflare's public JWKS and only then uses the email claim. The email header alone is never trusted in production.
