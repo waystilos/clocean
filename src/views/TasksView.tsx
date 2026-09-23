@@ -565,12 +565,12 @@ export const TasksView: React.FC<TasksViewProps> = ({
         <div className="tasks-filters" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", padding: "10px 12px", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-sm)" }}>
           <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-secondary)" }}>
             Board
-            <select value={activeBoardId} onChange={(e) => { closeTask(); setActiveBoardId(e.target.value); }} aria-label="Switch task board">
+            <select className="form-control-sm" value={activeBoardId} onChange={(e) => { closeTask(); setActiveBoardId(e.target.value); }} aria-label="Switch task board">
               {(boards.length ? boards : [{ id: "default", name: "Sprint board" } as TaskBoard]).map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
             </select>
           </label>
           {isBoardLoading && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading…</span>}
-          <input value={newBoardName} onChange={(e) => setNewBoardName(e.target.value)} placeholder="New board name" aria-label="New board name" maxLength={100} style={{ minWidth: 120 }} />
+          <input className="form-control-sm" value={newBoardName} onChange={(e) => setNewBoardName(e.target.value)} placeholder="New board name" aria-label="New board name" maxLength={100} style={{ minWidth: 120, width: "auto" }} />
           <button className="btn-secondary" onClick={createBoard} style={{ padding: "6px 10px" }}><Plus size={14} /> Add board</button>
           <div style={{ flex: 1, minWidth: 8 }} />
           <div style={{ position: "relative" }}>

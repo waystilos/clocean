@@ -99,7 +99,7 @@ export const DatabasesView: React.FC<Props> = ({ workspaceId, currentUser, getAu
       <div><h1 className="font-serif" style={{ margin: 0, fontSize: 32 }}>Databases</h1><p style={{ color: "var(--text-secondary)", marginTop: 8 }}>Build structured tables for projects, trackers, and workspace data.</p></div>
       <form className="database-create" onSubmit={(e) => { e.preventDefault(); void createDatabase(); }} style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "stretch" }}>
         <div style={{ display: "flex", gap: 8 }}>
-          <input ref={newDatabaseInputRef} value={newDatabaseName} maxLength={100} onChange={(e) => { setNewDatabaseName(e.target.value); if (error) setError(""); }} placeholder="e.g. Project tracker" aria-label="New database name" aria-describedby="database-create-help" />
+          <input className="form-control" ref={newDatabaseInputRef} value={newDatabaseName} maxLength={100} onChange={(e) => { setNewDatabaseName(e.target.value); if (error) setError(""); }} placeholder="e.g. Project tracker" aria-label="New database name" aria-describedby="database-create-help" />
           <button type="submit" className="btn-primary" disabled={isCreatingDatabase || !newDatabaseName.trim()}><Plus size={16} /> {isCreatingDatabase ? "Creating…" : "Create database"}</button>
         </div>
         <span id="database-create-help" style={{ color: "var(--text-muted)", fontSize: 11 }}>Starts with Status and Due date fields.</span>
